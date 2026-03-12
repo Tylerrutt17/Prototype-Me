@@ -1,0 +1,33 @@
+{
+  "originHash" : "96861e76cde30071fcb50cc8b5925fa39b400ecbe504ec7e496b84c233267b8d",
+  "pins" : [
+    {
+      "identity" : "rich-editor-swiftui",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/canopas/rich-editor-swiftui",
+      "state" : {
+        "revision" : "b39107e30558b0f87d28edca4dfbf02ac6dcf3de",
+        "version" : "1.1.1"
+      }
+    },
+    {
+      "identity" : "richtextkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/danielsaidi/RichTextKit",
+      "state" : {
+        "revision" : "8aa44cfa645404ad84e52e3ab7723ecf4b82f92b",
+        "version" : "1.2.0"
+      }
+    },
+    {
+      "identity" : "spindicator",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ivanvorobei/SPIndicator",
+      "state" : {
+        "revision" : "e8a045f91757b32bb29c6feff1644ef79c8daedf",
+        "version" : "1.6.5"
+      }
+    }
+  ],
+  "version" : 3
+}
