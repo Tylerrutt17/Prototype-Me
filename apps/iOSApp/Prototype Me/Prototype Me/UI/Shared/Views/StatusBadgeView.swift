@@ -19,6 +19,9 @@ final class StatusBadgeView: UIView {
         layer.cornerRadius = DesignTokens.Radii.sm
         clipsToBounds = true
 
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+
         label.font = DesignTokens.Typography.rounded(style: .caption2, weight: .semibold)
         label.textAlignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -35,9 +38,8 @@ final class StatusBadgeView: UIView {
     /// Configure with a DirectiveStatus.
     func configure(status: DirectiveStatus) {
         let (text, tint): (String, UIColor) = switch status {
-        case .active:     ("Active",     DesignTokens.Colors.success)
-        case .maintained: ("Maintained", DesignTokens.Colors.warning)
-        case .retired:    ("Retired",    DesignTokens.Colors.textTertiary)
+        case .active:     ("Active",   DesignTokens.Colors.success)
+        case .archived:   ("Archived", DesignTokens.Colors.textTertiary)
         }
         configure(text: text, tint: tint)
     }
@@ -52,10 +54,19 @@ final class StatusBadgeView: UIView {
         configure(text: text, tint: tint)
     }
 
+    override var intrinsicContentSize: CGSize {
+        let labelSize = label.intrinsicContentSize
+        return CGSize(
+            width: labelSize.width + DesignTokens.Spacing.sm * 2,
+            height: labelSize.height + DesignTokens.Spacing.xxs * 2
+        )
+    }
+
     /// Generic configuration with text and tint color.
     func configure(text: String, tint: UIColor) {
         label.text = text.uppercased()
         label.textColor = tint
         backgroundColor = tint.withAlphaComponent(0.15)
+        invalidateIntrinsicContentSize()
     }
 }

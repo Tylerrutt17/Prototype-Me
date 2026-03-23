@@ -3,13 +3,19 @@ import UIKit
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
-    let environment = AppEnvironment.stub()
+    // Force-try is acceptable at app launch — if the DB can't open, the app can't function.
+    // swiftlint:disable:next force_try
+    let environment = try! AppEnvironment.live()
 
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
         configureGlobalAppearance()
+
+        // Seed sample data on first launch (no-op if DB already has data)
+        try? DatabaseSeeder.seedIfNeeded(db: environment.db)
+
         return true
     }
 

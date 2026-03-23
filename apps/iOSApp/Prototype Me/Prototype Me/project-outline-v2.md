@@ -11,7 +11,7 @@
   * Balloons track urgency/decay; they do **not** control schedule or visibility rules.
 * **Balloons tab** = filtered view of directives where `balloonEnabled == true`.
   * Excludes deleted/retired directives by default (configurable later).
-* **Directive-first mechanics**: learning/habit features attach to directives, regardless of surface (notes, playbooks, balloons).
+* **Directive-first mechanics**: learning/habit features attach to directives, regardless of surface (notes, folders, balloons).
   * Example: a “shrink” action always mutates the directive, not the note container.
 * **DirectiveHistory** = append-only audit log for every directive mutation.
   * Tracks: `id`, `directiveId`, `action`, `payload`, `createdAt`, `deviceId`.
@@ -19,13 +19,13 @@
   * Add from day one — much harder to retrofit later.
 * **ID strategy**: all entities use **UUIDv7** (or ULID) for IDs.
   * Sortable by creation time, avoids sync collisions, safe for offline creation.
-  * Applies to: notes, directives, dayEntries, playbooks, outboxOps, etc.
+  * Applies to: notes, directives, dayEntries, folders, outboxOps, etc.
 * **`updatedByDeviceId`**: all mutable entities include `updatedAt` + `updatedByDeviceId` fields.
   * Required for deterministic LWW conflict resolution — without device ID, timestamp ties are ambiguous.
 * **`version` column**: all mutable entities include a monotonic `version: Int` field.
   * Incremented on every mutation. Sync conflict resolution uses highest version wins.
   * Eliminates timestamp-tie ambiguity when two devices edit at the same second.
-  * Tables: `NotePage`, `Directive`, `DayEntry`, `Playbook`, `ScheduleRule`, `ScheduleInstance`, `UserSignal`.
+  * Tables: `NotePage`, `Directive`, `DayEntry`, `Folder` (nested via `parentFolderId`), `ScheduleRule`, `ScheduleInstance`.
 * **`metadata` JSONB column**: all core entities include an optional `metadata: JSON` field.
   * Used for: experimentation, AI flags, new features, temporary migrations, A/B tests.
   * Avoids creating new migrations for every small addition.
@@ -87,7 +87,7 @@
 
 **Core mechanics**
 
-* **Local DB** stores everything (notes, directives, balloons, playbooks, etc.).
+* **Local DB** stores everything (notes, directives, balloons, folders, etc.).
 * **Outbox queue** records changes as operations (create/update/delete) to be uploaded when possible.
 * **Pull cursor** (`last_sync_token`) to fetch incremental updates from the server.
 * **Tombstone table** for deletions (sync deletions reliably).
@@ -203,7 +203,7 @@ After voice input, assistant returns tappable chips:
 * **Create Directive** (with suggested destination note)
 * **Create Directive + Balloon** (suggested duration/urgency)
 * **Append to Existing Note**
-* **Link to Situation / Create Situation**
+* **Create Situation Note** (NoteKind.situation — contextual scenario with linked directives)
 * **Convert to If–Then plan** (cue → action → fallback)
 * **Shrink / Split directive** (tiny version, 3-step breakdown, checklist)
 * **Active recall check** (ask for cue/steps before showing the answer)
@@ -237,12 +237,12 @@ Voice/journal input updates **internal values** that improve routing and suggest
 
   * prefers tiny actions vs deep plans
   * suppresses certain suggestion types
-  * engages with certain modes/playbooks
+  * engages with certain modes/folders
 
 **Uses**
 
 * Better auto-routing (“where should this directive go?”)
-* Better playbook suggestions (Lite vs Standard vs Deep)
+* Better folder suggestions (Lite vs Standard vs Deep)
 * Better balloon tuning drafts (cadence, duration, pressure)
 * Better “Active Modes” recommendations (“this keeps recurring—make it active”)
 
@@ -299,16 +299,16 @@ All changes remain draft/confirm.
 
 ---
 
-### 10) Playbooks/templates (Option A: tagged folders of notes)
+### 10) Folders/templates (Option A: tagged folders of notes)
 
 **Definition**
 
-* **Playbook = a tagged Folder** containing a set of **NotePages**, each with **Directives** (some balloon-enabled).
+* **Folder = a tagged Folder** containing a set of **NotePages**, each with **Directives** (some balloon-enabled).
 * Used for personal organization and as the unit of community sharing.
-* A note can belong to **one** playbook folder at a time (via folderId).
-* Directives can be linked across notes even if notes are in different playbooks.
+* A note can belong to **one** folder folder at a time (via folderId).
+* Directives can be linked across notes even if notes are in different folders.
 
-**Playbook intent (optional, lightweight)**
+**Folder intent (optional, lightweight)**
 
 * `intent: general | learning | execution | maintenance` (default: `general`).
 * Intent is a **soft label**, not a new surface. It unlocks small defaults/affordances, never a separate tab.
@@ -321,19 +321,19 @@ All changes remain draft/confirm.
 
 * When user mentions a struggle/goal:
 
-  * suggest **Open existing related playbook/note**
-  * else suggest **Create playbook from template**
+  * suggest **Open existing related folder/note**
+  * else suggest **Create folder from template**
 * Offer **parallel variants**:
 
   * Lite / Standard / Deep (same idea, different intensity)
 
 ---
 
-### 11) “GitHub-style” community playbooks (forks + versions)
+### 11) “GitHub-style” community folders (forks + versions)
 
 **Mental model**
 
-* Community Playbooks behave like repos:
+* Community Folders behave like repos:
 
   * browse
   * fork
@@ -345,22 +345,85 @@ All changes remain draft/confirm.
 
 * “Publish version” = create a **snapshot** of:
 
-  * playbook folder metadata + included notes + directives (including balloon settings)
+  * folder folder metadata + included notes + directives (including balloon settings)
 * No complex merges required.
 * Publishing is explicit: user picks title, changelog, and visibility.
 
 **Forking**
 
-* Fork = copy playbook folder + contents into user’s local DB.
+* Fork = copy folder folder + contents into user’s local DB.
 * Preserve lineage metadata:
 
-  * origin playbook ID + origin version ID + fork parent version ID.
+  * origin folder ID + origin version ID + fork parent version ID.
 * Users can publish their fork as a new version line.
-* Forks are local copies; edits never affect the original playbook.
+* Forks are local copies; edits never affect the original folder.
 
 **Optional “diff-lite” UI**
 
 * On publish: “2 notes added, 5 directives edited, 3 balloon durations changed.”
+
+**Data model additions (server-side only)**
+
+* `shared_folder` — published snapshot of a folder
+  * `id`, `authorId`, `title`, `description`, `category`, `visibility` (public | unlisted | private)
+  * `noteCount`, `directiveCount`, `forkCount`, `version`
+  * `contentJSON` — frozen snapshot of folder structure + notes + directives (not a live reference)
+  * `changelogJSON` — array of `{ version, summary, publishedAt }`
+  * `createdAt`, `updatedAt`
+* `shared_folder_version` — each published version
+  * `id`, `sharedFolderId`, `version` (monotonic int), `summary`, `contentJSON`, `publishedAt`
+* `fork` — tracks lineage when a user forks a shared folder
+  * `id`, `userId`, `localFolderId` (the user's local Folder.id), `originSharedFolderId`, `originVersionId`, `forkedAt`
+  * Used to show “update available” when origin publishes a new version
+* No new local (GRDB) tables needed — forks are just regular local `Folder` entries with a `fork` record on the server linking them to the origin.
+
+**Navigation & screens**
+
+* **Entry point**: “Explore” row in Settings, or a dedicated tab if community grows. For v1, keep it in Settings to avoid tab bloat.
+* **CommunityBrowseViewController** — main discovery screen
+  * Search bar at top (searches title + description + category)
+  * Sections: “Featured”, “Popular”, “New”, “Categories” (health, productivity, learning, etc.)
+  * Each row = `CommunityFolderCard`: title, author name, description preview, note/directive counts, fork count, category pill
+  * Tap → pushes to CommunityFolderDetailVC
+* **CommunityFolderDetailViewController** — preview before forking
+  * Header: title, author, description, category, version badge, fork count
+  * “Fork to My Notes” CTA button (accent, full width)
+  * Changelog section (expandable, shows version history)
+  * Content preview: read-only list of notes + directives included in the snapshot
+  * If user already forked this folder: show “Already Forked” badge + “Check for Updates” button instead of Fork CTA
+* **PublishFolderViewController** — modal for publishing a local folder
+  * Triggered from folder context menu or folder detail screen
+  * Fields: title (pre-filled from folder name), description (text view), category picker, visibility picker (public/unlisted)
+  * If republishing: shows diff summary (“2 notes added, 1 directive updated”) + changelog text field
+  * “Publish” CTA → creates/updates `shared_folder` + `shared_folder_version` on server
+* **MyPublishedFoldersViewController** — list of folders you've published
+  * Accessible from Profile or Settings
+  * Shows each published folder with version count, total forks, last published date
+  * Tap → view stats, edit description, publish new version, or unpublish
+* **ForkUpdateViewController** — shown when a forked folder has a new upstream version
+  * Side-by-side: “Your version” vs “New version” with diff summary
+  * Options: “Update” (replaces local content with new snapshot), “Keep Mine” (dismiss), “View Changes” (shows diff detail)
+  * Update = delete current folder contents + import new snapshot, preserving local folder ID and any custom additions marked as “mine”
+
+**Fork flow (user perspective)**
+
+1. User browses community → taps a folder → reads preview
+2. Taps “Fork to My Notes” → folder + notes + directives copied into their local DB as a new `Folder` at root level
+3. User can edit freely — it's fully local, no sync back to origin
+4. If origin publishes a new version, a badge appears on the folder: “Update available”
+5. User can accept the update (replaces content), ignore it, or view the diff
+
+**API endpoints (future)**
+
+* `GET /v1/community/folders` — browse/search (query params: `category`, `search`, `sort`)
+* `GET /v1/community/folders/:id` — detail + content preview
+* `POST /v1/community/folders` — publish a folder (creates shared_folder + version)
+* `POST /v1/community/folders/:id/versions` — publish new version
+* `DELETE /v1/community/folders/:id` — unpublish
+* `POST /v1/community/folders/:id/fork` — fork into user's local data (server creates fork record + returns content)
+* `GET /v1/community/folders/:id/updates?sinceVersion=N` — check for updates
+* `GET /v1/me/published` — list user's published folders
+* `GET /v1/me/forks` — list user's forks with update-available status
 
 ---
 
@@ -368,18 +431,18 @@ All changes remain draft/confirm.
 
 **Purpose**
 
-* Help users personalize/repair a playbook or note when it “isn’t working.”
+* Help users personalize/repair a folder or note when it “isn’t working.”
 
 **UI**
 
-* Button inside a playbook or note: **Troubleshoot / Not working?**
-* Opens the same AI panel, scoped to that playbook/note.
+* Button inside a folder or note: **Troubleshoot / Not working?**
+* Opens the same AI panel, scoped to that folder/note.
 
 **Loop**
 
 * AI asks at most one question (remembering vs doing vs knowing what matters).
-* Returns chips: simplify, shrink/split, adjust balloons, add cues, create a Mode, link situations, add a tiny-step fallback, or write a “why this matters” line.
-* Troubleshoot is **scoped**: it can only read/edit within the selected note or playbook.
+* Returns chips: simplify, shrink/split, adjust balloons, add cues, create a Mode, link situation notes, add a tiny-step fallback, or write a “why this matters” line.
+* Troubleshoot is **scoped**: it can only read/edit within the selected note or folder.
 * Output is always draft + confirm.
 
 **Community synergy**
@@ -402,22 +465,11 @@ All changes remain draft/confirm.
 * Optional identity framing (“I’m the kind of person who…”).
 * Directives can be linked across modes/notes; the mode is just a grouping surface.
 
-**Tiering (foundation → active)**
-
-* Notes (and Modes) can be tagged with a **Tier** to reflect how they’re used:
-  * **Foundation** = passive, always-on habits (sleep, stress, nutrition).
-  * **Support** = supporting routines (prep, planning, maintenance).
-  * **Active** = situational, effortful directives (“when out and about”).
-* Tier is **explicit metadata**, not just a row color.
-* Colors are a **visual accent mapped to Tier**, never the source of truth.
-* Tier powers sorting + filters (e.g., “Show only Foundation + Support” on low-energy days).
-* Tier defaults to `support` unless explicitly changed.
-
 **Implementation**
 
 * Mode is a special note type: `NotePage.kind = mode`
-* Mode note contains: short description + directives (some marked “micro” for focus preview) + optional linked situations.
-* Note metadata includes: `tier = foundation | support | active` (default: support).
+* Mode note contains: short description + linked directives (some marked “micro” for focus preview).
+* Note metadata includes: `kind` (standard, mode, framework, situation) and optional `metadata` JSON.
 
 **Framework note (personal constitution)**
 
@@ -446,7 +498,7 @@ All changes remain draft/confirm.
 **UX**
 
 * Users select 1–3 **Active Modes** (today/this week).
-* Focus preview appears inside the Mode note or Playbook overview, showing 1–2 micro-directives each.
+* Focus preview appears inside the Mode note or Folder overview, showing 1–2 micro-directives each.
 * Drill down for the full set.
 * Occasional recall-check cards appear before revealing details.
 * Active Modes selection is capped at 3 unless user changes a setting.
@@ -455,15 +507,15 @@ All changes remain draft/confirm.
 
 ### 14) Science-aligned features (habits + remembering)
 
-These mechanics are embedded throughout chips, tuning, and Notes/Playbook surfaces.
+These mechanics are embedded throughout chips, tuning, and Notes/Folder surfaces.
 
 * **Implementation intentions** (If–Then plans with explicit cues)
 * **Spaced retrieval + active recall** (prompt before reveal; 1d/3d/7d checks)
 * **Tiny/Standard/Stretch** tiers + **tiny-step fallback** after skips
-* **Situation/time-window surfacing** + **habit stacking**
+* **Situation notes (NoteKind.situation)** for contextual surfacing + **habit stacking**
 * **Elaboration + identity framing** (“why this matters”)
 * **Desirable difficulty** (gentle increases after stability)
-* **Interleaving/rotation** in note/playbook focus previews to reduce serial-position bias
+* **Interleaving/rotation** in note/folder focus previews to reduce serial-position bias
 * **Variable reinforcement** (occasional wins summaries)
 * **Gentle streaks + recovery tracking**
 * **Weekly review**: keep alive / stuck / drop / tune
@@ -534,7 +586,7 @@ These mechanics are embedded throughout chips, tuning, and Notes/Playbook surfac
 ### 17) AI onboarding + personality input (seeded setup)
 
 * Optional onboarding flow collects **goals, preferences, and personality traits**.
-* AI uses that input to **seed initial directives** + recommended playbooks.
+* AI uses that input to **seed initial directives** + recommended folders.
 * Users can edit/reject all suggestions; no silent writes.
 * Ongoing feedback (wins/skips) tunes future suggestions.
 * Onboarding can be skipped; the app still works fully without it.
@@ -554,13 +606,13 @@ These mechanics are embedded throughout chips, tuning, and Notes/Playbook surfac
 
 ### 18) Sharing + collaboration + snapshots
 
-* **Share links** for a note, directive set, or playbook (read-only by default).
+* **Share links** for a note, directive set, or folder (read-only by default).
 * **Friends list / access list** (optional) to grant edit or view.
 * **Snapshots**: “save state” for personal or shared collections; restore/compare later.
-  * **`Snapshot`** table: `id`, `type` (playbook/note/directive-set), `entityId`, `data` (JSON blob), `schemaVersion`, `createdAt`.
+  * **`Snapshot`** table: `id`, `type` (folder/note/directive-set), `entityId`, `data` (JSON blob), `schemaVersion`, `createdAt`.
   * `schemaVersion` ensures old snapshots remain readable as the schema evolves.
-  * Used for: playbook publish, share links, version history.
-* Community publishing still uses the **playbook fork/version** system.
+  * Used for: folder publish, share links, version history.
+* Community publishing still uses the **folder fork/version** system.
 * Edits by collaborators create a local history entry for audit/undo.
 
 ---
@@ -627,7 +679,7 @@ These mechanics are embedded throughout chips, tuning, and Notes/Playbook surfac
 
 * Higher AI quota or “fair use” (soft caps).
 * Multi-device sync.
-* Publish/fork playbooks + version history.
+* Publish/fork folders + version history.
 * Advanced scheduling (complex rules, hibernation/snooze automation).
 * Sharing + access grants.
 
@@ -658,7 +710,7 @@ These mechanics are embedded throughout chips, tuning, and Notes/Playbook surfac
 * `notes_created`
 * `ai_actions` (any AI chip accepted or AI draft confirmed)
 * `balloons_enabled`
-* `playbooks_forked`
+* `folders_forked`
 * `sync_events` (push or pull completed)
 * `diary_entries_written`
 * `schedule_rules_created`
@@ -688,10 +740,10 @@ These mechanics are embedded throughout chips, tuning, and Notes/Playbook surfac
 5. AI chat + **directive chips** + auto-routing
 6. Background knobs + tuning suggestions
 7. Simplify/Organize + directive refactor tools
-8. Modes layer + Active Modes in Notes/Playbooks
-9. Playbooks as tagged folders + Lite/Standard/Deep templates
+8. Modes layer + Active Modes in Notes/Folders
+9. Folders as tagged folders + Lite/Standard/Deep templates
 10. Troubleshoot mode
-11. Community playbooks (forks + snapshot versions + diff-lite)
+11. Community folders (forks + snapshot versions + diff-lite)
 12. Scheduling + resurfacing rules
 13. Sharing + collaboration + snapshots
 
@@ -725,7 +777,7 @@ apps/
         Tab/                                # One coordinator per tab
           FocusCoordinator.swift
           NotesCoordinator.swift
-          PlaybooksCoordinator.swift
+          FoldersCoordinator.swift
           DiaryCoordinator.swift
           SettingsCoordinator.swift
         Flows/                              # Modal / multi-step flows (reused from any tab)
@@ -745,7 +797,6 @@ apps/
           DayEntryServiceProtocol.swift
           ScheduleServiceProtocol.swift
           AudioServiceProtocol.swift
-          SituationServiceProtocol.swift
           SyncEngineProtocol.swift
           APIClientProtocol.swift
 
@@ -754,7 +805,6 @@ apps/
           Directive.swift
           Folder.swift
           Tag.swift
-          Situation.swift
           DayEntry.swift
           ScheduleRule.swift
           ScheduleInstance.swift
@@ -764,7 +814,6 @@ apps/
           UsageMetric.swift
           NoteDirective.swift
           NoteTag.swift
-          DirectiveSituation.swift
           Tombstone.swift
           OutboxOp.swift
           SyncState.swift
@@ -774,7 +823,7 @@ apps/
           NoteListItem.swift                # NotePage + directive count + folder name
           FocusSnapshot.swift               # Active modes + urgent balloons + today's schedule
           DayEntrySummary.swift             # DayEntry + tag names + diary preview
-          PlaybookListItem.swift            # Folder + note count + directive count
+          FolderListItem.swift            # Folder + note count + directive count
 
         Services/                           # Business logic (all async throws, protocol-conforming)
           NoteService.swift
@@ -784,8 +833,6 @@ apps/
           DayEntryService.swift
           ScheduleService.swift
           AudioService.swift
-          SituationService.swift
-
         Sync/
           SyncEngine.swift                  # Outbox push + cursor pull orchestration
           OutboxQueue.swift                 # Pending operations queue
@@ -824,8 +871,8 @@ apps/
         # ── Shared cells + views (reused across multiple screens) ───
         Shared/
           Cells/                            # Reusable cells registered once, used everywhere
-            DirectiveCell.swift             # Used in: Notes detail, Directives list, Focus, Balloons, Mode detail, Playbook detail
-            NoteCell.swift                  # Used in: Notes list, Playbook detail, search results
+            DirectiveCell.swift             # Used in: Notes detail, Directives list, Focus, Balloons, Mode detail, Folder detail
+            NoteCell.swift                  # Used in: Notes list, Folder detail, search results
             BalloonCard.swift               # Used in: Focus (urgent preview), Balloons tab
             ScheduleInstanceRow.swift       # Used in: Focus (today), Directive detail
             AudioPlayerRow.swift            # Used in: Directive detail, Note detail
@@ -836,19 +883,16 @@ apps/
             CoachMarkView.swift             # Tooltip overlay for onboarding tips
             StatusBadgeView.swift           # Active / Maintained / Retired pill
             PressureIndicator.swift         # Balloon pressure gauge (green/yellow/red)
-            TierLabel.swift                 # Foundation / Support / Active label
             FormattingToolbar.swift         # Rich text input accessory view
             TagChipView.swift               # Compact tag pill (used in notes, diary, directives)
           Controls/                         # Reusable interactive controls
             AppButton.swift                 # Single button with style enum: .primary, .secondary, .destructive, .icon, .chip, .fab
-            AppSegmentedControl.swift       # Styled segmented picker (tier filter, status filter)
+            AppSegmentedControl.swift       # Styled segmented picker (status filter, kind filter)
             AppToggleRow.swift              # Label + UISwitch row (settings, balloon enable)
             AppSliderRow.swift              # Label + UISlider + value label (pressure, duration)
           Sheets/                           # Reusable modal pickers (presented from any coordinator)
             TagPickerViewController.swift   # Multi-select tags
-            SituationPickerViewController.swift
             NoteLinkerViewController.swift  # Pick a note to link a directive into
-            TierPickerViewController.swift
             ConflictResolverViewController.swift  # Side-by-side merge UI
 
         # ── Screen-specific folders (only screen-unique code) ───────
@@ -865,9 +909,9 @@ apps/
         Diary/
           DiaryViewController.swift
           CalendarViewController.swift
-        Playbooks/
-          PlaybookListViewController.swift
-          PlaybookDetailViewController.swift
+        Folders/
+          FolderListViewController.swift
+          FolderDetailViewController.swift
         AI/
           AIViewController.swift
           ChipCardView.swift
@@ -931,7 +975,7 @@ apps/
       routes/                   # HTTP route handlers
       validators/               # route payload validation
       middlewares/              # auth, rate-limit, validation
-      services/                 # sync, ai, playbooks, sharing (business logic)
+      services/                 # sync, ai, folders, sharing (business logic)
       jobs/                     # compaction, snapshots, cleanup
       config/                   # env, feature flags
       generated/
@@ -981,7 +1025,7 @@ packages/
 
 ### Appendix) Community + infra details
 
-Community playbook schema + rollout now live in `backend-outline.md` to keep this doc UX-focused.
+Community folder schema + rollout now live in `backend-outline.md` to keep this doc UX-focused.
 
 ---
 
@@ -1006,7 +1050,7 @@ Identity/auth details now live in `backend-outline.md` to keep this doc UX-focus
 | 1 | Theme foundation (DesignTokens.swift + Haptics.swift) | Done | 2026-03-11 |
 | 2 | App bootstrap (AppEnvironment, Coordinator pattern, AppCoordinator with UITabBarController) | Done | 2026-03-11 |
 | 3 | BaseViewController + shared UI stubs (EmptyStateView, AppButton) | Done | 2026-03-11 |
-| 4 | 5 tab coordinators (Focus, Notes, Playbooks, Diary, Settings) | Done | 2026-03-11 |
+| 4 | 5 tab coordinators (Focus, Notes, Folders, Diary, Settings) | Done | 2026-03-11 |
 | 5 | 12 placeholder view controllers with navigation flow | Done | 2026-03-11 |
 | 6 | Build verification — 0 errors, 0 warnings | Done | 2026-03-11 |
 
@@ -1017,16 +1061,28 @@ Identity/auth details now live in `backend-outline.md` to keep this doc UX-focus
 | Step | Description | Status | Date |
 |------|-------------|--------|------|
 | 7 | Model structs (Enums, CoreModels, ViewData) + SampleData with realistic dummy data | Done | 2026-03-11 |
-| 8 | Shared views (StatusBadge, PressureIndicator, TierLabel, RatingCircle) + shared cells (NoteCell, DirectiveCell, BalloonCard, DayEntryCell, ScheduleInstanceRow) | Done | 2026-03-11 |
+| 8 | Shared views (StatusBadge, PressureIndicator, RatingCircle) + shared cells (NoteCell, DirectiveCell, BalloonCard, DayEntryCell, ScheduleInstanceRow) | Done | 2026-03-11 |
 | 9 | All list screens rewritten with UICollectionView + compositional layout + diffable data sources | Done | 2026-03-11 |
-| 10 | All detail screens rewritten (NoteDetail, DirectiveDetail, PlaybookDetail, Calendar) | Done | 2026-03-11 |
+| 10 | All detail screens rewritten (NoteDetail, DirectiveDetail, FolderDetail, Calendar) | Done | 2026-03-11 |
 | 11 | Focus screen: 3-section layout (modes, balloons, schedule) + floating AI button | Done | 2026-03-11 |
 | 12 | Settings + SyncDebug: insetGrouped lists with toggles and dummy sync stats | Done | 2026-03-11 |
 | 13 | Coordinator closures updated to pass UUIDs, full drill-down navigation wired | Done | 2026-03-11 |
 | 14 | Build verification — 0 errors, 0 warnings | Done | 2026-03-11 |
 
-**Later (after UI is solid):**
-- GRDB integration + migrations + Record conformance
-- Service layer + AppEnvironment wiring
-- ValueObservation replacing SampleData calls
+**GRDB Persistence (Completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 15 | GRDB package added via SPM (v7.x, static linking) | Done | 2026-03-11 |
+| 16 | DatabaseManager — SQLite in Application Support, forward-only migrations for all 9 tables | Done | 2026-03-11 |
+| 17 | CoreModels updated: FetchableRecord + PersistableRecord conformances, GRDB associations, custom JSON encoding for DayEntry.tags and ScheduleRule.params | Done | 2026-03-11 |
+| 18 | AppEnvironment updated: holds DatabaseManager, live() and inMemory() factory methods | Done | 2026-03-11 |
+| 19 | DatabaseSeeder — seeds sample data on first launch (no-op if DB already has data) | Done | 2026-03-11 |
+| 20 | All coordinators pass dbQueue to view controllers | Done | 2026-03-11 |
+| 21 | All 10 VCs use ValueObservation — screens auto-update when DB changes | Done | 2026-03-11 |
+| 22 | Build verification — 0 errors, 0 warnings | Done | 2026-03-11 |
+
+**Next up:**
+- Create/edit flows (modal editors for notes, directives, day entries)
+- Service layer (NoteService, DirectiveService, etc.)
 - OpenAPI codegen + networking + sync engine

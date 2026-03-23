@@ -78,9 +78,9 @@ enum SampleData {
     // MARK: - Folders
 
     static let folders: [Folder] = [
-        Folder(id: IDs.folderMorning,  name: "Morning Routine",    intent: .execution,   createdAt: daysAgo(60), updatedAt: daysAgo(2)),
-        Folder(id: IDs.folderFitness,  name: "Fitness & Recovery",  intent: .maintenance, createdAt: daysAgo(45), updatedAt: daysAgo(1)),
-        Folder(id: IDs.folderLearning, name: "Learning System",     intent: .learning,    createdAt: daysAgo(30), updatedAt: daysAgo(3)),
+        Folder(id: IDs.folderMorning,  name: "Morning Routine",    parentFolderId: nil, sortIndex: 0, createdAt: daysAgo(60), updatedAt: daysAgo(2)),
+        Folder(id: IDs.folderFitness,  name: "Fitness & Recovery",  parentFolderId: nil, sortIndex: 1, createdAt: daysAgo(45), updatedAt: daysAgo(1)),
+        Folder(id: IDs.folderLearning, name: "Learning System",     parentFolderId: nil, sortIndex: 2, createdAt: daysAgo(30), updatedAt: daysAgo(3)),
     ]
 
     // MARK: - Notes
@@ -97,23 +97,23 @@ enum SampleData {
             1. Start small, build momentum.
             2. Protect your energy — say no more often.
             3. Review weekly, adjust monthly.
-            """, kind: .framework, tier: .foundation, folderId: nil, sortIndex: 0, version: 3, createdAt: daysAgo(90), updatedAt: daysAgo(5)),
+            """, kind: .framework, folderId: nil, sortIndex: 0, version: 3, createdAt: daysAgo(90), updatedAt: daysAgo(5)),
 
         // Mode notes
         NotePage(id: IDs.noteModeDeep, title: "Deep Work Mode", body: """
             Phone on DND. Close Slack. Work in 50-min blocks with 10-min breaks.
             Only check messages between blocks.
-            """, kind: .mode, tier: .active, folderId: nil, sortIndex: 1, version: 2, createdAt: daysAgo(60), updatedAt: daysAgo(7)),
+            """, kind: .mode, folderId: nil, sortIndex: 1, version: 2, createdAt: daysAgo(60), updatedAt: daysAgo(7)),
 
         NotePage(id: IDs.noteModeSocial, title: "Social Mode", body: """
             Be present. Put phone away. Ask questions and listen.
             Remember: connection > content.
-            """, kind: .mode, tier: .active, folderId: nil, sortIndex: 2, version: 1, createdAt: daysAgo(45), updatedAt: daysAgo(20)),
+            """, kind: .mode, folderId: nil, sortIndex: 2, version: 1, createdAt: daysAgo(45), updatedAt: daysAgo(20)),
 
         NotePage(id: IDs.noteModeRecov, title: "Recovery Mode", body: """
             Low-energy protocol. No screens after 9 PM. Light stretching only.
             Permission to do the minimum today.
-            """, kind: .mode, tier: .support, folderId: nil, sortIndex: 3, version: 1, createdAt: daysAgo(30), updatedAt: daysAgo(10)),
+            """, kind: .mode, folderId: nil, sortIndex: 3, version: 1, createdAt: daysAgo(30), updatedAt: daysAgo(10)),
 
         // Regular notes linked to folders
         NotePage(id: IDs.noteHabits, title: "Morning Habits Stack", body: """
@@ -122,7 +122,7 @@ enum SampleData {
             3. 10-min meditation
             4. Gratitude journaling
             5. 30-min exercise
-            """, kind: .regular, tier: .foundation, folderId: IDs.folderMorning, sortIndex: 0, version: 4, createdAt: daysAgo(60), updatedAt: daysAgo(1)),
+            """, kind: .regular, folderId: IDs.folderMorning, sortIndex: 0, version: 4, createdAt: daysAgo(60), updatedAt: daysAgo(1)),
 
         NotePage(id: IDs.noteMealPrep, title: "Meal Prep Guide", body: """
             ## Sunday Prep
@@ -133,7 +133,7 @@ enum SampleData {
             ## Mid-week Top-up
             - Fresh salad ingredients
             - Smoothie packs
-            """, kind: .regular, tier: .support, folderId: IDs.folderFitness, sortIndex: 0, version: 2, createdAt: daysAgo(40), updatedAt: daysAgo(8)),
+            """, kind: .regular, folderId: IDs.folderFitness, sortIndex: 0, version: 2, createdAt: daysAgo(40), updatedAt: daysAgo(8)),
 
         NotePage(id: IDs.noteReading, title: "Reading List & Notes", body: """
             ## Currently Reading
@@ -143,7 +143,7 @@ enum SampleData {
             ## Key Takeaways
             - Systems > Goals
             - Environment design matters more than willpower
-            """, kind: .regular, tier: .support, folderId: IDs.folderLearning, sortIndex: 0, version: 5, createdAt: daysAgo(30), updatedAt: daysAgo(2)),
+            """, kind: .regular, folderId: IDs.folderLearning, sortIndex: 0, version: 5, createdAt: daysAgo(30), updatedAt: daysAgo(2)),
 
         NotePage(id: IDs.noteJournal, title: "Weekly Review Template", body: """
             ## What went well?
@@ -154,44 +154,44 @@ enum SampleData {
 
             ## Next week's focus
             _Pick your top 3 priorities._
-            """, kind: .regular, tier: .active, folderId: nil, sortIndex: 4, version: 1, createdAt: daysAgo(14), updatedAt: daysAgo(7)),
+            """, kind: .regular, folderId: nil, sortIndex: 4, version: 1, createdAt: daysAgo(14), updatedAt: daysAgo(7)),
     ]
 
     // MARK: - Directives
 
     static let directives: [Directive] = [
         // Foundation tier — always‑on habits
-        Directive(id: IDs.dirMeditate, title: "Meditate 10 min", body: "Sit quietly, focus on breath. Use Headspace if needed.", status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonRemainingSec: 72000, snoozedUntil: nil, version: 3, createdAt: daysAgo(60), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirMeditate, title: "Meditate 10 min", body: "Sit quietly, focus on breath. Use Headspace if needed.", status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonSnapshotSec: 72000, snoozedUntil: nil, version: 3, createdAt: daysAgo(60), updatedAt: daysAgo(0)),
 
-        Directive(id: IDs.dirHydrate, title: "Drink 2L water", body: "Track with water bottle marks. Front-load morning.", status: .active, balloonEnabled: true, balloonDurationSec: 43200, balloonRemainingSec: 10000, snoozedUntil: nil, version: 2, createdAt: daysAgo(55), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirHydrate, title: "Drink 2L water", body: "Track with water bottle marks. Front-load morning.", status: .active, balloonEnabled: true, balloonDurationSec: 43200, balloonSnapshotSec: 10000, snoozedUntil: nil, version: 2, createdAt: daysAgo(55), updatedAt: daysAgo(0)),
 
-        Directive(id: IDs.dirSleep, title: "Lights out by 10:30 PM", body: "No screens after 10 PM. Set alarm. Wind-down routine.", status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonRemainingSec: 0, snoozedUntil: nil, version: 1, createdAt: daysAgo(50), updatedAt: daysAgo(5)),
+        Directive(id: IDs.dirSleep, title: "Lights out by 10:30 PM", body: "No screens after 10 PM. Set alarm. Wind-down routine.", status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: nil, version: 1, createdAt: daysAgo(50), updatedAt: daysAgo(5)),
 
-        Directive(id: IDs.dirGratitude, title: "Write 3 gratitudes", body: nil, status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonRemainingSec: 60000, snoozedUntil: nil, version: 1, createdAt: daysAgo(45), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirGratitude, title: "Write 3 gratitudes", body: nil, status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonSnapshotSec: 60000, snoozedUntil: nil, version: 1, createdAt: daysAgo(45), updatedAt: daysAgo(0)),
 
         // Support tier
-        Directive(id: IDs.dirExercise, title: "30-min workout", body: "Alternate: strength / cardio / yoga. Log in fitness app.", status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonRemainingSec: 5400, snoozedUntil: nil, version: 5, createdAt: daysAgo(60), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirExercise, title: "30-min workout", body: "Alternate: strength / cardio / yoga. Log in fitness app.", status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonSnapshotSec: 5400, snoozedUntil: nil, version: 5, createdAt: daysAgo(60), updatedAt: daysAgo(0)),
 
-        Directive(id: IDs.dirStretch, title: "Morning stretch routine", body: "10 min. Hamstrings, shoulders, spine.", status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonRemainingSec: 0, snoozedUntil: nil, version: 1, createdAt: daysAgo(40), updatedAt: daysAgo(3)),
+        Directive(id: IDs.dirStretch, title: "Morning stretch routine", body: "10 min. Hamstrings, shoulders, spine.", status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: nil, version: 1, createdAt: daysAgo(40), updatedAt: daysAgo(3)),
 
-        Directive(id: IDs.dirMealPrep, title: "Sunday meal prep", body: "Prep protein, veggies, and overnight oats for the week.", status: .active, balloonEnabled: true, balloonDurationSec: 604800, balloonRemainingSec: 172800, snoozedUntil: nil, version: 2, createdAt: daysAgo(35), updatedAt: daysAgo(1)),
+        Directive(id: IDs.dirMealPrep, title: "Sunday meal prep", body: "Prep protein, veggies, and overnight oats for the week.", status: .active, balloonEnabled: true, balloonDurationSec: 604800, balloonSnapshotSec: 172800, snoozedUntil: nil, version: 2, createdAt: daysAgo(35), updatedAt: daysAgo(1)),
 
-        Directive(id: IDs.dirWalk, title: "20-min walk after lunch", body: "Get outside. No phone.", status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonRemainingSec: 0, snoozedUntil: nil, version: 1, createdAt: daysAgo(30), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirWalk, title: "20-min walk after lunch", body: "Get outside. No phone.", status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: nil, version: 1, createdAt: daysAgo(30), updatedAt: daysAgo(0)),
 
         // Active tier
-        Directive(id: IDs.dirRead30, title: "Read 30 pages", body: "Current book. No phone nearby. Take notes.", status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonRemainingSec: 43200, snoozedUntil: nil, version: 2, createdAt: daysAgo(30), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirRead30, title: "Read 30 pages", body: "Current book. No phone nearby. Take notes.", status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonSnapshotSec: 43200, snoozedUntil: nil, version: 2, createdAt: daysAgo(30), updatedAt: daysAgo(0)),
 
-        Directive(id: IDs.dirDeepWork, title: "2-hr deep work block", body: "Phone on DND. One task only. 50/10 split.", status: .active, balloonEnabled: true, balloonDurationSec: 28800, balloonRemainingSec: 3600, snoozedUntil: nil, version: 3, createdAt: daysAgo(45), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirDeepWork, title: "2-hr deep work block", body: "Phone on DND. One task only. 50/10 split.", status: .active, balloonEnabled: true, balloonDurationSec: 28800, balloonSnapshotSec: 3600, snoozedUntil: nil, version: 3, createdAt: daysAgo(45), updatedAt: daysAgo(0)),
 
-        Directive(id: IDs.dirJournal, title: "Evening journal entry", body: "Reflect on the day. What went well? What to improve?", status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonRemainingSec: 80000, snoozedUntil: nil, version: 1, createdAt: daysAgo(20), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirJournal, title: "Evening journal entry", body: "Reflect on the day. What went well? What to improve?", status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonSnapshotSec: 80000, snoozedUntil: nil, version: 1, createdAt: daysAgo(20), updatedAt: daysAgo(0)),
 
-        Directive(id: IDs.dirNoPhone, title: "No phone first hour", body: "Leave phone in another room until after morning routine.", status: .maintained, balloonEnabled: false, balloonDurationSec: 0, balloonRemainingSec: 0, snoozedUntil: nil, version: 2, createdAt: daysAgo(50), updatedAt: daysAgo(15)),
+        Directive(id: IDs.dirNoPhone, title: "No phone first hour", body: "Leave phone in another room until after morning routine.", status: .archived, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: nil, version: 2, createdAt: daysAgo(50), updatedAt: daysAgo(15)),
 
-        Directive(id: IDs.dirColdShower, title: "Cold shower 2 min", body: "End every shower with 2 min cold. Breathe through it.", status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonRemainingSec: 0, snoozedUntil: daysAgo(-2), version: 1, createdAt: daysAgo(25), updatedAt: daysAgo(10)),
+        Directive(id: IDs.dirColdShower, title: "Cold shower 2 min", body: "End every shower with 2 min cold. Breathe through it.", status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: daysAgo(-2), version: 1, createdAt: daysAgo(25), updatedAt: daysAgo(10)),
 
-        Directive(id: IDs.dirReview, title: "Weekly review", body: "Use the weekly review template. Sunday afternoon.", status: .active, balloonEnabled: true, balloonDurationSec: 604800, balloonRemainingSec: 259200, snoozedUntil: nil, version: 2, createdAt: daysAgo(30), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirReview, title: "Weekly review", body: "Use the weekly review template. Sunday afternoon.", status: .active, balloonEnabled: true, balloonDurationSec: 604800, balloonSnapshotSec: 259200, snoozedUntil: nil, version: 2, createdAt: daysAgo(30), updatedAt: daysAgo(0)),
 
-        Directive(id: IDs.dirVocab, title: "Learn 5 new words", body: "Use Anki deck. Review + add new cards.", status: .retired, balloonEnabled: false, balloonDurationSec: 0, balloonRemainingSec: 0, snoozedUntil: nil, version: 3, createdAt: daysAgo(60), updatedAt: daysAgo(20)),
+        Directive(id: IDs.dirVocab, title: "Learn 5 new words", body: "Use Anki deck. Review + add new cards.", status: .archived, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: nil, version: 3, createdAt: daysAgo(60), updatedAt: daysAgo(20)),
     ]
 
     // MARK: - NoteDirective Links
@@ -249,6 +249,13 @@ enum SampleData {
         DayEntry(id: IDs.day10, date: dateString(9), rating: 6, diary: "Fine day. Nothing special but hit the basics. Consistency counts.", tags: ["wellness"], createdAt: daysAgo(9), updatedAt: daysAgo(9)),
     ]
 
+    // MARK: - Active Modes
+
+    static let activeModes: [ActiveMode] = [
+        ActiveMode(noteId: IDs.noteModeDeep, activatedAt: daysAgo(1)),
+        ActiveMode(noteId: IDs.noteModeRecov, activatedAt: daysAgo(0)),
+    ]
+
     // MARK: - Schedule Rules
 
     static let scheduleRules: [ScheduleRule] = [
@@ -291,6 +298,16 @@ enum SampleData {
         DirectiveHistory(id: UUID(uuidString: "00000008-0008-0008-0008-000000000008")!, directiveId: IDs.dirDeepWork, action: .balloonPump, payload: "{\"resetTo\": 28800}", createdAt: daysAgo(0)),
     ]
 
+    // MARK: - Onboarding Seed Plan
+
+    static let seedPlanCards: [SeedPlanCard] = [
+        SeedPlanCard(id: UUID(uuidString: "0000000A-000A-000A-000A-000000000001")!, type: .directive, title: "Morning meditation", body: "Start with 5 minutes of quiet breathing"),
+        SeedPlanCard(id: UUID(uuidString: "0000000A-000A-000A-000A-000000000002")!, type: .directive, title: "Daily reflection", body: "Write 3 things you're grateful for"),
+        SeedPlanCard(id: UUID(uuidString: "0000000A-000A-000A-000A-000000000003")!, type: .directive, title: "Move for 20 minutes", body: "Walk, stretch, or exercise — anything counts"),
+        SeedPlanCard(id: UUID(uuidString: "0000000A-000A-000A-000A-000000000004")!, type: .directive, title: "Weekly review", body: "Reflect on wins and areas to improve each Sunday"),
+        SeedPlanCard(id: UUID(uuidString: "0000000A-000A-000A-000A-000000000005")!, type: .folder, title: "Getting Started", body: "Your first folder with your starter directives"),
+    ]
+
     // MARK: - Composed View Data
 
     static var noteListItems: [NoteListItem] {
@@ -321,7 +338,7 @@ enum SampleData {
         let modes = notes.filter { $0.kind == .mode }
         let balloons = directiveRowData
             .filter { $0.directive.balloonEnabled && $0.directive.status == .active }
-            .sorted { $0.directive.balloonRemainingSec < $1.directive.balloonRemainingSec }
+            .sorted { $0.directive.liveRemainingSec < $1.directive.liveRemainingSec }
         let today = dateString(0)
         let todayRows = scheduleInstances
             .filter { $0.date == today }
@@ -329,8 +346,18 @@ enum SampleData {
                 guard let dir = directives.first(where: { $0.id == inst.directiveId }) else { return nil }
                 return ScheduleInstanceRow(instance: inst, directiveTitle: dir.title)
             }
+        // Linked directives for the first mode (sample)
+        let modeDirectives: [DirectiveRowData] = modes.first.map { mode in
+            let linked = noteDirectives
+                .filter { $0.noteId == mode.id }
+                .compactMap { link in directives.first(where: { $0.id == link.directiveId }) }
+            return linked.map { DirectiveRowData(directive: $0, scheduledToday: false, instanceStatus: nil) }
+        } ?? []
+
         return FocusSnapshot(
-            activeModes: Array(modes.prefix(3)),
+            allModes: modes,
+            activeModeId: modes.first?.id,
+            modeDirectives: modeDirectives,
             urgentBalloons: Array(balloons.prefix(5)),
             todaySchedule: todayRows
         )
@@ -376,4 +403,145 @@ enum SampleData {
             .filter { $0.directiveId == directiveId }
             .sorted { $0.createdAt > $1.createdAt }
     }
+
+    // MARK: - Subscription / Paywall
+
+    static let subscriptionInfo = SubscriptionInfo(
+        plan: .free,
+        expiresAt: nil,
+        isTrialActive: false,
+        trialDaysRemaining: nil
+    )
+
+    static let usageQuota = UsageQuota(
+        dailyLimit: 10,
+        dailyUsed: 7,
+        resetAt: cal.date(bySettingHour: 0, minute: 0, second: 0, of: cal.date(byAdding: .day, value: 1, to: .now)!)!
+    )
+
+    static let paywallFeatures: [PaywallFeature] = [
+        PaywallFeature(title: "AI suggestions per day",   freeValue: "10",        proValue: "Unlimited"),
+        PaywallFeature(title: "Sync across devices",      freeValue: "—",         proValue: "checkmark"),
+        PaywallFeature(title: "Publish playbooks",        freeValue: "—",         proValue: "checkmark"),
+        PaywallFeature(title: "Fork community playbooks",  freeValue: "—",         proValue: "checkmark"),
+        PaywallFeature(title: "Advanced scheduling",      freeValue: "Basic",     proValue: "Full"),
+        PaywallFeature(title: "Sharing & friends",        freeValue: "—",         proValue: "checkmark"),
+        PaywallFeature(title: "Priority support",         freeValue: "—",         proValue: "checkmark"),
+    ]
+
+    // MARK: - Profile
+
+    static let currentUserProfile = UserProfile(
+        id: UUID(uuidString: "0000000B-000B-000B-000B-000000000001")!,
+        displayName: "Tyler Morrow",
+        bio: "Building better habits, one directive at a time. Focused on deep work and mindfulness.",
+        avatarSystemImage: "person.circle.fill",
+        moodChips: ["Focused", "Energized", "Grateful"],
+        joinedAt: daysAgo(90),
+        plan: .free
+    )
+
+    // MARK: - Friends
+
+    static let friends: [FriendItem] = [
+        FriendItem(
+            id: UUID(uuidString: "0000000C-000C-000C-000C-000000000001")!,
+            displayName: "Alex Chen",
+            avatarSystemImage: "person.circle",
+            status: .accepted,
+            since: daysAgo(30)
+        ),
+        FriendItem(
+            id: UUID(uuidString: "0000000C-000C-000C-000C-000000000002")!,
+            displayName: "Jordan Park",
+            avatarSystemImage: "person.circle",
+            status: .accepted,
+            since: daysAgo(14)
+        ),
+        FriendItem(
+            id: UUID(uuidString: "0000000C-000C-000C-000C-000000000003")!,
+            displayName: "Sam Rivera",
+            avatarSystemImage: "person.circle",
+            status: .pending,
+            since: nil
+        ),
+        FriendItem(
+            id: UUID(uuidString: "0000000C-000C-000C-000C-000000000004")!,
+            displayName: "Casey Kim",
+            avatarSystemImage: "person.circle",
+            status: .pending,
+            since: nil
+        ),
+    ]
+
+    // MARK: - AI Chips
+
+    static let aiDraft = AiDraft(
+        chips: [
+            AiChip(
+                id: UUID(uuidString: "0000000D-000D-000D-000D-000000000001")!,
+                action: .createDirective,
+                title: "Add a morning walk",
+                subtitle: "You've been sedentary 3 of the last 5 days",
+                destination: "Directives",
+                status: .suggested,
+                prefillTitle: "20-min morning walk",
+                prefillBody: "Walk before checking phone. Fresh air resets cortisol."
+            ),
+            AiChip(
+                id: UUID(uuidString: "0000000D-000D-000D-000D-000000000002")!,
+                action: .updateDirective,
+                title: "Shorten deep work to 90 min",
+                subtitle: "Your 2-hr blocks keep getting skipped",
+                destination: "Deep Work",
+                status: .suggested,
+                prefillTitle: "90-min deep work block",
+                prefillBody: "Phone on DND. One task only. 45/10 split."
+            ),
+            AiChip(
+                id: UUID(uuidString: "0000000D-000D-000D-000D-000000000003")!,
+                action: .activateMode,
+                title: "Activate Recovery Mode",
+                subtitle: "Your diary ratings dropped — take it easy today",
+                destination: "Modes",
+                status: .suggested,
+                prefillTitle: nil,
+                prefillBody: nil
+            ),
+            AiChip(
+                id: UUID(uuidString: "0000000D-000D-000D-000D-000000000004")!,
+                action: .addSchedule,
+                title: "Schedule gratitude on weekdays",
+                subtitle: "You only do it sporadically — consistency helps",
+                destination: "Gratitude",
+                status: .suggested,
+                prefillTitle: nil,
+                prefillBody: nil
+            ),
+        ],
+        remainingQuota: 6,
+        resetAt: cal.date(bySettingHour: 0, minute: 0, second: 0, of: cal.date(byAdding: .day, value: 1, to: .now)!)!
+    )
+
+    // MARK: - Coach Marks
+
+    static let coachMarks: [CoachMark] = [
+        // Focus tab (0)
+        CoachMark(id: "focus_overview", title: "Your Focus Dashboard", body: "This is your home base. See active modes, balloons, and today's schedule at a glance.", pointingDirection: .down, tabIndex: 0),
+        CoachMark(id: "focus_ai", title: "AI Assistant", body: "Tap the sparkle button to get AI-powered suggestions for your directives.", pointingDirection: .down, tabIndex: 0),
+        CoachMark(id: "focus_balloons", title: "Balloon Timers", body: "Balloons deflate over time. Tap to pump them up when you complete the habit.", pointingDirection: .up, tabIndex: 0),
+
+        // Notes tab (1)
+        CoachMark(id: "notes_overview", title: "Notes, Modes & Frameworks", body: "All your personal guidelines live here. Use the toolbar for directives, balloons, and situations.", pointingDirection: .down, tabIndex: 1),
+
+        // Playbooks tab (2)
+        CoachMark(id: "playbooks_overview", title: "Playbooks", body: "Group related notes into themed collections for different areas of your life.", pointingDirection: .down, tabIndex: 2),
+
+        // Diary tab (3)
+        CoachMark(id: "diary_overview", title: "Daily Diary", body: "Rate your day, tag it, and write a reflection. Build the habit of tracking.", pointingDirection: .down, tabIndex: 3),
+        CoachMark(id: "diary_history", title: "History & Calendar", body: "Use the toolbar to see monthly summaries and a calendar heat map of your progress.", pointingDirection: .up, tabIndex: 3),
+
+        // Settings tab (4)
+        CoachMark(id: "settings_overview", title: "Settings & Profile", body: "Manage your account, subscription, friends, and replay this tour anytime.", pointingDirection: .down, tabIndex: 4),
+    ]
 }

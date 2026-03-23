@@ -9,12 +9,14 @@ nonisolated private enum SyncDebugItem: Hashable, Sendable {
 
 class SyncDebugViewController: BaseViewController {
 
+    var syncEngine: SyncEngine?
+
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<SyncDebugSection, SyncDebugItem>!
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        navigationItem.title = "Sync Debug"
+        navBar.setTitle("Sync Debug", animated: false)
 
         configureCollectionView()
         configureDataSource()
@@ -35,7 +37,7 @@ class SyncDebugViewController: BaseViewController {
         view.addSubview(collectionView)
 
         NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            collectionView.topAnchor.constraint(equalTo: contentTopAnchor),
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -75,18 +77,26 @@ class SyncDebugViewController: BaseViewController {
     // MARK: - Load Data
 
     private func loadData() {
-        var snapshot = NSDiffableDataSourceSnapshot<SyncDebugSection, SyncDebugItem>()
-        snapshot.appendSections([.main])
-        snapshot.appendItems([
-            .stat("Last Push", "2 minutes ago"),
-            .stat("Last Pull", "5 minutes ago"),
-            .stat("Outbox Queue", "0 pending"),
-            .stat("Device ID", "iPhone-15-Pro"),
-            .stat("Sync Token", "abc123...def456"),
-            .stat("Schema Version", "v4"),
-            .action("Force Sync Now"),
-        ])
-        dataSource.apply(snapshot, animatingDifferences: false)
+        Task { @MainActor in
+            let info = try? await syncEngine?.debugInfo()
+            let fmt = DateFormatter()
+            fmt.dateStyle = .short
+            fmt.timeStyle = .medium
+
+            var snapshot = NSDiffableDataSourceSnapshot<SyncDebugSection, SyncDebugItem>()
+            snapshot.appendSections([.main])
+            snapshot.appendItems([
+                .stat("Outbox Queue", "\(info?.outboxCount ?? 0) pending"),
+                .stat("Last Push", info?.lastPushAt.map { fmt.string(from: $0) } ?? "Never"),
+                .stat("Last Pull", info?.lastPullAt.map { fmt.string(from: $0) } ?? "Never"),
+                .stat("Sync Token", info?.lastSyncToken.map { String($0.prefix(16)) + "…" } ?? "None"),
+                .stat("Device ID", String((info?.deviceId ?? "Unknown").prefix(20))),
+                .stat("Last Error", info?.lastError ?? "None"),
+                .stat("Schema Version", "v4"),
+                .action("Force Sync Now"),
+            ])
+            await dataSource.apply(snapshot, animatingDifferences: false)
+        }
     }
 }
 
@@ -97,10 +107,16 @@ extension SyncDebugViewController: UICollectionViewDelegate {
         collectionView.deselectItem(at: indexPath, animated: true)
         guard let item = dataSource.itemIdentifier(for: indexPath) else { return }
         if case .action = item {
-            // Placeholder: would trigger sync
-            let alert = UIAlertController(title: "Sync", message: "Force sync triggered (dummy)", preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "OK", style: .default))
-            present(alert, animated: true)
+            Task {
+                do {
+                    try await syncEngine?.sync()
+                    loadData()  // Refresh after sync
+                } catch {
+                    let alert = UIAlertController(title: "Sync Failed", message: "\(error)", preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    present(alert, animated: true)
+                }
+            }
         }
     }
 }

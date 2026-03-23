@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		2FF00F392F625A4D0066EC8D /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 2FF00F382F625A4D0066EC8D /* GRDB */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		2FED5D7D2F621E2700C4DFF4 /* Prototype Me.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Prototype Me.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -36,6 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2FF00F392F625A4D0066EC8D /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +83,7 @@
 			);
 			name = "Prototype Me";
 			packageProductDependencies = (
+				2FF00F382F625A4D0066EC8D /* GRDB */,
 			);
 			productName = "Prototype Me";
 			productReference = 2FED5D7D2F621E2700C4DFF4 /* Prototype Me.app */;
@@ -107,6 +113,9 @@
 			);
 			mainGroup = 2FED5D742F621E2700C4DFF4;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				2FF00F372F625A4D0066EC8D /* XCRemoteSwiftPackageReference "GRDB" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2FED5D7E2F621E2700C4DFF4 /* Products */;
 			projectDirPath = "";
@@ -345,6 +354,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		2FF00F372F625A4D0066EC8D /* XCRemoteSwiftPackageReference "GRDB" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		2FF00F382F625A4D0066EC8D /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2FF00F372F625A4D0066EC8D /* XCRemoteSwiftPackageReference "GRDB" */;
+			productName = GRDB;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 2FED5D752F621E2700C4DFF4 /* Project object */;
 }

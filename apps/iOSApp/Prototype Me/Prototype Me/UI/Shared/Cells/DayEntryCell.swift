@@ -1,7 +1,7 @@
 import UIKit
 
 /// Collection view cell for diary / day-entry list rows.
-final class DayEntryCell: UICollectionViewCell {
+final class DayEntryCell: InteractiveCell {
 
     static let reuseID = "DayEntryCell"
 

@@ -32,7 +32,9 @@ nonisolated struct DirectiveRowData: Hashable, Sendable {
 
 /// All data needed to render the Focus screen.
 nonisolated struct FocusSnapshot: Sendable {
-    let activeModes: [NotePage]                    // 1–3 mode notes
+    let allModes: [NotePage]                       // All mode notes for the carousel
+    let activeModeId: UUID?                        // Currently active mode (nil = no mode)
+    let modeDirectives: [DirectiveRowData]         // Linked directives for the active mode
     let urgentBalloons: [DirectiveRowData]         // Sorted by remaining time asc
     let todaySchedule: [ScheduleInstanceRow]       // Today's pending items
 }
@@ -64,6 +66,44 @@ nonisolated struct DayEntrySummary: Hashable, Sendable {
     }
 }
 
+// MARK: - ModeDetailData
+
+/// All data needed to render a Mode detail screen.
+nonisolated struct ModeDetailData: Sendable {
+    let note: NotePage
+    let isActive: Bool
+    let linkedDirectives: [DirectiveRowData]
+}
+
+// MARK: - HistoryMonthSummary
+
+/// Aggregated diary data for a single month.
+nonisolated struct HistoryMonthSummary: Hashable, Sendable {
+    let month: String             // yyyy-MM
+    let entryCount: Int
+    let averageRating: Double?
+    let bestDay: DayEntry?
+    let worstDay: DayEntry?
+    let topTags: [String]         // Most frequently used tags
+
+    func hash(into hasher: inout Hasher) { hasher.combine(month) }
+    static func == (lhs: HistoryMonthSummary, rhs: HistoryMonthSummary) -> Bool {
+        lhs.month == rhs.month
+    }
+}
+
+// MARK: - SeedPlanCard
+
+enum SeedCardType: String, Codable, Sendable { case directive, folder }
+
+/// View data for onboarding seed plan cards.
+nonisolated struct SeedPlanCard: Hashable, Codable, Sendable {
+    let id: UUID
+    let type: SeedCardType
+    let title: String
+    let body: String
+}
+
 // MARK: - PlaybookListItem
 
 /// Composed view data for playbook (folder) list rows.
@@ -76,4 +116,111 @@ nonisolated struct PlaybookListItem: Hashable, Sendable {
     static func == (lhs: PlaybookListItem, rhs: PlaybookListItem) -> Bool {
         lhs.folder.id == rhs.folder.id
     }
+}
+
+// MARK: - SubscriptionInfo
+
+/// View data for the subscription/paywall screens.
+nonisolated struct SubscriptionInfo: Hashable, Codable, Sendable {
+    let plan: SubscriptionPlan
+    let expiresAt: Date?
+    let isTrialActive: Bool
+    let trialDaysRemaining: Int?
+}
+
+// MARK: - UsageQuota
+
+/// View data for the AI usage / limit screen.
+nonisolated struct UsageQuota: Hashable, Codable, Sendable {
+    let dailyLimit: Int
+    let dailyUsed: Int
+    let resetAt: Date
+
+    var remaining: Int { max(0, dailyLimit - dailyUsed) }
+    var usageRatio: Double {
+        guard dailyLimit > 0 else { return 0 }
+        return Double(dailyUsed) / Double(dailyLimit)
+    }
+}
+
+// MARK: - UserProfile
+
+/// View data for the profile screen (self or friend).
+nonisolated struct UserProfile: Hashable, Codable, Sendable {
+    let id: UUID
+    let displayName: String
+    let bio: String?
+    let avatarSystemImage: String   // SF Symbol for now; URL later
+    let moodChips: [String]
+    let joinedAt: Date
+    let plan: SubscriptionPlan
+
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    static func == (lhs: UserProfile, rhs: UserProfile) -> Bool { lhs.id == rhs.id }
+}
+
+// MARK: - FriendItem
+
+/// View data for a row in the friends list.
+nonisolated struct FriendItem: Hashable, Codable, Sendable {
+    let id: UUID
+    let displayName: String
+    let avatarSystemImage: String
+    let status: FriendRequestStatus
+    let since: Date?                // nil for pending requests
+
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    static func == (lhs: FriendItem, rhs: FriendItem) -> Bool { lhs.id == rhs.id }
+}
+
+// MARK: - PaywallFeature
+
+/// A feature row displayed on the paywall comparison.
+nonisolated struct PaywallFeature: Hashable, Sendable {
+    let title: String
+    let freeValue: String
+    let proValue: String
+}
+
+// MARK: - CoachMark
+
+/// Describes a single coach mark tooltip.
+nonisolated struct CoachMark: Hashable, Sendable {
+    let id: String
+    let title: String
+    let body: String
+    let pointingDirection: CoachMarkDirection
+    let tabIndex: Int  // 0=Focus, 1=Notes, 2=Playbooks, 3=Diary, 4=Settings
+}
+
+nonisolated enum CoachMarkDirection: String, Hashable, Sendable {
+    case up, down, left, right
+}
+
+// MARK: - AiChip
+
+/// A single AI suggestion chip.
+nonisolated struct AiChip: Hashable, Codable, Sendable {
+    let id: UUID
+    let action: ChipAction
+    let title: String           // e.g. "Add a morning walk"
+    let subtitle: String        // e.g. "Based on your low energy diary entries"
+    let destination: String     // Human-readable target: "Directives", "Notes", etc.
+    var status: ChipStatus
+
+    // Pre-filled fields for the confirm screen
+    let prefillTitle: String?
+    let prefillBody: String?
+
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    static func == (lhs: AiChip, rhs: AiChip) -> Bool { lhs.id == rhs.id }
+}
+
+// MARK: - AiDraft
+
+/// API response containing a batch of AI chip suggestions + updated quota.
+nonisolated struct AiDraft: Codable, Sendable {
+    let chips: [AiChip]
+    let remainingQuota: Int
+    let resetAt: Date
 }

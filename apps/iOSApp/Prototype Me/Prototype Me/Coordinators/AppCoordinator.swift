@@ -15,16 +15,43 @@ class AppCoordinator: Coordinator {
     }
 
     func start() {
+        let hasCompleted = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+
+        if hasCompleted {
+            showMainApp(animated: false)
+        } else {
+            showOnboarding()
+        }
+    }
+
+    // MARK: - Onboarding
+
+    private func showOnboarding() {
+        let onboardingCoordinator = OnboardingCoordinator(window: window, environment: environment)
+        onboardingCoordinator.onComplete = { [weak self] in
+            guard let self else { return }
+            self.removeChild(onboardingCoordinator)
+            self.showMainApp(animated: true)
+        }
+        addChild(onboardingCoordinator)
+        onboardingCoordinator.start()
+    }
+
+    // MARK: - Main App
+
+    private func showMainApp(animated: Bool) {
         let focusCoordinator = FocusCoordinator(environment: environment)
         let notesCoordinator = NotesCoordinator(environment: environment)
-        let playbooksCoordinator = PlaybooksCoordinator(environment: environment)
         let diaryCoordinator = DiaryCoordinator(environment: environment)
         let settingsCoordinator = SettingsCoordinator(environment: environment)
+
+        settingsCoordinator.onReplayTourRequested = { [weak self] in
+            self?.startGuidedTour()
+        }
 
         let coordinators: [Coordinator] = [
             focusCoordinator,
             notesCoordinator,
-            playbooksCoordinator,
             diaryCoordinator,
             settingsCoordinator
         ]
@@ -37,13 +64,81 @@ class AppCoordinator: Coordinator {
         tabBarController.viewControllers = [
             focusCoordinator.navigationController,
             notesCoordinator.navigationController,
-            playbooksCoordinator.navigationController,
             diaryCoordinator.navigationController,
             settingsCoordinator.navigationController
         ]
 
         tabBarController.selectedIndex = 0
 
-        window.rootViewController = tabBarController
+        if animated {
+            UIView.transition(with: window, duration: 0.5, options: .transitionCrossDissolve) {
+                self.window.rootViewController = self.tabBarController
+            }
+        } else {
+            window.rootViewController = tabBarController
+        }
+    }
+
+    // MARK: - Guided Tour
+
+    private func startGuidedTour() {
+        // Dismiss any presented modal first
+        if let presented = tabBarController.presentedViewController {
+            presented.dismiss(animated: false) { [weak self] in
+                self?.runTour()
+            }
+        } else {
+            runTour()
+        }
+    }
+
+    private func runTour() {
+        let steps = SampleData.coachMarks
+        guard !steps.isEmpty else { return }
+
+        // Pop all tabs to root
+        for vc in tabBarController.viewControllers ?? [] {
+            (vc as? UINavigationController)?.popToRootViewController(animated: false)
+        }
+
+        // Switch to first tab
+        tabBarController.selectedIndex = steps[0].tabIndex
+
+        var currentIndex = 0
+
+        func showStep(at index: Int) {
+            guard index < steps.count else { return }
+            let step = steps[index]
+            let currentTab = tabBarController.selectedIndex
+
+            if step.tabIndex != currentTab {
+                tabBarController.selectedIndex = step.tabIndex
+                // Brief delay for the tab's view to layout
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    presentOverlay(for: step, index: index)
+                }
+            } else {
+                presentOverlay(for: step, index: index)
+            }
+        }
+
+        func presentOverlay(for step: CoachMark, index: Int) {
+            let overlay = CoachMarkOverlayView()
+            overlay.configure(mark: step, step: index + 1, of: steps.count)
+            overlay.onNext = {
+                overlay.dismissAnimated {
+                    currentIndex += 1
+                    if currentIndex < steps.count {
+                        showStep(at: currentIndex)
+                    }
+                }
+            }
+            overlay.onDismiss = {
+                overlay.dismissAnimated()
+            }
+            overlay.showAnimated(in: self.window)
+        }
+
+        showStep(at: 0)
     }
 }

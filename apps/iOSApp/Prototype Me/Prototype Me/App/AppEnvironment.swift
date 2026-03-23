@@ -1,17 +1,54 @@
 import UIKit
+import GRDB
 
-/// Dependency container for the app. Real services (GRDB, APIClient, SyncEngine, etc.)
-/// will be added here later. For the UI shell, this is a passthrough stub.
+/// Dependency container for the app.
 struct AppEnvironment {
-    // Future:
-    // let database: DatabaseManager
-    // let apiClient: APIClient
-    // let syncEngine: SyncEngine
-    // let reachability: ReachabilityMonitor
-    // let notificationScheduler: NotificationScheduler
-    // let deepLinkRouter: DeepLinkRouter
+    let db: DatabaseManager
 
-    static func stub() -> AppEnvironment {
-        return AppEnvironment()
+    // Services
+    let noteService: NoteService
+    let directiveService: DirectiveService
+    let folderService: FolderService
+    let dayEntryService: DayEntryService
+    let scheduleService: ScheduleService
+    let modeService: ModeService
+    let tagService: TagService
+
+    // Networking + Sync
+    let apiClient: APIClient
+    let syncEngine: SyncEngine
+    let reachability: ReachabilityMonitor
+
+    // Future:
+    // let notificationScheduler: NotificationScheduler
+
+    /// Production environment backed by an on-disk SQLite database.
+    static func live() throws -> AppEnvironment {
+        let db = try DatabaseManager()
+        return AppEnvironment(db: db)
+    }
+
+    /// In-memory environment for previews / tests.
+    static func inMemory() throws -> AppEnvironment {
+        let db = try DatabaseManager(inMemory: true)
+        return AppEnvironment(db: db)
+    }
+
+    private init(db: DatabaseManager) {
+        self.db = db
+
+        // Services
+        self.noteService = NoteService(db: db)
+        self.directiveService = DirectiveService(db: db)
+        self.folderService = FolderService(db: db)
+        self.dayEntryService = DayEntryService(db: db)
+        self.scheduleService = ScheduleService(db: db)
+        self.modeService = ModeService(db: db)
+        self.tagService = TagService(db: db)
+
+        // Networking + Sync
+        self.apiClient = APIClient()
+        self.reachability = ReachabilityMonitor()
+        self.syncEngine = SyncEngine(db: db, api: apiClient, reachability: reachability)
     }
 }

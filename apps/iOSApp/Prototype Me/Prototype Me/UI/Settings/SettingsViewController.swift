@@ -17,14 +17,19 @@ nonisolated private enum SettingsItem: Hashable, Sendable {
 class SettingsViewController: BaseViewController {
 
     var onSyncDebugTapped: (() -> Void)?
+    var onProfileTapped: (() -> Void)?
+    var onSubscriptionTapped: (() -> Void)?
+    var onUsageTapped: (() -> Void)?
+    var onFriendsTapped: (() -> Void)?
+    var onReplayTourTapped: (() -> Void)?
+    var onLegalTapped: ((String) -> Void)?    // passes "Terms of Service" or "Privacy Policy"
 
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<SettingsSection, SettingsItem>!
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        navigationItem.title = "Settings"
-        navigationController?.navigationBar.prefersLargeTitles = true
+        navBar.setTitle("Settings", animated: false)
 
         configureCollectionView()
         configureDataSource()
@@ -42,11 +47,12 @@ class SettingsViewController: BaseViewController {
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collectionView.backgroundColor = .clear
         collectionView.delegate = self
+        collectionView.contentInset.top = DesignTokens.Spacing.xl
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(collectionView)
 
         NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            collectionView.topAnchor.constraint(equalTo: contentTopAnchor),
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -56,7 +62,7 @@ class SettingsViewController: BaseViewController {
     // MARK: - Data Source
 
     private func configureDataSource() {
-        let cellRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, SettingsItem> { cell, indexPath, item in
+        let cellRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, SettingsItem> { [weak self] cell, indexPath, item in
             var content = UIListContentConfiguration.cell()
             content.textProperties.color = DesignTokens.Colors.textPrimary
 
@@ -83,10 +89,18 @@ class SettingsViewController: BaseViewController {
             cell.backgroundConfiguration = bg
 
             // Add toggle for toggle items
-            if case .toggle(_, let isOn) = item {
+            if case .toggle(let title, let isOn) = item {
                 let toggle = UISwitch()
                 toggle.isOn = isOn
                 toggle.onTintColor = DesignTokens.Colors.accent
+                toggle.addTarget(self, action: #selector(self?.settingsToggleChanged(_:)), for: .valueChanged)
+                // Tag toggles by title for identification
+                switch title {
+                case "Dark Mode": toggle.tag = 1
+                case "Haptic Feedback": toggle.tag = 2
+                case "Balloon Notifications": toggle.tag = 3
+                default: break
+                }
                 cell.accessories = [.customView(configuration: .init(customView: toggle, placement: .trailing()))]
             }
         }
@@ -118,13 +132,17 @@ class SettingsViewController: BaseViewController {
         var snapshot = NSDiffableDataSourceSnapshot<SettingsSection, SettingsItem>()
 
         snapshot.appendSections([.account])
-        snapshot.appendItems([.account("Tyler Morrow")], toSection: .account)
+        snapshot.appendItems([
+            .account("Tyler Morrow"),
+            .navigation("Subscription"),
+            .navigation("AI Usage"),
+            .navigation("Friends"),
+        ], toSection: .account)
 
         snapshot.appendSections([.preferences])
         snapshot.appendItems([
-            .toggle("Dark Mode", true),
-            .toggle("Haptic Feedback", true),
-            .toggle("Balloon Notifications", true),
+            .toggle("Haptic Feedback", Haptics.isEnabled),
+            .navigation("Replay Tour"),
         ], toSection: .preferences)
 
         snapshot.appendSections([.data])
@@ -136,6 +154,8 @@ class SettingsViewController: BaseViewController {
         snapshot.appendItems([
             .info("Version", "0.1.0"),
             .info("Build", "1"),
+            .navigation("Terms of Service"),
+            .navigation("Privacy Policy"),
         ], toSection: .about)
 
         dataSource.apply(snapshot, animatingDifferences: false)
@@ -148,8 +168,40 @@ extension SettingsViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         collectionView.deselectItem(at: indexPath, animated: true)
         guard let item = dataSource.itemIdentifier(for: indexPath) else { return }
-        if case .navigation("Sync Debug") = item {
-            onSyncDebugTapped?()
+
+        switch item {
+        case .account:
+            onProfileTapped?()
+        case .navigation(let title):
+            switch title {
+            case "Sync Debug":    onSyncDebugTapped?()
+            case "Subscription":  onSubscriptionTapped?()
+            case "AI Usage":      onUsageTapped?()
+            case "Friends":       onFriendsTapped?()
+            case "Replay Tour":       onReplayTourTapped?()
+            case "Terms of Service":  onLegalTapped?("Terms of Service")
+            case "Privacy Policy":    onLegalTapped?("Privacy Policy")
+            default: break
+            }
+        default:
+            break
+        }
+    }
+}
+
+// MARK: - Toggle Handlers
+
+extension SettingsViewController {
+    @objc func settingsToggleChanged(_ sender: UISwitch) {
+        switch sender.tag {
+        case 1: // Dark Mode
+            UserDefaults.standard.set(sender.isOn, forKey: "darkModeEnabled")
+            let style: UIUserInterfaceStyle = sender.isOn ? .dark : .light
+            view.window?.overrideUserInterfaceStyle = style
+        case 2: // Haptic Feedback
+            Haptics.isEnabled = sender.isOn
+        default:
+            break
         }
     }
 }

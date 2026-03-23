@@ -1,15 +1,72 @@
 import UIKit
+import GRDB
 
 /// Lightweight base for all view controllers in the app.
-/// Provides dark-theme background and placeholder helpers for the UI shell.
+/// Provides dark-theme background, DB access, observation lifecycle, and custom nav bar.
 class BaseViewController: UIViewController {
 
-    // Future: var observationTokens: [DatabaseCancellable] = []
-    // Future: var activeTasks: [Task<Void, Never>] = []
+    /// Set by the coordinator before presenting. Provides database access.
+    var dbQueue: DatabaseQueue!
+
+    /// Active GRDB observation cancellables — cancelled automatically on deinit.
+    var observationCancellable: AnyDatabaseCancellable?
+
+    /// Custom navigation bar — use instead of `navigationItem`.
+    let navBar = AppNavBar()
+
+    /// When true, nav bar is removed and content starts at the top of the view.
+    var hidesNavBar = false
+
+    /// Anchor subclass content to this instead of `view.safeAreaLayoutGuide.topAnchor`.
+    var contentTopAnchor: NSLayoutYAxisAnchor {
+        hidesNavBar ? view.topAnchor : navBar.bottomAnchor
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = DesignTokens.Colors.background
+        installNavBar()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(true, animated: animated)
+        guard !hidesNavBar else { return }
+        let shouldShowBack = (navigationController?.viewControllers.count ?? 0) > 1
+        navBar.setShowsBackButton(shouldShowBack)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // When the system nav bar is hidden, its gesture recognizer delegate
+        // blocks the swipe-back gesture. Clearing the delegate fixes this.
+        // Only enable on non-root VCs to avoid a frozen UI state.
+        if let nav = navigationController {
+            let isPushed = nav.viewControllers.count > 1
+            nav.interactivePopGestureRecognizer?.isEnabled = isPushed
+            nav.interactivePopGestureRecognizer?.delegate = nil
+        }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if !hidesNavBar { view.bringSubviewToFront(navBar) }
+    }
+
+    private func installNavBar() {
+        guard !hidesNavBar else { return }
+        navBar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(navBar)
+
+        NSLayoutConstraint.activate([
+            navBar.topAnchor.constraint(equalTo: view.topAnchor),
+            navBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            navBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+
+        navBar.onBackTapped = { [weak self] in
+            self?.navigationController?.popViewController(animated: true)
+        }
     }
 
     // MARK: - Placeholder Helpers

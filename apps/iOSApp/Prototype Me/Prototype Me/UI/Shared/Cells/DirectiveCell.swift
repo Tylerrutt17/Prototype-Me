@@ -1,14 +1,13 @@
 import UIKit
 
 /// Collection view cell for displaying a Directive in list views.
-final class DirectiveCell: UICollectionViewCell {
+final class DirectiveCell: InteractiveCell {
 
     static let reuseID = "DirectiveCell"
 
-    private let statusBadge = StatusBadgeView()
+    private let pressureIndicator = PressureIndicator()
     private let titleLabel = UILabel()
     private let bodyLabel = UILabel()
-    private let pressureIndicator = PressureIndicator()
     private let scheduleIcon = UIImageView()
     private let chevron = UIImageView()
 
@@ -27,9 +26,12 @@ final class DirectiveCell: UICollectionViewCell {
         contentView.layer.cornerRadius = DesignTokens.Radii.md
         contentView.clipsToBounds = true
 
+        pressureIndicator.size = 10
+
         titleLabel.font = DesignTokens.Typography.headline
         titleLabel.textColor = DesignTokens.Colors.textPrimary
         titleLabel.numberOfLines = 1
+        titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         bodyLabel.font = DesignTokens.Typography.caption1
         bodyLabel.textColor = DesignTokens.Colors.textSecondary
@@ -44,21 +46,21 @@ final class DirectiveCell: UICollectionViewCell {
         chevron.contentMode = .scaleAspectFit
         chevron.setContentHuggingPriority(.required, for: .horizontal)
 
-        // Top row: statusBadge + pressureIndicator + scheduleIcon + chevron
-        let topRow = UIStackView(arrangedSubviews: [statusBadge, pressureIndicator, UIView(), scheduleIcon, chevron])
-        topRow.axis = .horizontal
-        topRow.spacing = DesignTokens.Spacing.sm
-        topRow.alignment = .center
+        // Title row: [pressure dot] title [schedule icon] chevron
+        let titleRow = UIStackView(arrangedSubviews: [pressureIndicator, titleLabel, scheduleIcon, chevron])
+        titleRow.axis = .horizontal
+        titleRow.spacing = DesignTokens.Spacing.sm
+        titleRow.alignment = .center
 
-        let stack = UIStackView(arrangedSubviews: [topRow, titleLabel, bodyLabel])
+        let stack = UIStackView(arrangedSubviews: [titleRow, bodyLabel])
         stack.axis = .vertical
         stack.spacing = DesignTokens.Spacing.xs
         stack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            pressureIndicator.widthAnchor.constraint(equalToConstant: 12),
-            pressureIndicator.heightAnchor.constraint(equalToConstant: 12),
+            pressureIndicator.widthAnchor.constraint(equalToConstant: 10),
+            pressureIndicator.heightAnchor.constraint(equalToConstant: 10),
             scheduleIcon.widthAnchor.constraint(equalToConstant: 16),
             scheduleIcon.heightAnchor.constraint(equalToConstant: 16),
             chevron.widthAnchor.constraint(equalToConstant: 12),
@@ -70,7 +72,6 @@ final class DirectiveCell: UICollectionViewCell {
     }
 
     func configure(with data: DirectiveRowData) {
-        statusBadge.configure(status: data.directive.status)
         titleLabel.text = data.directive.title
         bodyLabel.text = data.directive.body
         bodyLabel.isHidden = data.directive.body == nil

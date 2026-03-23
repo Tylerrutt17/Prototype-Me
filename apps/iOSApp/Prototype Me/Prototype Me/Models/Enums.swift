@@ -1,4 +1,4 @@
-import Foundation
+import UIKit
 
 // MARK: - Note Kind
 
@@ -7,23 +7,32 @@ nonisolated enum NoteKind: String, Hashable, Codable, CaseIterable, Sendable {
     case regular
     case mode        // Operating‑mode instructions shown on Focus tab
     case framework   // Personal constitution (one per user)
-}
+    case situation   // Contextual scenario with linked directives
 
-// MARK: - Tier
+    var color: UIColor {
+        switch self {
+        case .regular:   UIColor(red: 0.35, green: 0.55, blue: 0.95, alpha: 1.0)  // Blue
+        case .mode:      UIColor(red: 0.65, green: 0.40, blue: 0.95, alpha: 1.0)  // Purple
+        case .framework: UIColor(red: 0.95, green: 0.65, blue: 0.20, alpha: 1.0)  // Gold
+        case .situation: UIColor(red: 0.30, green: 0.80, blue: 0.65, alpha: 1.0)  // Teal
+        }
+    }
 
-/// Priority tier that controls how a note or directive surfaces.
-nonisolated enum Tier: String, Hashable, Codable, CaseIterable, Sendable {
-    case foundation  // Passive, always‑on habits
-    case support     // Supporting routines
-    case active      // Situational, effortful
+    var iconName: String {
+        switch self {
+        case .regular:   "doc.text"
+        case .mode:      "bolt.fill"
+        case .framework: "star.fill"
+        case .situation: "cloud.sun.fill"
+        }
+    }
 }
 
 // MARK: - Directive Status
 
 nonisolated enum DirectiveStatus: String, Hashable, Codable, CaseIterable, Sendable {
     case active
-    case maintained  // Collapsed / hidden from primary views
-    case retired
+    case archived    // Hidden from Focus/balloons, kept for history
 }
 
 // MARK: - Pressure Level (Balloon)
@@ -71,4 +80,39 @@ nonisolated enum DirectiveHistoryAction: String, Hashable, Codable, CaseIterable
     case balloonPump = "balloon_pump"
     case shrink
     case split
+}
+
+// MARK: - Subscription Plan
+
+nonisolated enum SubscriptionPlan: String, Hashable, Codable, Sendable {
+    case free
+    case pro
+}
+
+// MARK: - Friend Request Status
+
+nonisolated enum FriendRequestStatus: String, Hashable, Codable, Sendable {
+    case pending
+    case accepted
+    case declined
+}
+
+// MARK: - AI Chip Action
+
+/// The kind of mutation an AI chip suggests.
+nonisolated enum ChipAction: String, Hashable, Codable, Sendable {
+    case createDirective
+    case updateDirective
+    case createNote
+    case activateMode
+    case addSchedule
+}
+
+// MARK: - Chip Status
+
+/// Lifecycle of a single AI chip suggestion.
+nonisolated enum ChipStatus: String, Hashable, Codable, Sendable {
+    case suggested     // Freshly returned from the API
+    case accepted      // User tapped and confirmed
+    case dismissed     // User dismissed the panel without accepting
 }

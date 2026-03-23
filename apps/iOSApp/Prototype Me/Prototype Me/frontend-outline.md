@@ -308,14 +308,11 @@ Sync pull arrives
 
 ---
 
-### 12) Modes + tiers
+### 12) Modes
 
 * **Mode** = `NotePage` with `kind = 'mode'`. Contains a short description + linked directives (some marked `micro`).
 * **Framework note** = `NotePage` with `kind = 'framework'`. One allowed at a time; pinned to top of Notes list with confirm-before-edit protection.
 * **Active Modes selection**: user picks 1–3 modes as "active" (stored as a lightweight local setting or metadata flag). Capped at 3 unless user changes a setting.
-* **Tier** (`foundation` / `support` / `active`): displayed as a subtle label or accent color on notes and directives.
-  * **Filtering**: Notes list and Focus panel can filter by tier (e.g., "show only Foundation + Support" for low-energy days).
-  * **Sorting**: tier is a primary sort key (Foundation → Support → Active) with `sortIndex` as secondary.
 * **Mode detail screen**: shows mode description, linked directives (with inline status/balloon indicators), linked situations, and a "Troubleshoot" button.
 
 ---
@@ -484,7 +481,7 @@ Sync pull arrives
 |------|-------------|--------|------|
 | 8 | Model structs: Enums.swift, CoreModels.swift, ViewData.swift (nonisolated + Sendable for diffable data sources) | Done | 2026-03-11 |
 | 9 | SampleData.swift — realistic dummy data (3 folders, 8 notes, 15 directives, 10 diary entries, schedule rules/instances, tags, history) | Done | 2026-03-11 |
-| 10 | Shared views: StatusBadgeView, PressureIndicator, TierLabel, RatingCircleView | Done | 2026-03-11 |
+| 10 | Shared views: StatusBadgeView, PressureIndicator, RatingCircleView | Done | 2026-03-11 |
 | 11 | Shared cells: NoteCell, DirectiveCell, BalloonCard, DayEntryCell, ScheduleInstanceRowCell | Done | 2026-03-11 |
 | 12 | List screens rewritten: NoteList, DirectiveList (with segmented filter), Diary, PlaybookList (with PlaybookCell), Balloons (2-col grid) — all UICollectionView + compositional layout + diffable data source | Done | 2026-03-11 |
 | 13 | Detail screens rewritten: NoteDetail (header + linked directives), DirectiveDetail (header + balloon + schedule + history), PlaybookDetail (header + notes), Calendar (7-col grid with rating circles) | Done | 2026-03-11 |
@@ -494,9 +491,233 @@ Sync pull arrives
 | 17 | SectionHeaderView reusable supplementary view for multi-section screens | Done | 2026-03-11 |
 | 18 | Build verification — 0 errors, 0 warnings | Done | 2026-03-11 |
 
-**Later (after UI is solid):**
-- GRDB integration (DatabaseManager, migrations, Record conformance)
-- Service layer (NoteService, DirectiveService, etc.)
-- Wire ValueObservation into screens (replace SampleData calls)
-- OpenAPI codegen + networking
-- Sync engine
+**GRDB Persistence (completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 19 | GRDB package added via SPM (v7.x, static linking) | Done | 2026-03-11 |
+| 20 | DatabaseManager — SQLite in Application Support, forward-only migrations for all 9 tables | Done | 2026-03-11 |
+| 21 | CoreModels updated: FetchableRecord + PersistableRecord conformances, GRDB associations, custom JSON encoding for DayEntry.tags and ScheduleRule.params | Done | 2026-03-11 |
+| 22 | AppEnvironment updated: holds DatabaseManager, live() and inMemory() factory methods | Done | 2026-03-11 |
+| 23 | DatabaseSeeder — seeds sample data on first launch (no-op if DB already has data) | Done | 2026-03-11 |
+| 24 | All coordinators pass dbQueue to view controllers | Done | 2026-03-11 |
+| 25 | All 10 VCs use ValueObservation — screens auto-update when DB changes | Done | 2026-03-11 |
+| 26 | Build verification — 0 errors, 0 warnings | Done | 2026-03-11 |
+
+**Create/Edit Flows (completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 27 | Form controls: FormTextField, FormTextView, FormSegmentedRow, FormToggleRow | Done | 2026-03-11 |
+| 28 | AppNavBar: custom nav bar with back button, left/right buttons, animated title | Done | 2026-03-11 |
+| 29 | Editor VCs: NoteEditorViewController, DirectiveEditorViewController, DayEntryEditorViewController, PlaybookEditorViewController — all with GRDB read/write, create + edit modes | Done | 2026-03-11 |
+| 30 | Coordinators wired: all tab coordinators present editors modally (onAddTapped → create, onEditTapped → edit), dismiss on save | Done | 2026-03-11 |
+| 31 | List VCs: + button in nav bar triggers onAddTapped closure; swipe-to-delete with confirmation | Done | 2026-03-11 |
+| 32 | Detail VCs: pencil button in nav bar triggers onEditTapped closure | Done | 2026-03-11 |
+| 33 | BalloonNode + BalloonSkyView: full balloon visualization with pressure colors, floating animation, rise-from-ground entrance | Done | 2026-03-11 |
+| 34 | AppNavBar deprecation fix (contentEdgeInsets → UIButton.Configuration) | Done | 2026-03-16 |
+| 35 | DirectivePickerViewController — searchable picker to link directives to notes, writes NoteDirective join | Done | 2026-03-16 |
+| 36 | NoteDetail: "Link Directive" button cell at bottom of directives section + swipe-to-unlink | Done | 2026-03-16 |
+| 37 | All 3 coordinators (Notes, Playbooks, Focus) wired to present DirectivePicker from NoteDetail | Done | 2026-03-16 |
+| 38 | Build verification — 0 errors, 0 warnings | Done | 2026-03-16 |
+
+**Missing Core Screens (completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 39 | v2 DB migration: activeMode, situation, directiveSituation, noteSituation tables | Done | 2026-03-16 |
+| 40 | New models: ActiveMode, Situation, DirectiveSituation, NoteSituation + through-associations on NotePage and Directive | Done | 2026-03-16 |
+| 41 | View data structs: SituationListItem, ModeDetailData, HistoryMonthSummary | Done | 2026-03-16 |
+| 42 | Sample data: 4 situations, directive-situation joins, note-situation joins, 2 active modes + seeder | Done | 2026-03-16 |
+| 43 | SituationCell — shared cell for situation lists | Done | 2026-03-16 |
+| 44 | SituationListViewController — searchable list with swipe-to-delete, ValueObservation | Done | 2026-03-16 |
+| 45 | SituationDetailViewController — header + linked directives + linked notes sections | Done | 2026-03-16 |
+| 46 | SituationEditorViewController — create/edit form (title + body) | Done | 2026-03-16 |
+| 47 | SituationPickerViewController — searchable picker to link situations to directives or notes | Done | 2026-03-16 |
+| 48 | NoteListViewController: Situations nav bar button (cloud.sun icon) | Done | 2026-03-16 |
+| 49 | NotesCoordinator: full Situation routing (list → detail → editor) + SituationPicker | Done | 2026-03-16 |
+| 50 | ModeDetailViewController — active toggle, linked directives + situations with link buttons | Done | 2026-03-16 |
+| 51 | ActiveModePickerViewController — pick 1–3 active modes with checkmarks | Done | 2026-03-16 |
+| 52 | LinkButtonCell — reusable "Link X" button cell for detail screens | Done | 2026-03-16 |
+| 53 | FocusViewController: query updated to use activeMode join table; "Pick Modes" nav bar button | Done | 2026-03-16 |
+| 54 | FocusCoordinator: mode detail routing + ActiveModePicker + SituationPicker + SituationEditor | Done | 2026-03-16 |
+| 55 | NotesCoordinator + PlaybooksCoordinator: kind-check on note tap → ModeDetail for modes, NoteDetail for others | Done | 2026-03-16 |
+| 56 | HistoryViewController — monthly summaries with avg rating, best/worst days, top tags | Done | 2026-03-16 |
+| 57 | DiaryViewController: History nav bar button (chart.bar icon) | Done | 2026-03-16 |
+| 58 | DiaryCoordinator: History routing | Done | 2026-03-16 |
+| 59 | Build verification — 0 errors, 0 warnings | Done | 2026-03-16 |
+
+**Onboarding + AI Signup (completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 60 | AmbientParticleScene — SpriteKit scene with dual particle emitters (dust + slow orbs) | Done | 2026-03-17 |
+| 61 | GlassPanelView — glassmorphism: UIVisualEffectView + frosted border gradient + pulsing glow | Done | 2026-03-17 |
+| 62 | ThinkingAnimationView — 3-dot sequential pulse for AI thinking state | Done | 2026-03-17 |
+| 63 | SeedPlanCardView — card with accent bar, icon, title, body for onboarding seed items | Done | 2026-03-17 |
+| 64 | SeedPlanCard + SeedCardType data models + sample seed plan data | Done | 2026-03-17 |
+| 65 | IntroPageViewController — 4 swipeable value-prop slides with spring animations, page dots, Skip | Done | 2026-03-17 |
+| 66 | FocusConsoleViewController — SpriteKit particles + gradient sky + glass panel CTA + ambient drift | Done | 2026-03-17 |
+| 67 | AISignupChatViewController — text input → thinking animation → seed cards stack in with stagger | Done | 2026-03-17 |
+| 68 | SeedPlanReviewViewController — collection view of seed cards + bottom Confirm button | Done | 2026-03-17 |
+| 69 | WelcomeViewController — celebration particles (2x intensity) + checkmark spring-in + auto-dismiss | Done | 2026-03-17 |
+| 70 | OnboardingTransition — custom UIViewControllerAnimatedTransitioning (Crossfade, SlideUp, FlashBurst) | Done | 2026-03-17 |
+| 71 | OnboardingCoordinator — manages full Intro → Console → AI Chat → Review → Welcome flow | Done | 2026-03-17 |
+| 72 | AppCoordinator updated: gates on hasCompletedOnboarding, crossfade transition to main tab bar | Done | 2026-03-17 |
+| 73 | Build verification — 0 errors, 0 warnings | Done | 2026-03-17 |
+
+**Paywall, Subscription, Profile, Friends, Coach Marks (completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 74 | Enums: SubscriptionPlan, FriendRequestStatus | Done | 2026-03-17 |
+| 75 | View data: SubscriptionInfo, UsageQuota, UserProfile, FriendItem, PaywallFeature, CoachMark | Done | 2026-03-17 |
+| 76 | Sample data: subscription, usage quota, profile, 4 friends, 7 paywall features, 4 coach marks | Done | 2026-03-17 |
+| 77 | PaywallViewController — full-screen upgrade with crown hero, Free vs Pro comparison table, CTA, restore + legal links | Done | 2026-03-17 |
+| 78 | SubscriptionViewController — settings sub-screen with plan badge, trial/quota details, manage actions | Done | 2026-03-17 |
+| 79 | UsageLimitViewController — AI quota with big count, color-coded progress bar, reset time, 5-day history, upgrade prompt | Done | 2026-03-17 |
+| 80 | ProfileViewController — avatar, name, plan badge, bio card, mood chips, action rows; works for self + friend views | Done | 2026-03-17 |
+| 81 | FriendsListViewController — sectioned list (Pending Requests / Friends), swipe actions, empty state, add friend button | Done | 2026-03-17 |
+| 82 | CoachMarkOverlayView — reusable overlay with dim, tooltip card, step counter, Next/Skip, spring animations | Done | 2026-03-17 |
+| 83 | SettingsViewController: added Subscription, AI Usage, Friends, Replay Tour navigation items | Done | 2026-03-17 |
+| 84 | SettingsCoordinator: full routing — Profile, Subscription, Usage, Friends, Friend Profile, Paywall (modal), Coach Mark tour | Done | 2026-03-17 |
+| 85 | Build verification — 0 errors, 0 warnings | Done | 2026-03-17 |
+
+**AI Panel (completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 87 | Enums: ChipAction, ChipStatus | Done | 2026-03-17 |
+| 88 | View data: AiChip, AiDraft | Done | 2026-03-17 |
+| 89 | Sample data: 5 AI chips (create directive, update, activate mode, add schedule, create situation) + draft wrapper | Done | 2026-03-17 |
+| 90 | AIPanelViewController — bottom sheet with text input, thinking animation, chip card list, quota display, empty-quota upgrade prompt, stagger-in animations | Done | 2026-03-17 |
+| 91 | ChipConfirmViewController — pre-filled edit/confirm screen with action badge, title/body fields, Accept/Skip buttons | Done | 2026-03-17 |
+| 92 | FocusViewController: wired FAB sparkle button → onAITapped callback | Done | 2026-03-17 |
+| 93 | FocusCoordinator: presentAIPanel (medium/large sheet), presentChipConfirm, presentPaywall from AI panel | Done | 2026-03-17 |
+| 94 | Build verification — 0 errors | Done | 2026-03-17 |
+
+**Bug Fixes:**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 86 | IntroPageViewController: Get Started button pulse animation — added .allowUserInteraction so button is tappable during animation | Done | 2026-03-17 |
+
+**Service Layer (completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 95 | NoteService — CRUD, linkDirective/unlinkDirective, linkSituation/unlinkSituation, reorderDirectives, moveToFolder | Done | 2026-03-17 |
+| 96 | DirectiveService — CRUD, graduate/retire/reactivate, pumpBalloon/shrinkBalloon, snooze/unsnooze, auto history tracking | Done | 2026-03-17 |
+| 97 | FolderService — CRUD for playbooks | Done | 2026-03-17 |
+| 98 | DayEntryService — createOrUpdate (upsert by date), delete, fetch by id/date | Done | 2026-03-17 |
+| 99 | ScheduleService — createRule, deleteRule, markInstance, generateInstances (weekday/monthly rule matching) | Done | 2026-03-17 |
+| 100 | SituationService — CRUD, linkDirective/unlinkDirective, linkNote/unlinkNote | Done | 2026-03-17 |
+| 101 | ModeService — activate (enforces max 3), deactivate, deactivateAll, isActive | Done | 2026-03-17 |
+| 102 | TagService — CRUD, findOrCreate, fetchAll | Done | 2026-03-17 |
+| 103 | AppEnvironment: added all 8 services, private init wires them from DatabaseManager | Done | 2026-03-17 |
+| 104 | Build verification — 0 errors | Done | 2026-03-17 |
+
+**Networking + Sync Engine (completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 105 | GRDB migration v3: OutboxOp, Tombstone, SyncState, Device tables | Done | 2026-03-17 |
+| 106 | GRDB migration v4: added updatedByDeviceId to notePage, directive, dayEntry, situation | Done | 2026-03-17 |
+| 107 | CoreModels: OutboxOp, Tombstone, SyncState (with singleton pattern), Device record types | Done | 2026-03-17 |
+| 108 | ReachabilityMonitor — NWPathMonitor wrapper with Status struct, observer pattern, wifi/cellular/wired detection | Done | 2026-03-17 |
+| 109 | APIClient — URLSession wrapper with auth headers (Bearer + X-API-Version + X-Device-Id), 401 token refresh interceptor, GET/POST/DELETE, 3-tier timeouts (15s/30s/60s), device ID persistence | Done | 2026-03-17 |
+| 110 | SyncEngine — push/pull orchestration, outbox FIFO processing, enqueue/enqueueDelete helpers, pull pagination (200/page), version-based LWW conflict resolution, tombstone creation, auto-sync on connectivity change, DebugInfo for Sync Debug screen | Done | 2026-03-17 |
+| 111 | Sync API types: PushRequest, PushResponse, PullResponse with ChangeEvent | Done | 2026-03-17 |
+| 112 | AppEnvironment: added apiClient, syncEngine, reachability — all wired in private init | Done | 2026-03-17 |
+| 113 | Build verification — 0 errors | Done | 2026-03-17 |
+
+**Service Wiring + SampleData Removal (completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 114 | SubscriptionVC: removed SampleData — injected subscriptionInfo + usageQuota from coordinator | Done | 2026-03-17 |
+| 115 | UsageLimitVC: removed SampleData — injected quota + plan from coordinator | Done | 2026-03-17 |
+| 116 | FriendsListVC: removed SampleData — injected friends array from coordinator | Done | 2026-03-17 |
+| 117 | AIPanelVC: removed SampleData — injected initialQuota from coordinator | Done | 2026-03-17 |
+| 118 | SyncDebugVC: wired to real SyncEngine.debugInfo() + Force Sync triggers syncEngine.sync() | Done | 2026-03-17 |
+| 119 | NoteEditorVC: save now uses noteService.create/update (async) | Done | 2026-03-17 |
+| 120 | DirectiveEditorVC: save now uses directiveService.create/update (with auto history) | Done | 2026-03-17 |
+| 121 | PlaybookEditorVC: save now uses folderService.create/update | Done | 2026-03-17 |
+| 122 | DayEntryEditorVC: save now uses dayEntryService.createOrUpdate (upsert) | Done | 2026-03-17 |
+| 123 | SituationEditorVC: save now uses situationService.create/update | Done | 2026-03-17 |
+| 124 | DirectivePickerVC: link now uses noteService.linkDirective | Done | 2026-03-17 |
+| 125 | SituationPickerVC: link now uses situationService.linkDirective/linkNote | Done | 2026-03-17 |
+| 126 | ActiveModePickerVC: toggle now uses modeService.activate/deactivate | Done | 2026-03-17 |
+| 127 | All 5 coordinators updated to pass services to editors/pickers | Done | 2026-03-17 |
+| 128 | Build verification — 0 errors | Done | 2026-03-17 |
+
+**Legal Screens (completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 129 | LegalViewController — scrollable sheet with styled headings, Terms of Service + Privacy Policy full text | Done | 2026-03-17 |
+| 130 | SettingsViewController: added Terms of Service + Privacy Policy nav items in About section | Done | 2026-03-17 |
+| 131 | SettingsCoordinator: showLegal(title:) presents sheet with grabber | Done | 2026-03-17 |
+| 132 | Build verification — 0 errors | Done | 2026-03-17 |
+
+**Voice Input (completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 133 | VoiceInputButton — reusable tap-to-record mic button using SFSpeechRecognizer + AVAudioEngine, on-device transcription, pulsing red ring animation while recording, partial + final result callbacks, permission handling | Done | 2026-03-17 |
+| 134 | AIPanelVC: mic button added between text field and send button, transcribes voice into text field | Done | 2026-03-17 |
+| 135 | AISignupChatVC: mic button added inside input panel, transcribes voice into text view | Done | 2026-03-17 |
+| 136 | Info.plist: NSMicrophoneUsageDescription + NSSpeechRecognitionUsageDescription | Done | 2026-03-17 |
+| 137 | Build verification — 0 errors | Done | 2026-03-17 |
+
+**Backend + Zod Validation (completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 138 | Node.js backend: Fastify + Drizzle ORM + Postgres schema + Cognito auth middleware | Done | 2026-03-20 |
+| 139 | DB queries layer: notes, directives, folders, dayEntries, tags, schedules, modes, links, sync, profiles, friends, devices, usage | Done | 2026-03-20 |
+| 140 | Features layer: notes, directives, sync (push/pull + conflict resolution), friends, subscription, AI | Done | 2026-03-20 |
+| 141 | Routes layer: all 16 route files with Zod validation on request bodies | Done | 2026-03-20 |
+| 142 | Zod validation schemas: 13 files in src/validation/ — single source of truth for backend types | Done | 2026-03-20 |
+| 143 | OpenAPI spec deleted — replaced by Zod schemas for validation | Done | 2026-03-20 |
+| 144 | TypeScript build verification — 0 errors | Done | 2026-03-20 |
+
+**UI Refinements (completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 145 | DirectivePickerVC: renamed "Link Directive" → "Add Directive", added + button to create new directive inline | Done | 2026-03-20 |
+| 146 | Focus: modes carousel — full-width paging, "No Mode" card, swipe to select, debounced mode change | Done | 2026-03-20 |
+| 147 | Focus: mode selection animation — spring scale, color crossfade (CABasicAnimation for border), glow pulse, check badge, icon spin | Done | 2026-03-20 |
+| 148 | Focus: directives section — shows linked directives for active mode, hidden when no mode | Done | 2026-03-20 |
+| 149 | Focus: balloon condensing — 4 or fewer inline, 5+ collapses to "X balloons need attention" row with count badge | Done | 2026-03-20 |
+| 150 | Focus: balloons sorted by liveRemainingSec (closest to expiry first), only <5h shown inline, badge counts <1h | Done | 2026-03-20 |
+| 151 | Focus: section layout fix — uses snapshot section identifiers instead of raw index to prevent section mismatch | Done | 2026-03-20 |
+| 152 | Focus: "See All" button on Modes header opens ActiveModePickerVC | Done | 2026-03-20 |
+| 153 | ActiveModePickerVC: single-select with "No Mode" option, auto-dismisses on selection | Done | 2026-03-20 |
+| 154 | Focus: carousel scrolls to new mode when changed externally (from picker) | Done | 2026-03-20 |
+| 155 | Balloons screen: two sections — "Needs Attention" (<5h, full opacity) + "On Track" (5h+, grayed out 45%) | Done | 2026-03-20 |
+| 156 | Diary: emoji rating picker (😣→🔥) replaces stepper, single-select with spring animation | Done | 2026-03-20 |
+| 157 | Focus: modes header padding fix | Done | 2026-03-20 |
+
+**Architecture Simplification (completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 158 | Folder model: removed `intent`, added `parentFolderId` for nested folders | Done | 2026-03-21 |
+| 159 | Notes tab: merged Playbooks into Notes — folder system with subfolders, "+" menu (New Note / New Folder) | Done | 2026-03-21 |
+| 160 | Tab bar: 5 → 4 tabs (Focus, Notes, Diary, Settings) — Playbooks tab removed | Done | 2026-03-21 |
+| 161 | Situations merged into NoteKind.situation — deleted Situation model, tables, service, 6 VCs | Done | 2026-03-21 |
+| 162 | Backend updated: removed situation routes/queries/schema, updated folder schema for nesting | Done | 2026-03-21 |
+| 163 | Build verification — 0 errors (iOS + TypeScript) | Done | 2026-03-21 |
+
+**Tier Removal (completed):**
+
+| Step | Description | Status | Date |
+|------|-------------|--------|------|
+| 164 | Removed Tier system (foundation/support/active), NoteEditor wizard now 3 steps, TierLabel deleted, kind colors added (blue/purple/gold/teal) | Done | 2026-03-22 |
+
+**Later:**
+- Background sync registration (`BGAppRefreshTask`)
+- Keychain token storage (swap from UserDefaults stub)
+- Offline banner UI component
