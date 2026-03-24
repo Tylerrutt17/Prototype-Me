@@ -120,22 +120,14 @@ class DirectiveListViewController: BaseViewController {
     // MARK: - Observe Data
 
     private func loadData() {
-        let today = {
-            let fmt = DateFormatter()
-            fmt.dateFormat = "yyyy-MM-dd"
-            return fmt.string(from: .now)
-        }()
-
         let observation = ValueObservation.tracking { db -> [DirectiveRowData] in
             let directives = try Directive.order(Column("createdAt").desc).fetchAll(db)
+            let allRules = try ScheduleRule.fetchAll(db)
             return directives.map { dir in
-                let todayInstance = try! ScheduleInstance
-                    .filter(Column("directiveId") == dir.id && Column("date") == today)
-                    .fetchOne(db)
+                let scheduled = allRules.contains { $0.directiveId == dir.id && ScheduleRule.ruleMatchesToday($0) }
                 return DirectiveRowData(
                     directive: dir,
-                    scheduledToday: todayInstance != nil,
-                    instanceStatus: todayInstance?.status
+                    scheduledToday: scheduled
                 )
             }
         }

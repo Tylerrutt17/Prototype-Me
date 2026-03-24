@@ -150,18 +150,6 @@ extension APIClient {
     }
 }
 
-// MARK: - Schedule Instances
-
-extension APIClient {
-    func listScheduleInstances(date: String) async throws -> [ScheduleInstance] {
-        try await get("/v1/schedule/instances?date=\(date)")
-    }
-
-    func updateScheduleInstance(id: UUID, status: InstanceStatus) async throws -> ScheduleInstance {
-        try await patch("/v1/schedule/instances/\(id.uuidString)", body: ["status": status.rawValue])
-    }
-}
-
 // MARK: - Active Modes
 
 extension APIClient {

@@ -45,7 +45,7 @@ final class ScheduleEditorSection: UIView {
         addSubview(card)
 
         let sectionLabel = UILabel()
-        sectionLabel.text = "SCHEDULE"
+        sectionLabel.text = "CHECKLIST"
         sectionLabel.font = DesignTokens.Typography.caption1
         sectionLabel.textColor = DesignTokens.Colors.textSecondary
         sectionLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -58,7 +58,7 @@ final class ScheduleEditorSection: UIView {
         iconView.contentMode = .scaleAspectFit
 
         let titleLabel = UILabel()
-        titleLabel.text = "Enable Schedule"
+        titleLabel.text = "Enable Checklist"
         titleLabel.font = DesignTokens.Typography.rounded(style: .headline, weight: .semibold)
         titleLabel.textColor = DesignTokens.Colors.textPrimary
 
@@ -72,7 +72,7 @@ final class ScheduleEditorSection: UIView {
         headerRow.alignment = .center
 
         let descLabel = UILabel()
-        descLabel.text = "Set when this directive should show up on your schedule. Choose recurring days, specific dates, or both."
+        descLabel.text = "Add a checkbox to your Focus tab on specific days. Check it off when done — it resets automatically next time."
         descLabel.font = DesignTokens.Typography.caption1
         descLabel.textColor = DesignTokens.Colors.textSecondary
         descLabel.numberOfLines = 0

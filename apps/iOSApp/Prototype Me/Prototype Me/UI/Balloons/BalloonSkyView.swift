@@ -480,7 +480,16 @@ final class BalloonSkyView: UIView {
             let logMax = logTimes.last ?? 1
             let logRange = logMax - logMin
 
+            let groundLineY = bounds.height - bottomInset
             for (rank, pair) in ranked.enumerated() {
+                let remaining = pair.element.directive.liveRemainingSec
+
+                // Expired balloons sit at the dotted ground line
+                if remaining <= 0 {
+                    yPositions.append((index: pair.offset, y: groundLineY - halfNode))
+                    continue
+                }
+
                 let rankRatio = CGFloat(rank) / CGFloat(count - 1)
                 let timeRatio: CGFloat = logRange > 0
                     ? CGFloat((logTimes[rank] - logMin) / logRange)

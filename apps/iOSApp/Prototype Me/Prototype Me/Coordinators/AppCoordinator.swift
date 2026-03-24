@@ -7,6 +7,7 @@ class AppCoordinator: Coordinator {
     private let window: UIWindow
     private let environment: AppEnvironment
     private let tabBarController: UITabBarController
+    private var focusCoordinator: FocusCoordinator?
 
     init(window: UIWindow, environment: AppEnvironment) {
         self.window = window
@@ -41,6 +42,7 @@ class AppCoordinator: Coordinator {
 
     private func showMainApp(animated: Bool) {
         let focusCoordinator = FocusCoordinator(environment: environment)
+        self.focusCoordinator = focusCoordinator
         let notesCoordinator = NotesCoordinator(environment: environment)
         let diaryCoordinator = DiaryCoordinator(environment: environment)
         let settingsCoordinator = SettingsCoordinator(environment: environment)
@@ -77,6 +79,24 @@ class AppCoordinator: Coordinator {
         } else {
             window.rootViewController = tabBarController
         }
+
+        // Wire balloon notification deep link
+        environment.balloonNotificationService.onNotificationTapped = { [weak self] directiveId in
+            self?.navigateToDirective(directiveId: directiveId)
+        }
+    }
+
+    // MARK: - Deep Link
+
+    func navigateToDirective(directiveId: UUID) {
+        guard let focusCoordinator else { return }
+        // Dismiss any presented modal
+        if let presented = tabBarController.presentedViewController {
+            presented.dismiss(animated: false)
+        }
+        tabBarController.selectedIndex = 0
+        focusCoordinator.navigationController.popToRootViewController(animated: false)
+        focusCoordinator.showDirectiveDetail(directiveId: directiveId, fromNotification: true)
     }
 
     // MARK: - Guided Tour

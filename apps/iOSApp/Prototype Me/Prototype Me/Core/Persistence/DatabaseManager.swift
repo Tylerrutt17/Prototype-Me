@@ -101,15 +101,7 @@ final class DatabaseManager: Sendable {
                 t.column("ruleType", .text).notNull()
                 t.column("paramsJSON", .text).notNull().defaults(to: "{}")
                 t.column("createdAt", .datetime).notNull()
-            }
-
-            // ── schedule instances ──
-            try db.create(table: "scheduleInstance") { t in
-                t.primaryKey("id", .text).notNull()
-                t.column("directiveId", .text).notNull().references("directive", onDelete: .cascade)
-                t.column("date", .text).notNull()
-                t.column("status", .text).notNull().defaults(to: InstanceStatus.pending.rawValue)
-                t.uniqueKey(["directiveId", "date"])
+                t.column("lastCompletedDate", .text)  // yyyy-MM-dd, nullable
             }
 
             // ── tags ──

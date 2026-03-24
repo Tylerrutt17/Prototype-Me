@@ -17,6 +17,9 @@ final class NoteEditorViewController: BaseViewController {
     var selectedKind: NoteKind = .regular
     var selectedFolderId: UUID?
     var folders: [Folder] = []
+    var expandedFolderIds: Set<UUID> = []
+    /// Reference to the folder list stack for in-place updates.
+    weak var folderListStack: UIStackView?
     var enteredTitle = ""
     var enteredBody = ""
 
@@ -95,11 +98,12 @@ final class NoteEditorViewController: BaseViewController {
             })
         }
 
-        // Right nav button: Next on step 0, Save on edit mode, nothing on other steps
-        if step == 0 {
-            navBar.setRightButtons([NavBarButton(title: "Next", action: { [weak self] in self?.step1Next() })])
-        } else if !isCreateMode {
-            navBar.setRightButtons([NavBarButton(title: "Save", action: { [weak self] in self?.saveNote() })])
+        // Right nav button: Next on steps 0 and 1, nothing on last step (has its own Save button)
+        if step < 2 {
+            let nextAction: () -> Void = step == 0
+                ? { [weak self] in self?.step1Next() }
+                : { [weak self] in self?.showStep(2, animated: true) }
+            navBar.setRightButtons([NavBarButton(title: "Next", action: nextAction)])
         } else {
             navBar.setRightButtons([])
         }

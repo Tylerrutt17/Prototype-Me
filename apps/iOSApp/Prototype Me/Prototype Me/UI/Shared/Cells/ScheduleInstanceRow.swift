@@ -1,7 +1,7 @@
 import UIKit
 import GRDB
 
-/// Compact collection view cell for schedule instances with a tappable checkbox.
+/// Compact collection view cell for schedule rows with a tappable checkbox.
 final class ScheduleInstanceRowCell: InteractiveCell {
 
     static let reuseID = "ScheduleInstanceRowCell"
@@ -13,7 +13,8 @@ final class ScheduleInstanceRowCell: InteractiveCell {
     private let checkboxButton = UIButton(type: .system)
     private let titleLabel = UILabel()
     private let chevronButton = UIButton(type: .system)
-    private var currentInstance: ScheduleInstance?
+    private var currentRule: ScheduleRule?
+    private var wasCompleted = false
     private var isAnimating = false
 
     override init(frame: CGRect) {
@@ -73,19 +74,22 @@ final class ScheduleInstanceRowCell: InteractiveCell {
         super.prepareForReuse()
         titleLabel.attributedText = nil
         titleLabel.text = nil
-        currentInstance = nil
+        currentRule = nil
+        wasCompleted = false
         isAnimating = false
         contentView.layer.sublayers?.removeAll(where: { $0.name == "checkSweep" })
     }
 
     func configure(with row: ScheduleInstanceRow) {
-        let wasChecking = currentInstance?.status == .pending && row.instance.status == .done
-        let wasUnchecking = currentInstance?.status == .done && row.instance.status == .pending
-        currentInstance = row.instance
+        let previouslyCompleted = wasCompleted
+        let nowCompleted = row.isCompletedToday
+        let wasChecking = !previouslyCompleted && nowCompleted
+        let wasUnchecking = previouslyCompleted && !nowCompleted
+        currentRule = row.rule
+        wasCompleted = nowCompleted
         let title = row.directiveTitle
 
-        switch row.instance.status {
-        case .done:
+        if nowCompleted {
             checkboxButton.setImage(UIImage(systemName: "checkmark.circle.fill"), for: .normal)
             checkboxButton.tintColor = DesignTokens.Colors.success
             titleLabel.attributedText = strikethrough(title)
@@ -93,11 +97,7 @@ final class ScheduleInstanceRowCell: InteractiveCell {
             if wasChecking && !isAnimating {
                 playCheckAnimation()
             }
-        case .skipped:
-            checkboxButton.setImage(UIImage(systemName: "minus.circle.fill"), for: .normal)
-            checkboxButton.tintColor = DesignTokens.Colors.textTertiary
-            titleLabel.attributedText = strikethrough(title)
-        case .pending:
+        } else {
             checkboxButton.setImage(UIImage(systemName: "circle"), for: .normal)
             checkboxButton.tintColor = DesignTokens.Colors.textSecondary
             titleLabel.attributedText = nil
@@ -119,15 +119,19 @@ final class ScheduleInstanceRowCell: InteractiveCell {
     }
 
     @objc private func checkboxTapped() {
-        guard let instance = currentInstance, let dbQueue else { return }
+        guard let rule = currentRule, let dbQueue else { return }
 
-        let newStatus: InstanceStatus = instance.status == .done ? .pending : .done
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let todayStr = fmt.string(from: Date())
+        let isCompleted = rule.lastCompletedDate == todayStr
+        let newDate: String? = isCompleted ? nil : todayStr
 
         do {
             try dbQueue.write { db in
-                guard var inst = try ScheduleInstance.fetchOne(db, key: instance.id) else { return }
-                inst.status = newStatus
-                try inst.update(db)
+                guard var r = try ScheduleRule.fetchOne(db, key: rule.id) else { return }
+                r.lastCompletedDate = newDate
+                try r.update(db)
             }
             Haptics.selection()
         } catch {
@@ -146,7 +150,7 @@ final class ScheduleInstanceRowCell: InteractiveCell {
             self.checkboxButton.transform = .identity
         }
 
-        // Green sweep left → right
+        // Green sweep left -> right
         let sweep = CAGradientLayer()
         sweep.name = "checkSweep"
         sweep.frame = contentView.bounds

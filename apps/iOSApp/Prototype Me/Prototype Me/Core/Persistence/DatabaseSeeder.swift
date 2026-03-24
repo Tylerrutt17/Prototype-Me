@@ -47,11 +47,6 @@ enum DatabaseSeeder {
                 try rule.insert(db)
             }
 
-            // ── Schedule instances ──
-            for instance in SampleData.scheduleInstances {
-                try instance.insert(db)
-            }
-
             // ── Directive history ──
             for history in SampleData.directiveHistory {
                 try history.insert(db)

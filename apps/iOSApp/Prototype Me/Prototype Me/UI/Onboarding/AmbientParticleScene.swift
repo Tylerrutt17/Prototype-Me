@@ -26,6 +26,11 @@ final class AmbientParticleScene: SKScene {
         if UIAccessibility.isReduceMotionEnabled {
             applyReducedMotion()
         }
+
+        // Pre-warm: advance the simulation so particles are already
+        // naturally distributed when the view appears.
+        dustEmitter?.advanceSimulationTime(10)
+        orbEmitter?.advanceSimulationTime(15)
     }
 
     override func didChangeSize(_ oldSize: CGSize) {
@@ -61,10 +66,11 @@ final class AmbientParticleScene: SKScene {
 
         emitter.particleAlpha = 0.15
         emitter.particleAlphaRange = 0.1
-        emitter.particleAlphaSpeed = -0.01
+        emitter.particleAlphaSpeed = -0.015
 
-        emitter.particleScale = 0.5
-        emitter.particleScaleRange = 0.3
+        emitter.particleScale = 0.3
+        emitter.particleScaleRange = 0.2
+        emitter.particleScaleSpeed = 0.02
 
         emitter.particleColor = DesignTokens.Colors.accent.withAlphaComponent(0.3)
         emitter.particleColorBlendFactor = 1.0
@@ -112,7 +118,7 @@ final class AmbientParticleScene: SKScene {
         emitter.particleColor = .white
         emitter.particleBlendMode = .add
 
-        // Breathing fade
+        // Gentle breathing
         let breathe = SKAction.sequence([
             .fadeAlpha(to: 0.12, duration: 4),
             .fadeAlpha(to: 0.04, duration: 4),

@@ -30,6 +30,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneDidDisconnect(_ scene: UIScene) {}
     func sceneDidBecomeActive(_ scene: UIScene) {}
     func sceneWillResignActive(_ scene: UIScene) {}
-    func sceneWillEnterForeground(_ scene: UIScene) {}
+    func sceneWillEnterForeground(_ scene: UIScene) {
+        let env = (UIApplication.shared.delegate as! AppDelegate).environment
+        env.balloonNotificationService.rescheduleAll(dbQueue: env.db.dbQueue)
+    }
     func sceneDidEnterBackground(_ scene: UIScene) {}
 }

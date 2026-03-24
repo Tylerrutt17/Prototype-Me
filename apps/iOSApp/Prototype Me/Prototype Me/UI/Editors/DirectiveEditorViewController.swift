@@ -7,6 +7,7 @@ final class DirectiveEditorViewController: BaseViewController {
 
     var directiveId: UUID?                   // nil = create, non-nil = edit
     var directiveService: DirectiveService?
+    var balloonNotificationService: BalloonNotificationService?
     var onSave: (() -> Void)?
 
     // MARK: - Form Controls
@@ -56,8 +57,8 @@ final class DirectiveEditorViewController: BaseViewController {
         stackView.addArrangedSubview(titleField)
         stackView.addArrangedSubview(bodyField)
         stackView.addArrangedSubview(statusPicker)
-        stackView.addArrangedSubview(scheduleSection)
         stackView.addArrangedSubview(balloonSection)
+        stackView.addArrangedSubview(scheduleSection)
 
         let padding = DesignTokens.Spacing.lg
 
@@ -83,6 +84,9 @@ final class DirectiveEditorViewController: BaseViewController {
         }
         balloonSection.onToggleChanged = { [weak self] isOn in
             self?.balloonEnabled = isOn
+            if isOn {
+                self?.balloonNotificationService?.requestPermissionIfNeeded()
+            }
         }
         balloonSection.onDurationChanged = { [weak self] hours in
             self?.durationHours = hours
@@ -164,6 +168,15 @@ final class DirectiveEditorViewController: BaseViewController {
                 let dirId = directiveId ?? newDirectiveId
                 if let dirId {
                     try? self.saveScheduleRule(directiveId: dirId)
+
+                    // Schedule or cancel balloon notification
+                    if self.balloonEnabled {
+                        if let saved = try? await self.directiveService?.fetch(id: dirId) {
+                            self.balloonNotificationService?.scheduleBalloonNotification(for: saved)
+                        }
+                    } else {
+                        self.balloonNotificationService?.cancelBalloonNotification(directiveId: dirId)
+                    }
                 }
 
                 Haptics.success()

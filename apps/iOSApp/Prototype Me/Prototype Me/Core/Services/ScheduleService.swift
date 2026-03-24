@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-/// Owns all write operations for ScheduleRule and ScheduleInstance.
+/// Owns all write operations for ScheduleRule.
 final class ScheduleService: Sendable {
 
     private let db: DatabaseManager
@@ -36,69 +36,21 @@ final class ScheduleService: Sendable {
         }
     }
 
-    // MARK: - Instances
+    // MARK: - Completion
 
-    func markInstance(id: UUID, status: InstanceStatus) async throws {
+    func markRuleCompleted(id: UUID, date: String) async throws {
         try await db.dbQueue.write { db in
-            guard var inst = try ScheduleInstance.fetchOne(db, key: id) else { return }
-            inst.status = status
-            try inst.update(db)
+            guard var rule = try ScheduleRule.fetchOne(db, key: id) else { return }
+            rule.lastCompletedDate = date
+            try rule.update(db)
         }
     }
 
-    /// Generates pending instances for a given date based on all schedule rules.
-    func generateInstances(for dateString: String) async throws {
+    func markRulePending(id: UUID) async throws {
         try await db.dbQueue.write { db in
-            let rules = try ScheduleRule.fetchAll(db)
-            let weekday = Self.weekday(from: dateString)
-            let dayOfMonth = Self.dayOfMonth(from: dateString)
-
-            for rule in rules {
-                let shouldCreate: Bool = switch rule.ruleType {
-                case .weekly:
-                    rule.params["days"]?.contains(weekday) ?? false
-                case .monthly:
-                    rule.params["days"]?.contains(dayOfMonth) ?? false
-                case .oneOff:
-                    // For one-off, params["dates"] not used — check if rule's date matches
-                    false
-                }
-
-                guard shouldCreate else { continue }
-
-                // Skip if instance already exists for this directive+date
-                let exists = try ScheduleInstance
-                    .filter(Column("directiveId") == rule.directiveId && Column("date") == dateString)
-                    .fetchCount(db) > 0
-                guard !exists else { continue }
-
-                let instance = ScheduleInstance(
-                    id: UUID(),
-                    directiveId: rule.directiveId,
-                    date: dateString,
-                    status: .pending
-                )
-                try instance.insert(db)
-            }
+            guard var rule = try ScheduleRule.fetchOne(db, key: id) else { return }
+            rule.lastCompletedDate = nil
+            try rule.update(db)
         }
-    }
-
-    // MARK: - Helpers
-
-    private static func weekday(from dateString: String) -> Int {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        guard let date = fmt.date(from: dateString) else { return 1 }
-        // Calendar weekday: 1=Sun, 2=Mon, ..., 7=Sat → convert to 1=Mon...7=Sun
-        let cal = Calendar.current
-        let w = cal.component(.weekday, from: date)
-        return w == 1 ? 7 : w - 1
-    }
-
-    private static func dayOfMonth(from dateString: String) -> Int {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        guard let date = fmt.date(from: dateString) else { return 1 }
-        return Calendar.current.component(.day, from: date)
     }
 }

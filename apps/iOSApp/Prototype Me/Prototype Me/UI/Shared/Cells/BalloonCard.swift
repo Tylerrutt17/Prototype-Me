@@ -10,11 +10,13 @@ final class BalloonCard: InteractiveCell {
     private let pressureIndicator = PressureIndicator()
     private let timerLabel = UILabel()
     private let pumpButton = UIButton(type: .system)
+    private let fillLayer = CAGradientLayer()
     private var displayLink: CADisplayLink?
     private var currentDirective: Directive?
 
     /// Set by the VC so the cell can write the pump reset directly.
     var dbQueue: DatabaseQueue?
+    var balloonNotificationService: BalloonNotificationService?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -33,6 +35,16 @@ final class BalloonCard: InteractiveCell {
         contentView.layer.cornerRadius = DesignTokens.Radii.lg
         contentView.clipsToBounds = true
         DesignTokens.Shadows.apply(to: layer, elevation: .medium)
+
+        // Fill gauge layer — rises from bottom based on remaining %
+        fillLayer.colors = [
+            UIColor.clear.cgColor,
+            DesignTokens.Colors.success.withAlphaComponent(0.15).cgColor,
+        ]
+        fillLayer.locations = [0.0, 1.0]
+        fillLayer.startPoint = CGPoint(x: 0.5, y: 0.0)
+        fillLayer.endPoint = CGPoint(x: 0.5, y: 1.0)
+        contentView.layer.insertSublayer(fillLayer, at: 0)
 
         titleLabel.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
         titleLabel.textColor = DesignTokens.Colors.textPrimary
@@ -116,6 +128,15 @@ final class BalloonCard: InteractiveCell {
         displayLink = nil
     }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // Resize fill layer to match contentView
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        fillLayer.frame = contentView.bounds
+        CATransaction.commit()
+    }
+
     @objc private func updateTick() {
         updateTimerDisplay()
     }
@@ -126,6 +147,10 @@ final class BalloonCard: InteractiveCell {
     private func updateTimerDisplay() {
         guard let dir = currentDirective else { return }
         let remaining = dir.liveRemainingSec
+
+        // Update fill gauge
+        let pct = dir.balloonDurationSec > 0 ? max(0, min(1, remaining / dir.balloonDurationSec)) : 0
+        updateFillLevel(pct: pct, level: dir.pressureLevel)
 
         if remaining <= 0 {
             timerLabel.text = "Expired"
@@ -153,6 +178,37 @@ final class BalloonCard: InteractiveCell {
         }
     }
 
+    // MARK: - Fill Gauge
+
+    private func updateFillLevel(pct: Double, level: PressureLevel?) {
+        let color: UIColor
+        switch level {
+        case .green:  color = DesignTokens.Colors.success
+        case .yellow: color = DesignTokens.Colors.warning
+        case .red:    color = DesignTokens.Colors.destructive
+        case .none:   color = DesignTokens.Colors.destructive
+        }
+
+        // Position the fill from the bottom — hard cutoff at the fill line
+        let topEdge = CGFloat(1.0 - pct)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        fillLayer.colors = [
+            UIColor.clear.cgColor,
+            UIColor.clear.cgColor,
+            color.withAlphaComponent(0.18).cgColor,
+            color.withAlphaComponent(0.18).cgColor,
+        ]
+        fillLayer.locations = [
+            0.0,
+            NSNumber(value: topEdge),
+            NSNumber(value: topEdge + 0.001),
+            1.0,
+        ]
+        CATransaction.commit()
+    }
+
     // MARK: - Pump
 
     @objc private func pumpTapped() {
@@ -177,6 +233,12 @@ final class BalloonCard: InteractiveCell {
                     directive.updatedAt = Date()
                     directive.version += 1
                     try directive.update(db)
+                }
+                DirectiveLogger.logPump(directiveId: dir.id, dbQueue: dbQueue)
+
+                // Reschedule notification for new expiry
+                if let updated = try dbQueue.read({ db in try Directive.fetchOne(db, key: dir.id) }) {
+                    self.balloonNotificationService?.scheduleBalloonNotification(for: updated)
                 }
             } catch {
                 Haptics.error()

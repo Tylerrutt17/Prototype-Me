@@ -4,24 +4,38 @@ import GRDB
 nonisolated private enum DirectiveDetailSection: Int, Sendable {
     case header
     case balloon
-    case schedule
-    case history
+    case settings  // Balloon + checklist summary
 }
 
 nonisolated private enum DirectiveDetailItem: Hashable, Sendable {
     case header(Directive)
+    case settingRow(String, String, String)  // icon, title, subtitle
     case balloon(DirectiveRowData)
-    case scheduleRule(ScheduleRule)
-    case addScheduleButton
-    case historyEntry(DirectiveHistory)
+
+    func hash(into hasher: inout Hasher) {
+        switch self {
+        case .header(let d): hasher.combine("h"); hasher.combine(d.id)
+        case .settingRow(_, let t, _): hasher.combine("s"); hasher.combine(t)
+        case .balloon(let d): hasher.combine("b"); hasher.combine(d.directive.id)
+        }
+    }
+    static func == (lhs: DirectiveDetailItem, rhs: DirectiveDetailItem) -> Bool {
+        switch (lhs, rhs) {
+        case (.header(let a), .header(let b)): return a.id == b.id
+        case (.settingRow(_, let a, _), .settingRow(_, let b, _)): return a == b
+        case (.balloon(let a), .balloon(let b)): return a.directive.id == b.directive.id
+        default: return false
+        }
+    }
 }
 
 class DirectiveDetailViewController: BaseViewController {
 
     var directiveId: UUID?
     var onEditTapped: ((UUID) -> Void)?
-    var onAddScheduleTapped: ((UUID) -> Void)?
-    var onEditScheduleTapped: ((UUID, ScheduleRule) -> Void)?
+    var balloonNotificationService: BalloonNotificationService?
+    /// Set to true when arriving from a balloon expiry notification.
+    var fromNotification = false
 
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<DirectiveDetailSection, DirectiveDetailItem>!
@@ -99,42 +113,70 @@ class DirectiveDetailViewController: BaseViewController {
 
         let balloonReg = UICollectionView.CellRegistration<BalloonCard, DirectiveRowData> { [weak self] cell, _, data in
             cell.dbQueue = self?.dbQueue
+            cell.balloonNotificationService = self?.balloonNotificationService
             cell.configure(with: data)
+
+            // Shimmer border only when balloon has expired (0 remaining)
+            DispatchQueue.main.async {
+                ShimmerBorder.remove(from: cell.contentView)
+                cell.contentView.layer.removeAnimation(forKey: "pressureGlow")
+
+                if data.directive.liveRemainingSec <= 0 {
+                    let color = DesignTokens.Colors.destructive
+                    ShimmerBorder.add(to: cell.contentView, color: color, cornerRadius: DesignTokens.Radii.lg)
+
+                    cell.contentView.layer.shadowColor = color.cgColor
+                    cell.contentView.layer.shadowRadius = 8
+                    cell.contentView.layer.shadowOpacity = 0.3
+                    cell.contentView.layer.shadowOffset = .zero
+
+                    let glow = CABasicAnimation(keyPath: "shadowRadius")
+                    glow.fromValue = 4
+                    glow.toValue = 12
+                    glow.duration = 1.2
+                    glow.autoreverses = true
+                    glow.repeatCount = .infinity
+                    glow.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    cell.contentView.layer.add(glow, forKey: "pressureGlow")
+                } else {
+                    cell.contentView.layer.shadowOpacity = 0
+                }
+            }
         }
 
-        let scheduleReg = UICollectionView.CellRegistration<ScheduleRuleCell, ScheduleRule> { cell, _, rule in
-            cell.configure(with: rule)
-        }
-
-        let historyReg = UICollectionView.CellRegistration<HistoryEntryCell, DirectiveHistory> { cell, _, entry in
-            cell.configure(with: entry)
-        }
-
-        let addScheduleReg = UICollectionView.CellRegistration<LinkButtonCell, String> { cell, _, title in
-            cell.configure(title: title, systemImage: "calendar.badge.plus")
+        let settingReg = UICollectionView.CellRegistration<UICollectionViewListCell, (String, String, String)> { cell, _, data in
+            var content = UIListContentConfiguration.valueCell()
+            content.text = data.1
+            content.secondaryText = data.2
+            content.textProperties.color = DesignTokens.Colors.textPrimary
+            content.textProperties.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium)
+            content.secondaryTextProperties.color = DesignTokens.Colors.textSecondary
+            content.secondaryTextProperties.font = DesignTokens.Typography.caption1
+            content.image = UIImage(systemName: data.0)
+            content.imageProperties.tintColor = DesignTokens.Colors.accent
+            cell.contentConfiguration = content
+            var bg = UIBackgroundConfiguration.listCell()
+            bg.backgroundColor = DesignTokens.Colors.surfacePrimary
+            bg.cornerRadius = DesignTokens.Radii.md
+            cell.backgroundConfiguration = bg
         }
 
         dataSource = UICollectionViewDiffableDataSource<DirectiveDetailSection, DirectiveDetailItem>(collectionView: collectionView) { collectionView, indexPath, item in
             switch item {
             case .header(let directive):
                 return collectionView.dequeueConfiguredReusableCell(using: headerReg, for: indexPath, item: directive)
+            case .settingRow(let icon, let title, let subtitle):
+                return collectionView.dequeueConfiguredReusableCell(using: settingReg, for: indexPath, item: (icon, title, subtitle))
             case .balloon(let data):
                 return collectionView.dequeueConfiguredReusableCell(using: balloonReg, for: indexPath, item: data)
-            case .scheduleRule(let rule):
-                return collectionView.dequeueConfiguredReusableCell(using: scheduleReg, for: indexPath, item: rule)
-            case .addScheduleButton:
-                return collectionView.dequeueConfiguredReusableCell(using: addScheduleReg, for: indexPath, item: "Add Schedule")
-            case .historyEntry(let entry):
-                return collectionView.dequeueConfiguredReusableCell(using: historyReg, for: indexPath, item: entry)
             }
         }
 
         let sectionHeaderReg = UICollectionView.SupplementaryRegistration<SectionHeaderView>(elementKind: UICollectionView.elementKindSectionHeader) { supplementaryView, _, indexPath in
             let section = DirectiveDetailSection(rawValue: indexPath.section)
             let title: String = switch section {
-            case .balloon:  "Balloon"
-            case .schedule: "Schedule"
-            case .history:  "History"
+            case .settings: "Active Features"
+            case .balloon:  "Balloon Timer"
             default:        ""
             }
             supplementaryView.configure(title: title)
@@ -150,19 +192,15 @@ class DirectiveDetailViewController: BaseViewController {
     private func loadData() {
         guard let directiveId else { return }
 
-        let observation = ValueObservation.tracking { db -> (Directive?, [ScheduleRule], [DirectiveHistory]) in
+        let observation = ValueObservation.tracking { db -> (Directive?, ScheduleRule?) in
             let directive = try Directive.fetchOne(db, key: directiveId)
-            let rules = try ScheduleRule
+            let rule = try ScheduleRule
                 .filter(Column("directiveId") == directiveId)
-                .fetchAll(db)
-            let history = try DirectiveHistory
-                .filter(Column("directiveId") == directiveId)
-                .order(Column("createdAt").desc)
-                .fetchAll(db)
-            return (directive, rules, history)
+                .fetchOne(db)
+            return (directive, rule)
         }
 
-        observationCancellable = observation.start(in: dbQueue, onError: { _ in }, onChange: { [weak self] (directive, rules, history) in
+        observationCancellable = observation.start(in: dbQueue, onError: { _ in }, onChange: { [weak self] (directive, rule) in
             guard let directive else { return }
             self?.navBar.setTitle(directive.title)
 
@@ -171,32 +209,61 @@ class DirectiveDetailViewController: BaseViewController {
             snapshot.appendSections([.header])
             snapshot.appendItems([.header(directive)], toSection: .header)
 
+            // Settings summary rows
+            var settingRows: [DirectiveDetailItem] = []
+
+            if directive.balloonEnabled {
+                let durationHours = directive.balloonDurationSec / 3600
+                let durationText: String
+                let days = Int(durationHours) / 24
+                let remaining = Int(durationHours) % 24
+                if days == 0 {
+                    durationText = "\(Int(durationHours)) hour\(Int(durationHours) == 1 ? "" : "s")"
+                } else if remaining == 0 {
+                    durationText = "\(days) day\(days == 1 ? "" : "s")"
+                } else {
+                    durationText = "\(days)d \(remaining)h"
+                }
+                settingRows.append(.settingRow("timer", "Balloon", "Every \(durationText)"))
+            }
+
+            if let rule {
+                let dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+                var parts: [String] = []
+                if let weekdays = rule.params["weekdays"] ?? (rule.ruleType == .weekly ? rule.params["days"] : nil), !weekdays.isEmpty {
+                    parts.append(weekdays.compactMap { (1...7).contains($0) ? dayNames[$0 - 1] : nil }.joined(separator: ", "))
+                }
+                if let monthDays = rule.params["monthDays"], !monthDays.isEmpty {
+                    parts.append("Monthly")
+                }
+                if let flat = rule.params["oneOffs"], flat.count >= 3 {
+                    let count = flat.count / 3
+                    parts.append("\(count) date\(count == 1 ? "" : "s")")
+                }
+                settingRows.append(.settingRow("checklist", "Checklist", parts.joined(separator: " · ")))
+            }
+
             if directive.balloonEnabled {
                 snapshot.appendSections([.balloon])
-                let row = DirectiveRowData(directive: directive, scheduledToday: false, instanceStatus: nil)
+                let row = DirectiveRowData(directive: directive, scheduledToday: false)
                 snapshot.appendItems([.balloon(row)], toSection: .balloon)
             }
 
-            snapshot.appendSections([.schedule])
-            if let rule = rules.first {
-                // One rule per directive — show it (tap to edit)
-                snapshot.appendItems([.scheduleRule(rule)], toSection: .schedule)
-            } else {
-                snapshot.appendItems([.addScheduleButton], toSection: .schedule)
-            }
-
-            if !history.isEmpty {
-                snapshot.appendSections([.history])
-                snapshot.appendItems(history.map { .historyEntry($0) }, toSection: .history)
+            if !settingRows.isEmpty {
+                snapshot.appendSections([.settings])
+                snapshot.appendItems(settingRows, toSection: .settings)
             }
 
             self?.dataSource.apply(snapshot, animatingDifferences: false)
-            // Force cell refresh since models use id-only equality
             var reconfigSnap = self?.dataSource.snapshot() ?? snapshot
             reconfigSnap.reconfigureItems(reconfigSnap.itemIdentifiers)
             self?.dataSource.apply(reconfigSnap, animatingDifferences: false)
+
         })
     }
+
+    // MARK: - Entrance Animation
+
 }
 
 // MARK: - UICollectionViewDelegate
@@ -206,12 +273,9 @@ extension DirectiveDetailViewController: UICollectionViewDelegate {
         collectionView.deselectItem(at: indexPath, animated: true)
         guard let item = dataSource.itemIdentifier(for: indexPath) else { return }
         switch item {
-        case .addScheduleButton:
+        case .settingRow:
             guard let directiveId else { return }
-            onAddScheduleTapped?(directiveId)
-        case .scheduleRule(let rule):
-            guard let directiveId else { return }
-            onEditScheduleTapped?(directiveId, rule)
+            onEditTapped?(directiveId)
         default:
             break
         }
@@ -226,9 +290,7 @@ private final class DirectiveHeaderCell: UICollectionViewCell {
     private let iconView = UIImageView()
     private let statusBadge = UIButton(type: .system)
     private let titleLabel = UILabel()
-    private let divider = UIView()
     private let bodyLabel = UILabel()
-    private let pressureIndicator = PressureIndicator()
     private let metaLabel = UILabel()
 
     override init(frame: CGRect) {
@@ -263,40 +325,16 @@ private final class DirectiveHeaderCell: UICollectionViewCell {
         titleLabel.textColor = DesignTokens.Colors.textPrimary
         titleLabel.numberOfLines = 0
 
-        // Divider
-        divider.layer.cornerRadius = 1.5
-
         // Body
         bodyLabel.font = DesignTokens.Typography.body
         bodyLabel.textColor = DesignTokens.Colors.textSecondary
         bodyLabel.numberOfLines = 0
 
-        // Pressure indicator
-        pressureIndicator.size = 16
-
         // Meta label (created date)
         metaLabel.font = DesignTokens.Typography.caption1
         metaLabel.textColor = DesignTokens.Colors.textTertiary
 
-        // Pressure + meta row
-        let bottomRow = UIStackView(arrangedSubviews: [pressureIndicator, metaLabel, UIView()])
-        bottomRow.axis = .horizontal
-        bottomRow.spacing = DesignTokens.Spacing.sm
-        bottomRow.alignment = .center
-
-        // Wrap divider so .fill alignment doesn't stretch it
-        let dividerWrapper = UIView()
-        divider.translatesAutoresizingMaskIntoConstraints = false
-        dividerWrapper.addSubview(divider)
-        NSLayoutConstraint.activate([
-            divider.leadingAnchor.constraint(equalTo: dividerWrapper.leadingAnchor),
-            divider.topAnchor.constraint(equalTo: dividerWrapper.topAnchor),
-            divider.bottomAnchor.constraint(equalTo: dividerWrapper.bottomAnchor),
-            divider.widthAnchor.constraint(equalToConstant: 40),
-            divider.heightAnchor.constraint(equalToConstant: 3),
-        ])
-
-        let stack = UIStackView(arrangedSubviews: [titleLabel, dividerWrapper, bodyLabel, bottomRow])
+        let stack = UIStackView(arrangedSubviews: [titleLabel, bodyLabel, metaLabel])
         stack.axis = .vertical
         stack.spacing = DesignTokens.Spacing.md
         stack.alignment = .fill
@@ -312,9 +350,6 @@ private final class DirectiveHeaderCell: UICollectionViewCell {
 
             statusBadge.topAnchor.constraint(equalTo: accentBar.bottomAnchor, constant: DesignTokens.Spacing.lg),
             statusBadge.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: padding),
-
-            pressureIndicator.widthAnchor.constraint(equalToConstant: 16),
-            pressureIndicator.heightAnchor.constraint(equalToConstant: 16),
 
             stack.topAnchor.constraint(equalTo: statusBadge.bottomAnchor, constant: DesignTokens.Spacing.lg),
             stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: padding),
@@ -348,16 +383,9 @@ private final class DirectiveHeaderCell: UICollectionViewCell {
         // Title
         titleLabel.text = directive.title
 
-        // Divider
-        divider.backgroundColor = color.withAlphaComponent(0.4)
-
         // Body
         bodyLabel.text = directive.body
         bodyLabel.isHidden = directive.body == nil
-
-        // Pressure
-        pressureIndicator.configure(level: directive.pressureLevel)
-        pressureIndicator.isHidden = !directive.balloonEnabled
 
         // Meta
         let fmt = RelativeDateTimeFormatter()

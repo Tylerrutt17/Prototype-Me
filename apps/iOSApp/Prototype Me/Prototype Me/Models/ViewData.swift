@@ -18,7 +18,6 @@ nonisolated struct NoteListItem: Hashable, Sendable {
 nonisolated struct DirectiveRowData: Hashable, Sendable {
     let directive: Directive
     let scheduledToday: Bool
-    let instanceStatus: InstanceStatus?
 
     var pressureLevel: PressureLevel? { directive.pressureLevel }
 
@@ -41,14 +40,22 @@ nonisolated struct FocusSnapshot: Sendable {
 
 // MARK: - ScheduleInstanceRow
 
-/// Flattened row for schedule display (directive name + status).
+/// Flattened row for schedule display (rule + directive title).
 nonisolated struct ScheduleInstanceRow: Hashable, Sendable {
-    let instance: ScheduleInstance
+    let rule: ScheduleRule
     let directiveTitle: String
 
-    func hash(into hasher: inout Hasher) { hasher.combine(instance.id) }
+    /// Whether the rule was completed today.
+    var isCompletedToday: Bool {
+        guard let last = rule.lastCompletedDate else { return false }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        return last == fmt.string(from: Date())
+    }
+
+    func hash(into hasher: inout Hasher) { hasher.combine(rule.id) }
     static func == (lhs: ScheduleInstanceRow, rhs: ScheduleInstanceRow) -> Bool {
-        lhs.instance.id == rhs.instance.id
+        lhs.rule.id == rhs.rule.id
     }
 }
 

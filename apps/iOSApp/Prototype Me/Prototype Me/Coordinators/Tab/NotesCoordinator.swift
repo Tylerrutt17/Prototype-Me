@@ -11,9 +11,9 @@ class NotesCoordinator: Coordinator {
         self.environment = environment
         self.navigationController = UINavigationController()
         navigationController.tabBarItem = UITabBarItem(
-            title: "Notes",
-            image: UIImage(systemName: "doc.text"),
-            selectedImage: UIImage(systemName: "doc.text.fill")
+            title: "Library",
+            image: UIImage(systemName: "books.vertical"),
+            selectedImage: UIImage(systemName: "books.vertical.fill")
         )
     }
 
@@ -177,30 +177,7 @@ class NotesCoordinator: Coordinator {
         vc.onEditTapped = { [weak self] directiveId in
             self?.presentDirectiveEditor(directiveId: directiveId)
         }
-        vc.onAddScheduleTapped = { [weak self] directiveId in
-            self?.presentScheduleEditor(directiveId: directiveId)
-        }
-        vc.onEditScheduleTapped = { [weak self] directiveId, rule in
-            self?.presentScheduleEditor(directiveId: directiveId, existingRule: rule)
-        }
         navigationController.pushViewController(vc, animated: true)
-    }
-
-    private func presentScheduleEditor(directiveId: UUID, existingRule: ScheduleRule? = nil) {
-        let editor = ScheduleRuleEditorViewController()
-        editor.dbQueue = environment.db.dbQueue
-        editor.directiveId = directiveId
-        editor.existingRule = existingRule
-        editor.onSave = { [weak editor] in
-            editor?.dismiss(animated: true)
-        }
-        let nav = UINavigationController(rootViewController: editor)
-        nav.isNavigationBarHidden = true
-        if let sheet = nav.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = true
-        }
-        navigationController.present(nav, animated: true)
     }
 
     private func showBalloons() {

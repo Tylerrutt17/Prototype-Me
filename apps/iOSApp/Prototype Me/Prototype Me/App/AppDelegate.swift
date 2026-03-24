@@ -1,4 +1,5 @@
 import UIKit
+import UserNotifications
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -13,8 +14,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     ) -> Bool {
         configureGlobalAppearance()
 
+        // Notification delegate must be set before app finishes launching
+        UNUserNotificationCenter.current().delegate = environment.balloonNotificationService
+
         // Seed sample data on first launch (no-op if DB already has data)
         try? DatabaseSeeder.seedIfNeeded(db: environment.db)
+
+        // Ensure all active balloon notifications are scheduled on launch
+        environment.balloonNotificationService.rescheduleAll(dbQueue: environment.db.dbQueue)
 
         return true
     }

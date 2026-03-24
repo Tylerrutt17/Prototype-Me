@@ -268,23 +268,6 @@ enum SampleData {
         ScheduleRule(id: UUID(uuidString: "00000006-0006-0006-0006-000000000007")!, directiveId: IDs.dirHydrate,   ruleType: .weekly, params: ["days": [1,2,3,4,5,6,7]], createdAt: daysAgo(50)),
     ]
 
-    // MARK: - Schedule Instances (today)
-
-    static let scheduleInstances: [ScheduleInstance] = [
-        ScheduleInstance(id: UUID(uuidString: "00000007-0007-0007-0007-000000000001")!, directiveId: IDs.dirMeditate, date: dateString(0), status: .done),
-        ScheduleInstance(id: UUID(uuidString: "00000007-0007-0007-0007-000000000002")!, directiveId: IDs.dirHydrate,  date: dateString(0), status: .pending),
-        ScheduleInstance(id: UUID(uuidString: "00000007-0007-0007-0007-000000000003")!, directiveId: IDs.dirExercise, date: dateString(0), status: .pending),
-        ScheduleInstance(id: UUID(uuidString: "00000007-0007-0007-0007-000000000004")!, directiveId: IDs.dirRead30,   date: dateString(0), status: .pending),
-        ScheduleInstance(id: UUID(uuidString: "00000007-0007-0007-0007-000000000005")!, directiveId: IDs.dirJournal,  date: dateString(0), status: .pending),
-        ScheduleInstance(id: UUID(uuidString: "00000007-0007-0007-0007-000000000006")!, directiveId: IDs.dirStretch,  date: dateString(0), status: .done),
-
-        // Yesterday
-        ScheduleInstance(id: UUID(uuidString: "00000007-0007-0007-0007-000000000007")!, directiveId: IDs.dirMeditate, date: dateString(1), status: .done),
-        ScheduleInstance(id: UUID(uuidString: "00000007-0007-0007-0007-000000000008")!, directiveId: IDs.dirHydrate,  date: dateString(1), status: .done),
-        ScheduleInstance(id: UUID(uuidString: "00000007-0007-0007-0007-000000000009")!, directiveId: IDs.dirExercise, date: dateString(1), status: .skipped),
-        ScheduleInstance(id: UUID(uuidString: "00000007-0007-0007-0007-00000000000A")!, directiveId: IDs.dirJournal,  date: dateString(1), status: .done),
-    ]
-
     // MARK: - Directive History
 
     static let directiveHistory: [DirectiveHistory] = [
@@ -319,13 +302,11 @@ enum SampleData {
     }
 
     static var directiveRowData: [DirectiveRowData] {
-        let today = dateString(0)
         return directives.map { dir in
-            let todayInstance = scheduleInstances.first { $0.directiveId == dir.id && $0.date == today }
+            let hasRule = scheduleRules.contains { $0.directiveId == dir.id && ScheduleRule.ruleMatchesToday($0) }
             return DirectiveRowData(
                 directive: dir,
-                scheduledToday: todayInstance != nil,
-                instanceStatus: todayInstance?.status
+                scheduledToday: hasRule
             )
         }
     }
@@ -339,19 +320,18 @@ enum SampleData {
         let balloons = directiveRowData
             .filter { $0.directive.balloonEnabled && $0.directive.status == .active }
             .sorted { $0.directive.liveRemainingSec < $1.directive.liveRemainingSec }
-        let today = dateString(0)
-        let todayRows = scheduleInstances
-            .filter { $0.date == today }
-            .compactMap { inst -> ScheduleInstanceRow? in
-                guard let dir = directives.first(where: { $0.id == inst.directiveId }) else { return nil }
-                return ScheduleInstanceRow(instance: inst, directiveTitle: dir.title)
+        let todayRows = scheduleRules
+            .filter { ScheduleRule.ruleMatchesToday($0) }
+            .compactMap { rule -> ScheduleInstanceRow? in
+                guard let dir = directives.first(where: { $0.id == rule.directiveId }) else { return nil }
+                return ScheduleInstanceRow(rule: rule, directiveTitle: dir.title)
             }
         // Linked directives for the first mode (sample)
         let modeDirectives: [DirectiveRowData] = modes.first.map { mode in
             let linked = noteDirectives
                 .filter { $0.noteId == mode.id }
                 .compactMap { link in directives.first(where: { $0.id == link.directiveId }) }
-            return linked.map { DirectiveRowData(directive: $0, scheduledToday: false, instanceStatus: nil) }
+            return linked.map { DirectiveRowData(directive: $0, scheduledToday: false) }
         } ?? []
 
         return FocusSnapshot(
@@ -384,11 +364,10 @@ enum SampleData {
             .filter { $0.noteId == noteId }
             .sorted { $0.sortIndex < $1.sortIndex }
             .map(\.directiveId)
-        let today = dateString(0)
         return linkedIds.compactMap { dirId in
             guard let dir = directives.first(where: { $0.id == dirId }) else { return nil }
-            let todayInstance = scheduleInstances.first { $0.directiveId == dirId && $0.date == today }
-            return DirectiveRowData(directive: dir, scheduledToday: todayInstance != nil, instanceStatus: todayInstance?.status)
+            let hasRule = scheduleRules.contains { $0.directiveId == dirId && ScheduleRule.ruleMatchesToday($0) }
+            return DirectiveRowData(directive: dir, scheduledToday: hasRule)
         }
     }
 

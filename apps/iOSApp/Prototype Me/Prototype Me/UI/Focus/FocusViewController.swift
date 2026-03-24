@@ -23,6 +23,7 @@ class FocusViewController: BaseViewController {
     var onDirectiveSelected: ((UUID) -> Void)?
     var onBalloonSelected: ((UUID) -> Void)?
     var onViewAllBalloonsTapped: (() -> Void)?
+    var balloonNotificationService: BalloonNotificationService?
     var onPickModesTapped: (() -> Void)?
 
     private static let maxInlineBalloons = 4
@@ -246,6 +247,7 @@ class FocusViewController: BaseViewController {
 
         let balloonReg = UICollectionView.CellRegistration<BalloonCard, DirectiveRowData> { [weak self] cell, _, data in
             cell.dbQueue = self?.dbQueue
+            cell.balloonNotificationService = self?.balloonNotificationService
             cell.configure(with: data)
         }
 
@@ -257,7 +259,7 @@ class FocusViewController: BaseViewController {
             cell.dbQueue = self?.dbQueue
             cell.configure(with: row)
             cell.onChevronTapped = {
-                self?.onDirectiveSelected?(row.instance.directiveId)
+                self?.onDirectiveSelected?(row.rule.directiveId)
             }
         }
 
@@ -311,12 +313,6 @@ class FocusViewController: BaseViewController {
     // MARK: - Observe Data
 
     private func loadData() {
-        let today = {
-            let fmt = DateFormatter()
-            fmt.dateFormat = "yyyy-MM-dd"
-            return fmt.string(from: .now)
-        }()
-
         let observation = ValueObservation.tracking { db -> FocusSnapshot in
             // ALL mode notes (kind == .mode)
             let allModes = try NotePage
@@ -327,6 +323,9 @@ class FocusViewController: BaseViewController {
             // Currently active mode (first one, or nil)
             let activeRecord = try ActiveMode.order(Column("activatedAt")).fetchOne(db)
 
+            // Fetch all schedule rules once — used for scheduledToday checks
+            let allRules = try ScheduleRule.fetchAll(db)
+
             // Linked directives for the active mode
             var modeDirectives: [DirectiveRowData] = []
             if let activeModeId = activeRecord?.noteId {
@@ -336,10 +335,8 @@ class FocusViewController: BaseViewController {
                     .fetchAll(db)
                 modeDirectives = links.compactMap { link in
                     guard let dir = try? Directive.fetchOne(db, key: link.directiveId) else { return nil }
-                    let inst = try? ScheduleInstance
-                        .filter(Column("directiveId") == dir.id && Column("date") == today)
-                        .fetchOne(db)
-                    return DirectiveRowData(directive: dir, scheduledToday: inst != nil, instanceStatus: inst?.status)
+                    let scheduled = allRules.contains { $0.directiveId == dir.id && ScheduleRule.ruleMatchesToday($0) }
+                    return DirectiveRowData(directive: dir, scheduledToday: scheduled)
                 }
             }
 
@@ -350,19 +347,16 @@ class FocusViewController: BaseViewController {
                 .sorted { $0.liveRemainingSec < $1.liveRemainingSec }
 
             let urgentBalloons = allBalloonDirs.map { dir in
-                let inst = try? ScheduleInstance
-                    .filter(Column("directiveId") == dir.id && Column("date") == today)
-                    .fetchOne(db)
-                return DirectiveRowData(directive: dir, scheduledToday: inst != nil, instanceStatus: inst?.status)
+                let scheduled = allRules.contains { $0.directiveId == dir.id && ScheduleRule.ruleMatchesToday($0) }
+                return DirectiveRowData(directive: dir, scheduledToday: scheduled)
             }
 
-            // Today's schedule
-            let instances = try ScheduleInstance
-                .filter(Column("date") == today)
-                .fetchAll(db)
-            let scheduleRows: [ScheduleInstanceRow] = instances.compactMap { inst in
-                guard let dir = try? Directive.fetchOne(db, key: inst.directiveId) else { return nil }
-                return ScheduleInstanceRow(instance: inst, directiveTitle: dir.title)
+            // Today's schedule — query rules that match today
+            let todayRules = allRules.filter { ScheduleRule.ruleMatchesToday($0) }
+            let scheduleRows: [ScheduleInstanceRow] = todayRules.compactMap { rule in
+                guard let dir = try? Directive.fetchOne(db, key: rule.directiveId),
+                      dir.status == .active else { return nil }
+                return ScheduleInstanceRow(rule: rule, directiveTitle: dir.title)
             }
 
             return FocusSnapshot(
@@ -402,9 +396,19 @@ class FocusViewController: BaseViewController {
                 ds.appendItems(snapshot.modeDirectives.map { .directive($0) }, toSection: .directives)
             }
 
-            // Only show balloons that are under 5 hours on Focus
-            let focusBalloons = snapshot.urgentBalloons.filter { $0.directive.liveRemainingSec < 5 * 3600 }
-            // "Need attention" count = balloons under 1 hour (for the condensed badge)
+            // Show balloons that need attention on Focus
+            // For long balloons (12h+): show when under 12 hours remaining
+            // For short balloons (<12h): show when under 50% remaining
+            let focusBalloons = snapshot.urgentBalloons.filter { item in
+                let dir = item.directive
+                let threshold: TimeInterval
+                if dir.balloonDurationSec <= 12 * 3600 {
+                    threshold = dir.balloonDurationSec * 0.5
+                } else {
+                    threshold = 12 * 3600
+                }
+                return dir.liveRemainingSec < threshold
+            }
             let criticalCount = snapshot.urgentBalloons.filter { $0.directive.liveRemainingSec < 3600 }.count
 
             if !focusBalloons.isEmpty {
@@ -568,13 +572,25 @@ class FocusViewController: BaseViewController {
         onAITapped?()
     }
 
-    private func toggleScheduleInstance(_ instance: ScheduleInstance) {
-        let newStatus: InstanceStatus = instance.status == .done ? .pending : .done
+    private func toggleScheduleRule(_ rule: ScheduleRule) {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let todayStr = fmt.string(from: Date())
+        let isCompleted = rule.lastCompletedDate == todayStr
+        let newDate: String? = isCompleted ? nil : todayStr
+
         do {
             try dbQueue.write { db in
-                guard var inst = try ScheduleInstance.fetchOne(db, key: instance.id) else { return }
-                inst.status = newStatus
-                try inst.update(db)
+                guard var r = try ScheduleRule.fetchOne(db, key: rule.id) else { return }
+                r.lastCompletedDate = newDate
+                try r.update(db)
+            }
+            if newDate != nil {
+                DirectiveLogger.logChecklistComplete(
+                    directiveId: rule.directiveId,
+                    date: todayStr,
+                    dbQueue: dbQueue
+                )
             }
             Haptics.selection()
         } catch {
@@ -601,7 +617,7 @@ extension FocusViewController: UICollectionViewDelegate {
         case .viewAllBalloons:
             onViewAllBalloonsTapped?()
         case .scheduleRow(let row):
-            toggleScheduleInstance(row.instance)
+            toggleScheduleRule(row.rule)
         }
     }
 
@@ -612,16 +628,16 @@ extension FocusViewController: UICollectionViewDelegate {
         case .scheduleRow(let row):
             return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
                 let viewDirective = UIAction(title: "View Directive", image: UIImage(systemName: "doc.text")) { _ in
-                    self?.onDirectiveSelected?(row.instance.directiveId)
+                    self?.onDirectiveSelected?(row.rule.directiveId)
                 }
                 let toggleAction: UIAction
-                if row.instance.status == .done {
+                if row.isCompletedToday {
                     toggleAction = UIAction(title: "Mark Pending", image: UIImage(systemName: "circle")) { _ in
-                        self?.toggleScheduleInstance(row.instance)
+                        self?.toggleScheduleRule(row.rule)
                     }
                 } else {
                     toggleAction = UIAction(title: "Mark Done", image: UIImage(systemName: "checkmark.circle.fill")) { _ in
-                        self?.toggleScheduleInstance(row.instance)
+                        self?.toggleScheduleRule(row.rule)
                     }
                 }
                 return UIMenu(children: [toggleAction, viewDirective])
@@ -997,18 +1013,8 @@ private final class ModeCard: UICollectionViewCell {
             contentView.layer.add(glow, forKey: "glowPulse")
         }
 
-        // Shimmer sweep
-        if shimmerLayer.isHidden {
-            shimmerLayer.isHidden = false
-            shimmerLayer.frame = contentView.bounds
-            let sweep = CABasicAnimation(keyPath: "locations")
-            sweep.fromValue = [-0.5, -0.25, 0.0]
-            sweep.toValue = [1.0, 1.25, 1.5]
-            sweep.duration = 3.5
-            sweep.repeatCount = .infinity
-            sweep.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            shimmerLayer.add(sweep, forKey: "shimmer")
-        }
+        // Gradient border shimmer
+        ShimmerBorder.add(to: contentView, color: mc, cornerRadius: DesignTokens.Radii.lg, borderWidth: 3)
     }
 
     private func stopActiveAnimations() {
@@ -1016,6 +1022,7 @@ private final class ModeCard: UICollectionViewCell {
         contentView.layer.removeAnimation(forKey: "glowPulse")
         shimmerLayer.removeAllAnimations()
         shimmerLayer.isHidden = true
+        ShimmerBorder.remove(from: contentView)
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowRadius = 4
         layer.shadowOpacity = 0.1

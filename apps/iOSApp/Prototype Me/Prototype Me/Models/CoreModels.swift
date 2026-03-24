@@ -82,7 +82,6 @@ nonisolated struct Directive: Identifiable, Hashable, Sendable, Codable, Fetchab
     static let noteDirectives = hasMany(NoteDirective.self)
     static let notes = hasMany(NotePage.self, through: noteDirectives, using: NoteDirective.note)
     static let scheduleRules = hasMany(ScheduleRule.self)
-    static let scheduleInstances = hasMany(ScheduleInstance.self)
     static let history = hasMany(DirectiveHistory.self)
 }
 
@@ -198,6 +197,7 @@ nonisolated struct ScheduleRule: Identifiable, Hashable, Sendable, Codable, Fetc
     var ruleType: ScheduleType
     var params: [String: [Int]]   // e.g. { "days": [1,3,5] }
     let createdAt: Date
+    var lastCompletedDate: String? // yyyy-MM-dd — nil means never completed
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (lhs: ScheduleRule, rhs: ScheduleRule) -> Bool { lhs.id == rhs.id }
@@ -207,10 +207,10 @@ nonisolated struct ScheduleRule: Identifiable, Hashable, Sendable, Codable, Fetc
 
     // MARK: Custom encoding — params stored as JSON column "paramsJSON"
 
-    init(id: UUID, directiveId: UUID, ruleType: ScheduleType, params: [String: [Int]], createdAt: Date) {
+    init(id: UUID, directiveId: UUID, ruleType: ScheduleType, params: [String: [Int]], createdAt: Date, lastCompletedDate: String? = nil) {
         self.id = id; self.directiveId = directiveId
         self.ruleType = ruleType; self.params = params
-        self.createdAt = createdAt
+        self.createdAt = createdAt; self.lastCompletedDate = lastCompletedDate
     }
 
     init(row: Row) {
@@ -218,6 +218,7 @@ nonisolated struct ScheduleRule: Identifiable, Hashable, Sendable, Codable, Fetc
         directiveId = row["directiveId"]
         ruleType = ScheduleType(rawValue: row["ruleType"]) ?? .weekly
         createdAt = row["createdAt"]
+        lastCompletedDate = row["lastCompletedDate"]
 
         let jsonString: String = row["paramsJSON"]
         if let data = jsonString.data(using: .utf8),
@@ -233,6 +234,7 @@ nonisolated struct ScheduleRule: Identifiable, Hashable, Sendable, Codable, Fetc
         container["directiveId"] = directiveId
         container["ruleType"] = ruleType.rawValue
         container["createdAt"] = createdAt
+        container["lastCompletedDate"] = lastCompletedDate
 
         if let data = try? JSONEncoder().encode(params),
            let json = String(data: data, encoding: .utf8) {
@@ -241,23 +243,31 @@ nonisolated struct ScheduleRule: Identifiable, Hashable, Sendable, Codable, Fetc
             container["paramsJSON"] = "{}"
         }
     }
-}
 
-// MARK: - ScheduleInstance
+    // MARK: - Today Matching
 
-nonisolated struct ScheduleInstance: Identifiable, Hashable, Sendable, Codable, FetchableRecord, PersistableRecord {
-    static let databaseTableName = "scheduleInstance"
+    /// Returns true if this rule applies to today's date.
+    static func ruleMatchesToday(_ rule: ScheduleRule) -> Bool {
+        let cal = Calendar.current
+        let today = Date()
+        let weekday = cal.component(.weekday, from: today)
+        let dayOfMonth = cal.component(.day, from: today)
+        let year = cal.component(.year, from: today)
+        let month = cal.component(.month, from: today)
 
-    let id: UUID
-    let directiveId: UUID
-    var date: String              // yyyy-MM-dd
-    var status: InstanceStatus
-
-    func hash(into hasher: inout Hasher) { hasher.combine(id) }
-    static func == (lhs: ScheduleInstance, rhs: ScheduleInstance) -> Bool { lhs.id == rhs.id }
-
-    // MARK: Associations
-    static let directive = belongsTo(Directive.self)
+        if let weekdays = rule.params["weekdays"] ?? (rule.ruleType == .weekly ? rule.params["days"] : nil) {
+            if weekdays.contains(weekday) { return true }
+        }
+        if let monthDays = rule.params["monthDays"] {
+            if monthDays.contains(dayOfMonth) { return true }
+        }
+        if let flat = rule.params["oneOffs"], flat.count >= 3 {
+            for i in stride(from: 0, to: flat.count - 2, by: 3) {
+                if flat[i] == year && flat[i+1] == month && flat[i+2] == dayOfMonth { return true }
+            }
+        }
+        return false
+    }
 }
 
 // MARK: - Tag

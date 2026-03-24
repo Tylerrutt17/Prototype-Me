@@ -184,12 +184,6 @@ class NoteDetailViewController: BaseViewController {
     private func loadData() {
         guard let noteId else { return }
 
-        let today = {
-            let fmt = DateFormatter()
-            fmt.dateFormat = "yyyy-MM-dd"
-            return fmt.string(from: .now)
-        }()
-
         let observation = ValueObservation.tracking { db -> (NotePage?, [DirectiveRowData]) in
             guard let note = try NotePage.fetchOne(db, key: noteId) else { return (nil, []) }
 
@@ -198,12 +192,11 @@ class NoteDetailViewController: BaseViewController {
                 .order(Column("sortIndex"))
                 .fetchAll(db)
 
+            let allRules = try ScheduleRule.fetchAll(db)
             let rows: [DirectiveRowData] = links.compactMap { link in
                 guard let dir = try? Directive.fetchOne(db, key: link.directiveId) else { return nil }
-                let todayInstance = try? ScheduleInstance
-                    .filter(Column("directiveId") == dir.id && Column("date") == today)
-                    .fetchOne(db)
-                return DirectiveRowData(directive: dir, scheduledToday: todayInstance != nil, instanceStatus: todayInstance?.status)
+                let scheduled = allRules.contains { $0.directiveId == dir.id && ScheduleRule.ruleMatchesToday($0) }
+                return DirectiveRowData(directive: dir, scheduledToday: scheduled)
             }
             return (note, rows)
         }
@@ -370,6 +363,11 @@ private final class NoteHeaderCell: UICollectionViewCell {
         showMoreButton.isHidden = !bodyLabel.isTruncated && !expanded
     }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        ShimmerBorder.updateFrame(on: contentView, cornerRadius: DesignTokens.Radii.xl)
+    }
+
     func configure(with note: NotePage, isExpanded: Bool) {
         let color = note.kind.color
         let iconConfig = UIImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
@@ -400,6 +398,16 @@ private final class NoteHeaderCell: UICollectionViewCell {
         } else {
             bodyLabel.isHidden = false
             setExpanded(isExpanded, body: note.body)
+        }
+
+        // Shimmer border for modes
+        if note.kind == .mode {
+            // Defer to next layout pass so bounds are set
+            DispatchQueue.main.async {
+                ShimmerBorder.add(to: self.contentView, color: color, cornerRadius: DesignTokens.Radii.xl)
+            }
+        } else {
+            ShimmerBorder.remove(from: contentView)
         }
     }
 }

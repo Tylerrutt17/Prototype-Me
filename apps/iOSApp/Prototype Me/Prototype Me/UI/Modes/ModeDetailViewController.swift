@@ -189,7 +189,7 @@ class ModeDetailViewController: BaseViewController {
                 .fetchAll(db)
             let directives: [DirectiveRowData] = links.compactMap { link in
                 guard let dir = try? Directive.fetchOne(db, key: link.directiveId) else { return nil }
-                return DirectiveRowData(directive: dir, scheduledToday: false, instanceStatus: nil)
+                return DirectiveRowData(directive: dir, scheduledToday: false)
             }
 
             return ModeDetailData(note: note, isActive: isActive, linkedDirectives: directives)

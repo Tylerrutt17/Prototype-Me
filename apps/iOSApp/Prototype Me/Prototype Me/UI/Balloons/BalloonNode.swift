@@ -90,6 +90,15 @@ final class BalloonNode: UIView {
         super.layoutSubviews()
 
         let w = bounds.width
+
+        if isDeflated {
+            layoutDeflated(w: w)
+        } else {
+            layoutInflated(w: w)
+        }
+    }
+
+    private func layoutInflated(w: CGFloat) {
         let bodyHeight = w * 1.1
         let bodyRect = CGRect(x: 0, y: 0, width: w, height: bodyHeight)
 
@@ -104,6 +113,7 @@ final class BalloonNode: UIView {
             height: bodyHeight * 0.2
         )
         highlightLayer.path = UIBezierPath(ovalIn: hlRect).cgPath
+        highlightLayer.opacity = 1
 
         // Knot (small triangle at bottom)
         let knotW: CGFloat = 8
@@ -126,6 +136,7 @@ final class BalloonNode: UIView {
             controlPoint: CGPoint(x: bottomCenter.x - 6, y: stringTop.y + 12)
         )
         stringLayer.path = stringPath.cgPath
+        stringLayer.opacity = 1
 
         // Timer badge — centered on balloon body
         let timerSize = timerLabel.intrinsicContentSize
@@ -134,6 +145,77 @@ final class BalloonNode: UIView {
         timerLabel.frame = CGRect(
             x: (w - timerW) / 2,
             y: bodyRect.midY - timerH / 2,
+            width: timerW,
+            height: timerH
+        )
+
+        // Title label — below string
+        let titleY = stringBottom.y + 4
+        let titleH = titleLabel.sizeThatFits(CGSize(width: w + 20, height: .greatestFiniteMagnitude)).height
+        titleLabel.frame = CGRect(
+            x: -10,
+            y: titleY,
+            width: w + 20,
+            height: titleH
+        )
+    }
+
+    private func layoutDeflated(w: CGFloat) {
+        let gray = DesignTokens.Colors.destructive.withAlphaComponent(0.45)
+        let bodyHeight = w * 0.5  // Flattened
+        let yOffset = w * 0.3     // Push down so it looks like it sank
+
+        // Deflated body — wide and flat, slightly irregular
+        let bodyPath = UIBezierPath()
+        let midX = w / 2
+        let top = yOffset
+        let bottom = yOffset + bodyHeight
+        let midY = top + bodyHeight * 0.4
+
+        bodyPath.move(to: CGPoint(x: w * 0.05, y: midY))
+        bodyPath.addQuadCurve(to: CGPoint(x: midX, y: top), controlPoint: CGPoint(x: w * 0.15, y: top - bodyHeight * 0.1))
+        bodyPath.addQuadCurve(to: CGPoint(x: w * 0.95, y: midY), controlPoint: CGPoint(x: w * 0.85, y: top - bodyHeight * 0.1))
+        bodyPath.addQuadCurve(to: CGPoint(x: midX, y: bottom), controlPoint: CGPoint(x: w * 0.9, y: bottom + bodyHeight * 0.15))
+        bodyPath.addQuadCurve(to: CGPoint(x: w * 0.05, y: midY), controlPoint: CGPoint(x: w * 0.1, y: bottom + bodyHeight * 0.15))
+        bodyPath.close()
+
+        balloonShapeLayer.path = bodyPath.cgPath
+        balloonShapeLayer.fillColor = gray.cgColor
+
+        // No highlight on deflated balloon
+        highlightLayer.path = nil
+        highlightLayer.opacity = 0
+
+        // Knot droops
+        let knotCenter = CGPoint(x: midX, y: bottom)
+        let knotPath = UIBezierPath()
+        knotPath.move(to: CGPoint(x: knotCenter.x - 4, y: knotCenter.y - 2))
+        knotPath.addLine(to: CGPoint(x: knotCenter.x, y: knotCenter.y + 6))
+        knotPath.addLine(to: CGPoint(x: knotCenter.x + 4, y: knotCenter.y - 2))
+        knotPath.close()
+        knotLayer.path = knotPath.cgPath
+        knotLayer.fillColor = gray.cgColor
+
+        // String hangs limp and wavy
+        let stringTop = CGPoint(x: midX, y: knotCenter.y + 6)
+        let stringBottom = CGPoint(x: midX + 5, y: knotCenter.y + 25)
+        let stringPath = UIBezierPath()
+        stringPath.move(to: stringTop)
+        stringPath.addCurve(
+            to: stringBottom,
+            controlPoint1: CGPoint(x: midX - 8, y: stringTop.y + 6),
+            controlPoint2: CGPoint(x: midX + 8, y: stringTop.y + 16)
+        )
+        stringLayer.path = stringPath.cgPath
+        stringLayer.opacity = 0.3
+
+        // Timer badge — centered on deflated body
+        let timerSize = timerLabel.intrinsicContentSize
+        let timerW = timerSize.width + 8
+        let timerH = timerSize.height + 4
+        timerLabel.frame = CGRect(
+            x: (w - timerW) / 2,
+            y: yOffset + bodyHeight / 2 - timerH / 2,
             width: timerW,
             height: timerH
         )
@@ -186,11 +268,26 @@ final class BalloonNode: UIView {
 
     private func updateTimerDisplay() {
         guard let dir = currentDirective else { return }
-        timerLabel.text = " \(formatTime(dir.liveRemainingSec)) "
+        let remaining = dir.liveRemainingSec
 
-        let color = balloonColor(for: dir.pressureLevel).withAlphaComponent(0.85)
-        balloonShapeLayer.fillColor = color.cgColor
-        knotLayer.fillColor = color.cgColor
+        if remaining <= 0 {
+            timerLabel.text = " Expired "
+            applyDeflated(true)
+        } else {
+            timerLabel.text = " \(formatTime(remaining)) "
+            applyDeflated(false)
+            let color = balloonColor(for: dir.pressureLevel).withAlphaComponent(0.85)
+            balloonShapeLayer.fillColor = color.cgColor
+            knotLayer.fillColor = color.cgColor
+        }
+    }
+
+    private var isDeflated = false
+
+    private func applyDeflated(_ deflated: Bool) {
+        guard deflated != isDeflated else { return }
+        isDeflated = deflated
+        setNeedsLayout()
     }
 
     // MARK: - Helpers

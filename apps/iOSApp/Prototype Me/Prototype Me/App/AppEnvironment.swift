@@ -19,8 +19,8 @@ struct AppEnvironment {
     let syncEngine: SyncEngine
     let reachability: ReachabilityMonitor
 
-    // Future:
-    // let notificationScheduler: NotificationScheduler
+    // Notifications
+    let balloonNotificationService: BalloonNotificationService
 
     /// Production environment backed by an on-disk SQLite database.
     static func live() throws -> AppEnvironment {
@@ -50,5 +50,8 @@ struct AppEnvironment {
         self.apiClient = APIClient()
         self.reachability = ReachabilityMonitor()
         self.syncEngine = SyncEngine(db: db, api: apiClient, reachability: reachability)
+
+        // Notifications
+        self.balloonNotificationService = BalloonNotificationService()
     }
 }

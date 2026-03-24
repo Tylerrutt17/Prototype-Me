@@ -6,19 +6,23 @@ nonisolated private enum BalloonsSection: Int, Hashable, Sendable {
     case later   // 5+ hours remaining
 }
 
-private let urgentThreshold: TimeInterval = 12 * 3600 // 12 hours — matches green/yellow pressure boundary
+// Threshold is dynamic — see filter logic in loadData
 
 private enum ViewMode: Int { case grid = 0, sky = 1 }
 
 class BalloonsViewController: BaseViewController {
 
     var onDirectiveSelected: ((UUID) -> Void)?
+    var balloonNotificationService: BalloonNotificationService?
     var isEmbedded = false
 
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<BalloonsSection, DirectiveRowData>!
     private var skyView: BalloonSkyView!
     private var currentItems: [DirectiveRowData] = []
+
+    private let infoPill = UIButton(type: .system)
+    private static let hasSeenStoryKey = "hasSeenBalloonStory"
 
     private let debugSlider = UISlider()
     private let debugLabel = UILabel()
@@ -27,6 +31,7 @@ class BalloonsViewController: BaseViewController {
         if isEmbedded { hidesNavBar = true }
         super.viewDidLoad()
         configureSegmentedControl()
+        configureInfoPill()
         configureCollectionView()
         configureSkyView()
         // configureDebugSlider()  // Uncomment to test time-of-day sky
@@ -37,6 +42,11 @@ class BalloonsViewController: BaseViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         refreshAnimations()
+
+        // Restart shimmer border if the pill is still in first-time mode
+        if !UserDefaults.standard.bool(forKey: Self.hasSeenStoryKey) {
+            ShimmerBorder.restart(on: infoPill)
+        }
     }
 
     // MARK: - Debug Time Slider
@@ -110,18 +120,127 @@ class BalloonsViewController: BaseViewController {
         viewModeSegment = sc
 
         if isEmbedded {
-            // Add directly to view when nav bar is hidden
             sc.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(sc)
             NSLayoutConstraint.activate([
                 sc.topAnchor.constraint(equalTo: view.topAnchor, constant: DesignTokens.Spacing.sm),
-                sc.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-                sc.widthAnchor.constraint(greaterThanOrEqualToConstant: 200),
+                sc.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.lg),
             ])
         } else {
-            sc.widthAnchor.constraint(greaterThanOrEqualToConstant: 200).isActive = true
-            navBar.setTitleView(sc)
+            sc.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(sc)
+            NSLayoutConstraint.activate([
+                sc.topAnchor.constraint(equalTo: contentTopAnchor, constant: DesignTokens.Spacing.sm),
+                sc.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.lg),
+            ])
         }
+    }
+
+    // MARK: - Info Pill
+
+    private func configureInfoPill() {
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: "info.circle")
+        config.title = "What are Balloons?"
+        config.imagePadding = DesignTokens.Spacing.xs
+        config.baseForegroundColor = DesignTokens.Colors.textSecondary
+        config.contentInsets = NSDirectionalEdgeInsets(
+            top: DesignTokens.Spacing.sm,
+            leading: DesignTokens.Spacing.md,
+            bottom: DesignTokens.Spacing.sm,
+            trailing: DesignTokens.Spacing.md
+        )
+        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = DesignTokens.Typography.rounded(style: .caption1, weight: .medium)
+            return outgoing
+        }
+        let hasSeen = UserDefaults.standard.bool(forKey: Self.hasSeenStoryKey)
+
+        if hasSeen {
+            config.background.backgroundColor = DesignTokens.Colors.surfaceSecondary
+            config.baseForegroundColor = DesignTokens.Colors.textSecondary
+        } else {
+            config.background.backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.15)
+            config.baseForegroundColor = DesignTokens.Colors.accent
+        }
+        config.background.cornerRadius = DesignTokens.Radii.pill
+        infoPill.configuration = config
+        infoPill.addTarget(self, action: #selector(infoPillTapped), for: .touchUpInside)
+
+        infoPill.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(infoPill)
+
+        NSLayoutConstraint.activate([
+            infoPill.centerYAnchor.constraint(equalTo: viewModeSegment.centerYAnchor),
+            infoPill.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.lg),
+        ])
+
+        if !hasSeen {
+            startInfoPillPulse()
+        }
+    }
+
+    private func startInfoPillPulse() {
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
+
+        // Subtle glow pulse
+        infoPill.layer.shadowColor = DesignTokens.Colors.accent.cgColor
+        infoPill.layer.shadowRadius = 8
+        infoPill.layer.shadowOpacity = 0.4
+        infoPill.layer.shadowOffset = .zero
+
+        let glow = CABasicAnimation(keyPath: "shadowRadius")
+        glow.fromValue = 4
+        glow.toValue = 12
+        glow.duration = 1.2
+        glow.autoreverses = true
+        glow.repeatCount = .infinity
+        glow.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        infoPill.layer.add(glow, forKey: "glowPulse")
+
+        let opacityPulse = CABasicAnimation(keyPath: "shadowOpacity")
+        opacityPulse.fromValue = 0.2
+        opacityPulse.toValue = 0.5
+        opacityPulse.duration = 1.2
+        opacityPulse.autoreverses = true
+        opacityPulse.repeatCount = .infinity
+        opacityPulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        infoPill.layer.add(opacityPulse, forKey: "opacityPulse")
+
+        // Shimmer border (auto-restarts from background)
+        infoPill.clipsToBounds = false
+        DispatchQueue.main.async {
+            let pillHeight = self.infoPill.bounds.height
+            ShimmerBorder.add(
+                to: self.infoPill,
+                color: DesignTokens.Colors.accent,
+                cornerRadius: pillHeight / 2
+            )
+        }
+    }
+
+    @objc private func infoPillTapped() {
+        Haptics.light()
+
+        // Mark as seen and remove highlight
+        if !UserDefaults.standard.bool(forKey: Self.hasSeenStoryKey) {
+            UserDefaults.standard.set(true, forKey: Self.hasSeenStoryKey)
+            infoPill.layer.removeAnimation(forKey: "glowPulse")
+            infoPill.layer.removeAnimation(forKey: "opacityPulse")
+            infoPill.layer.shadowOpacity = 0
+            ShimmerBorder.remove(from: infoPill)
+
+            var config = infoPill.configuration
+            config?.background.backgroundColor = DesignTokens.Colors.surfaceSecondary
+            config?.baseForegroundColor = DesignTokens.Colors.textSecondary
+            infoPill.configuration = config
+        }
+
+        let storyVC = BalloonStoryViewController()
+        storyVC.modalPresentationStyle = .overFullScreen
+        storyVC.modalTransitionStyle = .coverVertical
+        present(storyVC, animated: true)
     }
 
     @objc private func viewModeChanged(_ sender: UISegmentedControl) {
@@ -145,9 +264,8 @@ class BalloonsViewController: BaseViewController {
         skyView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(skyView)
 
-        let skyTop = isEmbedded ? viewModeSegment.bottomAnchor : contentTopAnchor
         NSLayoutConstraint.activate([
-            skyView.topAnchor.constraint(equalTo: skyTop, constant: DesignTokens.Spacing.sm),
+            skyView.topAnchor.constraint(equalTo: viewModeSegment.bottomAnchor, constant: DesignTokens.Spacing.sm),
             skyView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             skyView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             skyView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -169,7 +287,7 @@ class BalloonsViewController: BaseViewController {
         view.addSubview(collectionView)
 
         NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: isEmbedded ? viewModeSegment.bottomAnchor : contentTopAnchor, constant: DesignTokens.Spacing.sm),
+            collectionView.topAnchor.constraint(equalTo: viewModeSegment.bottomAnchor, constant: DesignTokens.Spacing.sm),
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -211,6 +329,7 @@ class BalloonsViewController: BaseViewController {
     private func configureDataSource() {
         let cellRegistration = UICollectionView.CellRegistration<BalloonCard, DirectiveRowData> { [weak self] cell, indexPath, item in
             cell.dbQueue = self?.dbQueue
+            cell.balloonNotificationService = self?.balloonNotificationService
             cell.configure(with: item)
 
             // Gray out "later" section cards
@@ -240,22 +359,15 @@ class BalloonsViewController: BaseViewController {
     // MARK: - Observe Data
 
     private func loadData() {
-        let today = {
-            let fmt = DateFormatter()
-            fmt.dateFormat = "yyyy-MM-dd"
-            return fmt.string(from: .now)
-        }()
-
         let observation = ValueObservation.tracking { db -> [DirectiveRowData] in
             let directives = try Directive
                 .filter(Column("balloonEnabled") == true && Column("status") == DirectiveStatus.active.rawValue)
                 .fetchAll(db)
                 .sorted { $0.liveRemainingSec < $1.liveRemainingSec }
+            let allRules = try ScheduleRule.fetchAll(db)
             return directives.map { dir in
-                let todayInstance = try? ScheduleInstance
-                    .filter(Column("directiveId") == dir.id && Column("date") == today)
-                    .fetchOne(db)
-                return DirectiveRowData(directive: dir, scheduledToday: todayInstance != nil, instanceStatus: todayInstance?.status)
+                let scheduled = allRules.contains { $0.directiveId == dir.id && ScheduleRule.ruleMatchesToday($0) }
+                return DirectiveRowData(directive: dir, scheduledToday: scheduled)
             }
         }
 
@@ -263,8 +375,21 @@ class BalloonsViewController: BaseViewController {
             guard let self else { return }
             self.currentItems = items
 
-            let urgent = items.filter { $0.directive.liveRemainingSec < urgentThreshold }
-            let later = items.filter { $0.directive.liveRemainingSec >= urgentThreshold }
+            // Dynamic threshold: 50% for short balloons (<12h duration), 12h for long ones
+            let urgent = items.filter { item in
+                let dir = item.directive
+                let threshold: TimeInterval = dir.balloonDurationSec <= 12 * 3600
+                    ? dir.balloonDurationSec * 0.5
+                    : 12 * 3600
+                return dir.liveRemainingSec < threshold
+            }
+            let later = items.filter { item in
+                let dir = item.directive
+                let threshold: TimeInterval = dir.balloonDurationSec <= 12 * 3600
+                    ? dir.balloonDurationSec * 0.5
+                    : 12 * 3600
+                return dir.liveRemainingSec >= threshold
+            }
 
             // Update grid view
             var snapshot = NSDiffableDataSourceSnapshot<BalloonsSection, DirectiveRowData>()
@@ -278,10 +403,10 @@ class BalloonsViewController: BaseViewController {
             }
             self.dataSource.apply(snapshot, animatingDifferences: true)
 
-            // Force cell reconfiguration since model equality is id-only
-            var reconfigSnap = self.dataSource.snapshot()
-            reconfigSnap.reconfigureItems(reconfigSnap.itemIdentifiers)
-            self.dataSource.apply(reconfigSnap, animatingDifferences: false)
+            // Force full reload since model equality is id-only
+            var reloadSnap = self.dataSource.snapshot()
+            reloadSnap.reloadItems(reloadSnap.itemIdentifiers)
+            self.dataSource.apply(reloadSnap, animatingDifferences: false)
 
             // Update sky view
             self.skyView.update(with: items)

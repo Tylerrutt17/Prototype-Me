@@ -19,6 +19,7 @@ class FocusCoordinator: Coordinator {
     func start() {
         let vc = FocusViewController()
         vc.dbQueue = environment.db.dbQueue
+        vc.balloonNotificationService = environment.balloonNotificationService
         vc.onModeSelected = { [weak self] noteId in
             self?.showModeDetail(noteId: noteId)
         }
@@ -62,43 +63,23 @@ class FocusCoordinator: Coordinator {
     private func showBalloons() {
         let vc = BalloonsViewController()
         vc.dbQueue = environment.db.dbQueue
+        vc.balloonNotificationService = environment.balloonNotificationService
         vc.onDirectiveSelected = { [weak self] directiveId in
             self?.showDirectiveDetail(directiveId: directiveId)
         }
         navigationController.pushViewController(vc, animated: true)
     }
 
-    private func showDirectiveDetail(directiveId: UUID) {
+    func showDirectiveDetail(directiveId: UUID, fromNotification: Bool = false) {
         let vc = DirectiveDetailViewController()
         vc.dbQueue = environment.db.dbQueue
         vc.directiveId = directiveId
+        vc.balloonNotificationService = environment.balloonNotificationService
+        vc.fromNotification = fromNotification
         vc.onEditTapped = { [weak self] directiveId in
             self?.presentDirectiveEditor(directiveId: directiveId)
         }
-        vc.onAddScheduleTapped = { [weak self] directiveId in
-            self?.presentScheduleEditor(directiveId: directiveId)
-        }
-        vc.onEditScheduleTapped = { [weak self] directiveId, rule in
-            self?.presentScheduleEditor(directiveId: directiveId, existingRule: rule)
-        }
         navigationController.pushViewController(vc, animated: true)
-    }
-
-    private func presentScheduleEditor(directiveId: UUID, existingRule: ScheduleRule? = nil) {
-        let editor = ScheduleRuleEditorViewController()
-        editor.dbQueue = environment.db.dbQueue
-        editor.directiveId = directiveId
-        editor.existingRule = existingRule
-        editor.onSave = { [weak editor] in
-            editor?.dismiss(animated: true)
-        }
-        let nav = UINavigationController(rootViewController: editor)
-        nav.isNavigationBarHidden = true
-        if let sheet = nav.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = true
-        }
-        navigationController.present(nav, animated: true)
     }
 
     // MARK: - Modal Editors
@@ -119,6 +100,7 @@ class FocusCoordinator: Coordinator {
         let editor = DirectiveEditorViewController()
         editor.dbQueue = environment.db.dbQueue
         editor.directiveService = environment.directiveService
+        editor.balloonNotificationService = environment.balloonNotificationService
         editor.directiveId = directiveId
         editor.onSave = { [weak self] in
             self?.navigationController.dismiss(animated: true)

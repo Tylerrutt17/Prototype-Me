@@ -1,4 +1,5 @@
 import UIKit
+import UserNotifications
 
 /// Card-style section for enabling/configuring a balloon countdown timer on a directive.
 final class BalloonEditorSection: UIView {
@@ -10,6 +11,10 @@ final class BalloonEditorSection: UIView {
     private let durationLabel = UILabel()
     private let durationStepper = UIStepper()
     private let detailStack = UIStackView()
+    private let debugToggle = UISwitch()
+    private var debugMode = false
+    private let notifBanner = UIView()
+    private let notifLabel = UILabel()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -30,7 +35,7 @@ final class BalloonEditorSection: UIView {
 
         // Section title
         let sectionLabel = UILabel()
-        sectionLabel.text = "COUNTDOWN TIMER / BALLOON"
+        sectionLabel.text = "BALLOON / TIMER"
         sectionLabel.font = DesignTokens.Typography.caption1
         sectionLabel.textColor = DesignTokens.Colors.textSecondary
         sectionLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -43,7 +48,7 @@ final class BalloonEditorSection: UIView {
         iconView.contentMode = .scaleAspectFit
 
         let titleLabel = UILabel()
-        titleLabel.text = "Enable Timer"
+        titleLabel.text = "Enable Balloon / Timer"
         titleLabel.font = DesignTokens.Typography.rounded(style: .headline, weight: .semibold)
         titleLabel.textColor = DesignTokens.Colors.textPrimary
 
@@ -83,10 +88,62 @@ final class BalloonEditorSection: UIView {
         durationRow.axis = .horizontal
         durationRow.alignment = .center
 
+        // Debug: override duration to 1 minute
+        let debugLabel = UILabel()
+        debugLabel.text = "DEBUG: 1 min duration"
+        debugLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .bold)
+        debugLabel.textColor = DesignTokens.Colors.warning
+
+        debugToggle.isOn = false
+        debugToggle.onTintColor = DesignTokens.Colors.warning
+        debugToggle.transform = CGAffineTransform(scaleX: 0.75, y: 0.75)
+        debugToggle.addTarget(self, action: #selector(debugToggled), for: .valueChanged)
+
+        let debugRow = UIStackView(arrangedSubviews: [debugLabel, UIView(), debugToggle])
+        debugRow.axis = .horizontal
+        debugRow.alignment = .center
+
+        // Notification permission banner (hidden by default)
+        notifBanner.backgroundColor = DesignTokens.Colors.warning.withAlphaComponent(0.12)
+        notifBanner.layer.cornerRadius = DesignTokens.Radii.md
+        notifBanner.isHidden = true
+
+        let warningIcon = UIImageView(image: UIImage(systemName: "bell.slash.fill"))
+        warningIcon.tintColor = DesignTokens.Colors.warning
+        warningIcon.contentMode = .scaleAspectFit
+        warningIcon.translatesAutoresizingMaskIntoConstraints = false
+        warningIcon.widthAnchor.constraint(equalToConstant: 18).isActive = true
+        warningIcon.heightAnchor.constraint(equalToConstant: 18).isActive = true
+
+        notifLabel.text = "Notifications are disabled. Tap here to enable them in Settings so you get reminded when balloons expire."
+        notifLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .medium)
+        notifLabel.textColor = DesignTokens.Colors.warning
+        notifLabel.numberOfLines = 0
+
+        let notifStack = UIStackView(arrangedSubviews: [warningIcon, notifLabel])
+        notifStack.axis = .horizontal
+        notifStack.spacing = DesignTokens.Spacing.sm
+        notifStack.alignment = .top
+        notifStack.translatesAutoresizingMaskIntoConstraints = false
+        notifBanner.addSubview(notifStack)
+
+        let bannerPad = DesignTokens.Spacing.md
+        NSLayoutConstraint.activate([
+            notifStack.topAnchor.constraint(equalTo: notifBanner.topAnchor, constant: bannerPad),
+            notifStack.bottomAnchor.constraint(equalTo: notifBanner.bottomAnchor, constant: -bannerPad),
+            notifStack.leadingAnchor.constraint(equalTo: notifBanner.leadingAnchor, constant: bannerPad),
+            notifStack.trailingAnchor.constraint(equalTo: notifBanner.trailingAnchor, constant: -bannerPad),
+        ])
+
+        let bannerTap = UITapGestureRecognizer(target: self, action: #selector(openSettings))
+        notifBanner.addGestureRecognizer(bannerTap)
+
         detailStack.axis = .vertical
         detailStack.spacing = DesignTokens.Spacing.sm
+        detailStack.addArrangedSubview(notifBanner)
         detailStack.addArrangedSubview(durationTitle)
         detailStack.addArrangedSubview(durationRow)
+        detailStack.addArrangedSubview(debugRow)
         detailStack.isHidden = true
 
         // Main stack
@@ -124,6 +181,40 @@ final class BalloonEditorSection: UIView {
         }
         onToggleChanged?(isOn)
         Haptics.selection()
+
+        if isOn { checkNotificationPermission() }
+    }
+
+    private func checkNotificationPermission() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                let denied = settings.authorizationStatus == .denied
+                UIView.animate(withDuration: 0.25) {
+                    self.notifBanner.isHidden = !denied
+                }
+            }
+        }
+    }
+
+    @objc private func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
+
+    @objc private func debugToggled() {
+        debugMode = debugToggle.isOn
+        if debugMode {
+            durationLabel.text = "1 minute (debug)"
+            durationLabel.textColor = DesignTokens.Colors.warning
+            durationStepper.isEnabled = false
+            onDurationChanged?(1.0 / 60.0)  // 1 minute in hours
+        } else {
+            durationStepper.isEnabled = true
+            durationLabel.textColor = DesignTokens.Colors.textPrimary
+            updateDurationLabel(durationStepper.value)
+            onDurationChanged?(durationStepper.value)
+        }
+        Haptics.selection()
     }
 
     @objc private func durationChanged() {
@@ -154,5 +245,7 @@ final class BalloonEditorSection: UIView {
         detailStack.isHidden = !isEnabled
         detailStack.alpha = isEnabled ? 1 : 0
         updateDurationLabel(durationHours)
+
+        if isEnabled { checkNotificationPermission() }
     }
 }

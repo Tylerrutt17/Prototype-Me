@@ -72,7 +72,8 @@ class NoteListViewController: BaseViewController {
             }
 
             navBar.setRightButtons([
-                NavBarButton(systemImage: "plus", action: { [weak self] in self?.showAddMenu() }),
+                NavBarButton(systemImage: "folder.badge.plus", action: { [weak self] in self?.onAddFolderTapped?() }),
+                NavBarButton(systemImage: "doc.badge.plus", action: { [weak self] in self?.onAddNoteTapped?() }),
             ])
         }
 
