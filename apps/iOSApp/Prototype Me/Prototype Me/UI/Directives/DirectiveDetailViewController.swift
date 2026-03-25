@@ -43,7 +43,7 @@ class DirectiveDetailViewController: BaseViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         navBar.setRightButtons([
-            NavBarButton(systemImage: "pencil", action: { [weak self] in self?.editTapped() }),
+            NavBarButton(systemImage: "square.and.pencil", action: { [weak self] in self?.editTapped() }),
         ])
         configureCollectionView()
         configureDataSource()

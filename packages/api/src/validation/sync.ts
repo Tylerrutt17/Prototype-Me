@@ -1,10 +1,10 @@
 import { z } from "zod/v4";
-import { uuid, syncOp } from "./shared.js";
+import { syncOp } from "./shared.js";
 
 export const outboxOp = z.object({
-  id: uuid,
-  entityType: z.string(),
-  entityId: uuid,
+  id: z.string().min(1),
+  entityType: z.string().min(1),
+  entityId: z.string().min(1), // UUID string or composite "noteId|directiveId"
   op: syncOp,
   patch: z.string(),
   baseUpdatedAt: z.string().datetime().nullable().optional(),
@@ -12,15 +12,18 @@ export const outboxOp = z.object({
   createdAt: z.string().datetime(),
 });
 
+// Push: matches iOS SyncEngine.PushRequest
 export const syncPushRequest = z.object({
   deviceId: z.string().min(1),
-  operations: z.array(outboxOp),
+  lastSyncToken: z.string().nullable().optional(),
+  ops: z.array(outboxOp),
 });
 
-export const syncPullRequest = z.object({
-  deviceId: z.string().min(1),
-  cursor: z.string().nullable().optional(),
+// Pull: query params from GET request
+export const syncPullQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(500).optional().default(200),
+  cursor: z.string().optional(),
 });
 
 export type SyncPushInput = z.infer<typeof syncPushRequest>;
-export type SyncPullInput = z.infer<typeof syncPullRequest>;
+export type SyncPullQuery = z.infer<typeof syncPullQuery>;

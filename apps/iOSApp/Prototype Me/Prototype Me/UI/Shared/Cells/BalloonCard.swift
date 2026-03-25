@@ -13,6 +13,7 @@ final class BalloonCard: InteractiveCell {
     private let fillLayer = CAGradientLayer()
     private var displayLink: CADisplayLink?
     private var currentDirective: Directive?
+    private var isPumpAnimating = false
 
     /// Set by the VC so the cell can write the pump reset directly.
     var dbQueue: DatabaseQueue?
@@ -97,12 +98,7 @@ final class BalloonCard: InteractiveCell {
     func configure(with data: DirectiveRowData) {
         titleLabel.text = data.directive.title
         currentDirective = data.directive
-
-        // Gray out pump button during cooldown
-        let elapsed = Date.now.timeIntervalSince(data.directive.updatedAt)
-        let ready = elapsed >= Self.pumpCooldown
-        pumpButton.isEnabled = ready
-
+        pumpButton.isEnabled = true
         updateTimerDisplay()
         startDisplayTimer()
     }
@@ -141,11 +137,10 @@ final class BalloonCard: InteractiveCell {
         updateTimerDisplay()
     }
 
-    /// Minimum seconds since last pump before the button reappears.
-    private static let pumpCooldown: TimeInterval = 60
-
     private func updateTimerDisplay() {
         guard let dir = currentDirective else { return }
+        // Skip updates during pump animation — the animation handles visuals
+        guard !isPumpAnimating else { return }
         let remaining = dir.liveRemainingSec
 
         // Update fill gauge
@@ -168,14 +163,6 @@ final class BalloonCard: InteractiveCell {
             pressureIndicator.configure(level: dir.pressureLevel)
         }
 
-        // Gray out pump button during cooldown, re-enable when ready
-        let elapsed = Date.now.timeIntervalSince(dir.updatedAt)
-        let ready = elapsed >= Self.pumpCooldown
-        if pumpButton.isEnabled != ready {
-            UIView.animate(withDuration: 0.3) {
-                self.pumpButton.isEnabled = ready
-            }
-        }
     }
 
     // MARK: - Fill Gauge
@@ -250,8 +237,61 @@ final class BalloonCard: InteractiveCell {
     // MARK: - Pump Animation
 
     private func playPumpAnimation(oldTime: String, newTime: String, newDirective: Directive, onComplete: (() -> Void)? = nil) {
-        // Disable pump button during animation to prevent stacking
+        // Disable pump button and live updates during animation
         pumpButton.isUserInteractionEnabled = false
+        isPumpAnimating = true
+
+        // 0) Animate fill gauge from current level to 100% green
+        let currentPct = currentDirective.map { d in
+            d.balloonDurationSec > 0 ? max(0, min(1, d.liveRemainingSec / d.balloonDurationSec)) : 0
+        } ?? 0
+        let currentTopEdge = CGFloat(1.0 - currentPct)
+
+        // Animate the fill locations from current to full
+        let locationsAnim = CABasicAnimation(keyPath: "locations")
+        locationsAnim.fromValue = [0.0, currentTopEdge, currentTopEdge + 0.001, 1.0]
+        locationsAnim.toValue = [0.0, 0.0, 0.001, 1.0]
+        locationsAnim.duration = 0.5
+        locationsAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        locationsAnim.fillMode = .forwards
+        locationsAnim.isRemovedOnCompletion = false
+
+        // Also animate color to green
+        let currentLevel = currentDirective?.pressureLevel
+        let currentColor: UIColor = {
+            switch currentLevel {
+            case .green: return DesignTokens.Colors.success
+            case .yellow: return DesignTokens.Colors.warning
+            case .red: return DesignTokens.Colors.destructive
+            case .none: return DesignTokens.Colors.destructive
+            }
+        }()
+        let greenColor = DesignTokens.Colors.success
+
+        let colorsAnim = CABasicAnimation(keyPath: "colors")
+        colorsAnim.fromValue = [
+            UIColor.clear.cgColor,
+            UIColor.clear.cgColor,
+            currentColor.withAlphaComponent(0.18).cgColor,
+            currentColor.withAlphaComponent(0.18).cgColor,
+        ]
+        colorsAnim.toValue = [
+            UIColor.clear.cgColor,
+            UIColor.clear.cgColor,
+            greenColor.withAlphaComponent(0.18).cgColor,
+            greenColor.withAlphaComponent(0.18).cgColor,
+        ]
+        colorsAnim.duration = 0.5
+        colorsAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        colorsAnim.fillMode = .forwards
+        colorsAnim.isRemovedOnCompletion = false
+
+        let fillGroup = CAAnimationGroup()
+        fillGroup.animations = [locationsAnim, colorsAnim]
+        fillGroup.duration = 0.5
+        fillGroup.fillMode = .forwards
+        fillGroup.isRemovedOnCompletion = false
+        fillLayer.add(fillGroup, forKey: "pumpFill")
 
         // 1) Card inflate + spring bounce
         let inflate = CASpringAnimation(keyPath: "transform.scale")
@@ -341,8 +381,10 @@ final class BalloonCard: InteractiveCell {
                     // Heavier haptic on impact
                     Haptics.heavy()
 
-                    // Re-enable pump + write to DB
+                    // Re-enable pump + live updates, write to DB
                     self.pumpButton.isUserInteractionEnabled = true
+                    self.isPumpAnimating = false
+                    self.fillLayer.removeAnimation(forKey: "pumpFill")
                     onComplete?()
                 }
             }

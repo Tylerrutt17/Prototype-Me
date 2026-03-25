@@ -1,5 +1,7 @@
 ## Frontend infrastructure outline (iOS — Swift / UIKit / GRDB)
 
+> **Implementation status (2026-03-24):** Sync engine fully hardened — all 7 services atomically enqueue OutboxOps in the same DB transaction as writes. SyncEngine observes outbox via GRDB ValueObservation and auto-triggers debounced push. Pull handles all 7 entity types with tombstone-before-upsert guard. Cascade-aware deletes in DirectiveService, NoteService, FolderService. VC delete paths routed through services. OutboxOp.entityId is String (not UUID) for composite key support. Validation uses Zod on backend (not OpenAPI).
+
 See also: `backend-outline.md` for API, schema, and sync protocol details.
 See also: `project-outline-v2.md` for product spec, data model decisions, and build order.
 
@@ -7,8 +9,8 @@ See also: `project-outline-v2.md` for product spec, data model decisions, and bu
 
 * **Platform**: iOS-first, native **Swift / UIKit** ONLY UIKIT.
 * **Local DB**: **GRDB** (Swift SQLite toolkit) for full control over sync queries, outbox, tombstones, and migrations.
-* **Networking**: REST API for sync + auth. All types generated from OpenAPI spec.
-* **ID strategy**: **UUIDv7** for all entities (sortable, offline-safe, no collisions).
+* **Networking**: REST API for sync + auth. Types defined manually as Codable structs (not OpenAPI-generated).
+* **ID strategy**: **UUID** for all entities (offline-safe, no collisions).
 * **Offline-first**: app is fully usable without internet; sync is opportunistic.
 
 ---
@@ -16,15 +18,21 @@ See also: `project-outline-v2.md` for product spec, data model decisions, and bu
 ### 2) Local data + sync
 
 * GRDB schema mirrors backend entities (see `backend-outline.md` §2 for full data model).
-* All mutable entities include: `version: Int`, `updatedAt`, `updatedByDeviceId`, `metadata: JSON`.
+* All versioned entities include `version: Int` and `updatedAt`. Versioned: notePage, directive, folder, dayEntry, tag, scheduleRule.
 * **Outbox queue** persists `OutboxOp` records until server ack.
   * Each `OutboxOp` includes `schemaVersion` to handle queued ops replaying after app updates.
+  * `OutboxOp.entityId` is `String` (not UUID) to support composite keys for join tables (noteDirective uses `"noteId|directiveId"`).
+  * Services create OutboxOps **in the same `dbQueue.write` transaction** as the data write — no crash gap.
+  * `OutboxOp.enqueue()` and `OutboxOp.enqueueDelete()` are static helpers that work inside a `Database` context.
 * **Pull cursor** stored in `SyncState` table (`lastSyncToken`, `lastPushAt`, `lastPullAt`, `deviceId`).
-* **Tombstone table** (separate from main entities): `id`, `entityType`, `entityId`, `deletedAt`, `updatedAt`, `deviceId`.
+* **Tombstone table** (separate from main entities): `id`, `entityType`, `entityId` (String), `deletedAt`, `updatedAt`, `deviceId`.
   * Main tables stay clean — no `deletedAt` column on every entity.
-  * Compact local tombstones after server ack.
-* **Conflict handling**: version-based LWW (highest `version` wins; `updatedAt` + `updatedByDeviceId` as tiebreaker). Note body conflicts create a conflict copy for manual resolution.
-* **Background sync**: push first (maximize data safety), then pull. Triggers: app foreground, `BGAppRefreshTask`, manual pull-to-refresh, after successful push.
+  * `applyUpsert` checks tombstones before inserting — prevents deleted data from being resurrected.
+  * Cascade-aware deletes: services tombstone children (noteDirective links, scheduleRules) before parent delete. FolderService tombstones recursive descendants + version-bumps affected notes.
+* **Conflict handling**: version-based LWW. Server is authoritative (increments version on every update). Client skips pull events where `local.version > remote.version`.
+* **Push trigger**: SyncEngine observes outbox via GRDB `ValueObservation`. When new ops appear, schedules a debounced push (2s). Also triggers on network reconnection.
+* **Dirty flag**: if writes arrive during an active sync cycle, SyncEngine re-syncs automatically when the current cycle completes.
+* **Background sync**: push first (maximize data safety), then pull. Triggers: outbox observation, reachability change, manual force sync.
 
 **GRDB migration rules**
 
@@ -44,12 +52,13 @@ See also: `project-outline-v2.md` for product spec, data model decisions, and bu
 
 ---
 
-### 3) Generated types (OpenAPI)
+### 3) API types
 
-* **OpenAPI spec** (`packages/api-spec/openapi.yaml`) is the single source of truth for all API types and endpoints.
-* Swift types generated via Apple's `swift-openapi-generator` → `Codable` structs in `Generated/APITypes.swift`.
-* Codegen script: `packages/api-spec/scripts/generate-swift.sh`.
-* All API requests include `X-API-Version` header.
+* ~~OpenAPI spec was originally planned but not used.~~ Backend uses **Zod schemas** as the source of truth for request/response validation.
+* Swift types are defined manually as `Codable` structs (in models + SyncEngine).
+* Sync types (PushRequest, PushResponse, PullResponse) are defined in `SyncEngine.swift`.
+* Endpoint wrappers in `APIClient+Endpoints.swift`.
+* All API requests include `X-API-Version` and `X-Device-Id` headers.
 
 ---
 
@@ -203,7 +212,7 @@ See also: `project-outline-v2.md` for product spec, data model decisions, and bu
   deinit { observationToken?.cancel() }
   ```
 * **Compound observations**: for screens that need data from multiple tables (e.g., Focus panel: directives + schedule instances + balloons), use `ValueObservation.tracking` with a single closure that queries all needed data and returns a typed struct.
-* Services own all write paths. View controllers **never** write to GRDB directly.
+* Services own all write paths for syncable entities. A few VC/cell inline writes remain for device-local state (ActiveMode) and minor updates (balloon pump in BalloonCard, schedule toggle in ScheduleInstanceRow) — these include inline `OutboxOp.enqueue` calls.
 
 **Base view controller (`BaseViewController`)**
 

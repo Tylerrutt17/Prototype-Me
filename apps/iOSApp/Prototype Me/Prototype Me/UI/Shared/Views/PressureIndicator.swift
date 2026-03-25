@@ -4,9 +4,16 @@ import UIKit
 final class PressureIndicator: UIView {
 
     private let dot = UIView()
+    private var widthConstraint: NSLayoutConstraint!
+    private var heightConstraint: NSLayoutConstraint!
 
     var size: CGFloat = 12 {
-        didSet { invalidateIntrinsicContentSize(); setNeedsLayout() }
+        didSet {
+            widthConstraint.constant = size
+            heightConstraint.constant = size
+            invalidateIntrinsicContentSize()
+            setNeedsLayout()
+        }
     }
 
     override var intrinsicContentSize: CGSize {
@@ -25,19 +32,23 @@ final class PressureIndicator: UIView {
 
     private func setupView() {
         dot.translatesAutoresizingMaskIntoConstraints = false
+        dot.clipsToBounds = true
         addSubview(dot)
+
+        widthConstraint = dot.widthAnchor.constraint(equalToConstant: size)
+        heightConstraint = dot.heightAnchor.constraint(equalToConstant: size)
 
         NSLayoutConstraint.activate([
             dot.centerXAnchor.constraint(equalTo: centerXAnchor),
             dot.centerYAnchor.constraint(equalTo: centerYAnchor),
-            dot.widthAnchor.constraint(equalToConstant: size),
-            dot.heightAnchor.constraint(equalToConstant: size),
+            widthConstraint,
+            heightConstraint,
         ])
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        dot.layer.cornerRadius = size / 2
+        dot.layer.cornerRadius = dot.bounds.width / 2
     }
 
     func configure(level: PressureLevel?) {

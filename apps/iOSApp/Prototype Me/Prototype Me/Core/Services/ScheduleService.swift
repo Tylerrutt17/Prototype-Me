@@ -17,12 +17,15 @@ final class ScheduleService: Sendable {
         ruleType: ScheduleType,
         params: [String: [Int]]
     ) async throws -> ScheduleRule {
+        let now = Date()
         let rule = ScheduleRule(
             id: UUID(),
             directiveId: directiveId,
             ruleType: ruleType,
             params: params,
-            createdAt: Date()
+            version: 1,
+            createdAt: now,
+            updatedAt: now
         )
         try await db.dbQueue.write { db in
             try rule.insert(db)
@@ -42,6 +45,8 @@ final class ScheduleService: Sendable {
         try await db.dbQueue.write { db in
             guard var rule = try ScheduleRule.fetchOne(db, key: id) else { return }
             rule.lastCompletedDate = date
+            rule.version += 1
+            rule.updatedAt = Date()
             try rule.update(db)
         }
     }
@@ -50,6 +55,21 @@ final class ScheduleService: Sendable {
         try await db.dbQueue.write { db in
             guard var rule = try ScheduleRule.fetchOne(db, key: id) else { return }
             rule.lastCompletedDate = nil
+            rule.version += 1
+            rule.updatedAt = Date()
+            try rule.update(db)
+        }
+    }
+
+    // MARK: - Update (for editor)
+
+    func updateRule(id: UUID, ruleType: ScheduleType, params: [String: [Int]]) async throws {
+        try await db.dbQueue.write { db in
+            guard var rule = try ScheduleRule.fetchOne(db, key: id) else { return }
+            rule.ruleType = ruleType
+            rule.params = params
+            rule.version += 1
+            rule.updatedAt = Date()
             try rule.update(db)
         }
     }

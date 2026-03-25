@@ -15,11 +15,17 @@ final class SyncEngine: @unchecked Sendable {
 
     private let lock = NSLock()
     private var isSyncing = false
+    private var isDirty = false
     private var lastError: Error?
 
     private static let pullPageSize = 200
     private static let maxRetryAttempts = 5
     private static let maxBackoffSeconds: Double = 30
+    private static let pushDebounceInterval: TimeInterval = 2.0
+
+    private var debounceWorkItem: DispatchWorkItem?
+    private let debounceQueue = DispatchQueue(label: "com.prototypeme.sync.debounce")
+    private var outboxObserver: AnyDatabaseCancellable?
 
     // MARK: - Init
 
@@ -37,6 +43,15 @@ final class SyncEngine: @unchecked Sendable {
                 Task { try? await self?.sync() }
             }
         }
+
+        // Watch outbox table — auto-trigger debounced push when new ops appear
+        outboxObserver = ValueObservation
+            .tracking { db in try OutboxOp.fetchCount(db) }
+            .start(in: db.dbQueue, onError: { _ in }, onChange: { [weak self] count in
+                if count > 0 {
+                    self?.schedulePush()
+                }
+            })
     }
 
     // MARK: - Public
@@ -46,7 +61,13 @@ final class SyncEngine: @unchecked Sendable {
         guard reachability.isConnected else { return }
         guard beginSync() else { return }
 
-        defer { endSync() }
+        defer {
+            endSync()
+            // If writes arrived during sync, re-sync
+            if checkAndClearDirty() {
+                Task { try? await self.sync() }
+            }
+        }
 
         do {
             try await push()
@@ -59,6 +80,18 @@ final class SyncEngine: @unchecked Sendable {
             lastError = error
             lock.unlock()
             throw error
+        }
+    }
+
+    /// Schedule a debounced push (called after local writes).
+    func schedulePush() {
+        debounceQueue.async { [weak self] in
+            self?.debounceWorkItem?.cancel()
+            let item = DispatchWorkItem { [weak self] in
+                Task { try? await self?.sync() }
+            }
+            self?.debounceWorkItem = item
+            self?.debounceQueue.asyncAfter(deadline: .now() + Self.pushDebounceInterval, execute: item)
         }
     }
 
@@ -87,7 +120,7 @@ final class SyncEngine: @unchecked Sendable {
                 PushRequest.OpPayload(
                     id: op.id.uuidString,
                     entityType: op.entityType,
-                    entityId: op.entityId.uuidString,
+                    entityId: op.entityId,
                     op: op.op,
                     patch: op.patch,
                     baseUpdatedAt: op.baseUpdatedAt,
@@ -103,7 +136,7 @@ final class SyncEngine: @unchecked Sendable {
             // Remove successfully applied ops from outbox
             try await db.dbQueue.write { db in
                 let appliedEntityIds = Set(response.applied.map(\.entityId))
-                for op in ops where appliedEntityIds.contains(op.entityId.uuidString) {
+                for op in ops where appliedEntityIds.contains(op.entityId) {
                     try op.delete(db)
                 }
 
@@ -115,7 +148,7 @@ final class SyncEngine: @unchecked Sendable {
                 }
             }
         } catch let error as APIClient.APIError {
-            // Mark failed ops with error
+            // Mark failed ops with error + exponential backoff delay
             try await db.dbQueue.write { db in
                 for var op in ops {
                     op.attemptCount += 1
@@ -163,56 +196,6 @@ final class SyncEngine: @unchecked Sendable {
         }
     }
 
-    // MARK: - Outbox Enqueue
-
-    /// Enqueue a local change for sync. Called by services after writes.
-    func enqueue(entityType: String, entityId: UUID, op: String, patch: String = "{}", baseUpdatedAt: Date? = nil) async throws {
-        let outboxOp = OutboxOp(
-            id: UUID(),
-            entityType: entityType,
-            entityId: entityId,
-            op: op,
-            patch: patch,
-            baseUpdatedAt: baseUpdatedAt,
-            schemaVersion: 1,
-            createdAt: Date(),
-            attemptCount: 0,
-            lastError: nil
-        )
-        try await db.dbQueue.write { db in
-            try outboxOp.insert(db)
-        }
-    }
-
-    /// Enqueue a delete: creates a tombstone + outbox op.
-    func enqueueDelete(entityType: String, entityId: UUID) async throws {
-        try await db.dbQueue.write { db in
-            let tombstone = Tombstone(
-                id: UUID(),
-                entityType: entityType,
-                entityId: entityId,
-                deletedAt: Date(),
-                updatedAt: Date(),
-                deviceId: self.api.deviceId
-            )
-            try tombstone.insert(db)
-
-            let op = OutboxOp(
-                id: UUID(),
-                entityType: entityType,
-                entityId: entityId,
-                op: "delete",
-                patch: "{}",
-                baseUpdatedAt: nil,
-                schemaVersion: 1,
-                createdAt: Date(),
-                attemptCount: 0,
-                lastError: nil
-            )
-            try op.insert(db)
-        }
-    }
-
     // MARK: - Debug Info
 
     struct DebugInfo: Sendable {
@@ -245,12 +228,15 @@ final class SyncEngine: @unchecked Sendable {
         )
     }
 
-    // MARK: - Private
+    // MARK: - Private: Sync State
 
     private func beginSync() -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        guard !isSyncing else { return false }
+        guard !isSyncing else {
+            isDirty = true  // Mark dirty so we re-sync when current cycle ends
+            return false
+        }
         isSyncing = true
         return true
     }
@@ -259,6 +245,14 @@ final class SyncEngine: @unchecked Sendable {
         lock.lock()
         isSyncing = false
         lock.unlock()
+    }
+
+    private func checkAndClearDirty() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        let wasDirty = isDirty
+        isDirty = false
+        return wasDirty
     }
 
     private func initializeSyncState() {
@@ -276,6 +270,15 @@ final class SyncEngine: @unchecked Sendable {
         }
     }
 
+    // MARK: - Private: Backoff
+
+    /// Calculate backoff delay for a given attempt count (exponential with jitter).
+    private static func backoffDelay(attempt: Int) -> TimeInterval {
+        let base = min(pow(2.0, Double(attempt)), maxBackoffSeconds)
+        let jitter = Double.random(in: 0...base * 0.3)
+        return base + jitter
+    }
+
     // MARK: - Apply Remote Events
 
     private func applyEvent(_ event: PullResponse.ChangeEvent, in db: Database) throws {
@@ -290,15 +293,35 @@ final class SyncEngine: @unchecked Sendable {
     }
 
     private func applyDelete(_ event: PullResponse.ChangeEvent, in db: Database) throws {
-        guard let entityId = UUID(uuidString: event.entityId) else { return }
-
         switch event.entityType {
-        case "notePage":    try NotePage.deleteOne(db, key: entityId)
-        case "directive":   try Directive.deleteOne(db, key: entityId)
-        case "folder":      try Folder.deleteOne(db, key: entityId)
-        case "dayEntry":    try DayEntry.deleteOne(db, key: entityId)
-        case "tag":         try Tag.deleteOne(db, key: entityId)
-        default: break
+        case "notePage":
+            guard let entityId = UUID(uuidString: event.entityId) else { return }
+            try NotePage.deleteOne(db, key: entityId)
+        case "directive":
+            guard let entityId = UUID(uuidString: event.entityId) else { return }
+            try Directive.deleteOne(db, key: entityId)
+        case "folder":
+            guard let entityId = UUID(uuidString: event.entityId) else { return }
+            try Folder.deleteOne(db, key: entityId)
+        case "dayEntry":
+            guard let entityId = UUID(uuidString: event.entityId) else { return }
+            try DayEntry.deleteOne(db, key: entityId)
+        case "tag":
+            guard let entityId = UUID(uuidString: event.entityId) else { return }
+            try Tag.deleteOne(db, key: entityId)
+        case "noteDirective":
+            // entityId format: "noteId|directiveId"
+            let parts = event.entityId.split(separator: "|")
+            guard parts.count == 2,
+                  let noteId = UUID(uuidString: String(parts[0])),
+                  let dirId = UUID(uuidString: String(parts[1])) else { return }
+            try db.execute(sql: "DELETE FROM noteDirective WHERE noteId = ? AND directiveId = ?",
+                           arguments: [noteId.uuidString, dirId.uuidString])
+        case "scheduleRule":
+            guard let entityId = UUID(uuidString: event.entityId) else { return }
+            try ScheduleRule.deleteOne(db, key: entityId)
+        default:
+            break
         }
     }
 
@@ -307,7 +330,13 @@ final class SyncEngine: @unchecked Sendable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
-        // Version-based LWW: only apply if remote version ≥ local version
+        // Check tombstones first — never resurrect deleted entities
+        let hasTombstone = try Tombstone
+            .filter(Column("entityType") == event.entityType && Column("entityId") == event.entityId)
+            .fetchCount(db) > 0
+        if hasTombstone { return }
+
+        // Version-based LWW: only apply if remote version >= local version
         switch event.entityType {
         case "notePage":
             let remote = try decoder.decode(NotePage.self, from: payloadData)
@@ -315,18 +344,47 @@ final class SyncEngine: @unchecked Sendable {
                 return // Local wins
             }
             try remote.save(db)
+
         case "directive":
             let remote = try decoder.decode(Directive.self, from: payloadData)
             if let local = try Directive.fetchOne(db, key: remote.id), local.version > remote.version {
                 return
             }
             try remote.save(db)
+
         case "folder":
             let remote = try decoder.decode(Folder.self, from: payloadData)
+            if let local = try Folder.fetchOne(db, key: remote.id), local.version > remote.version {
+                return
+            }
             try remote.save(db)
+
+        case "dayEntry":
+            let remote = try decoder.decode(DayEntry.self, from: payloadData)
+            if let local = try DayEntry.fetchOne(db, key: remote.id), local.version > remote.version {
+                return
+            }
+            try remote.save(db)
+
         case "tag":
             let remote = try decoder.decode(Tag.self, from: payloadData)
+            if let local = try Tag.fetchOne(db, key: remote.id), local.version > remote.version {
+                return
+            }
             try remote.save(db)
+
+        case "noteDirective":
+            let remote = try decoder.decode(NoteDirective.self, from: payloadData)
+            // For join tables: insert or replace (no version-based conflict)
+            try remote.save(db)
+
+        case "scheduleRule":
+            let remote = try decoder.decode(ScheduleRule.self, from: payloadData)
+            if let local = try ScheduleRule.fetchOne(db, key: remote.id), local.version > remote.version {
+                return
+            }
+            try remote.save(db)
+
         default:
             break
         }

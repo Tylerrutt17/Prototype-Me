@@ -94,6 +94,7 @@ nonisolated struct NoteDirective: Identifiable, Hashable, Sendable, Codable, Fet
     let noteId: UUID
     let directiveId: UUID
     var sortIndex: Int
+    var createdAt: Date = Date()
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (lhs: NoteDirective, rhs: NoteDirective) -> Bool { lhs.id == rhs.id }
@@ -104,7 +105,7 @@ nonisolated struct NoteDirective: Identifiable, Hashable, Sendable, Codable, Fet
 
     // Computed `id` should not be persisted
     private enum CodingKeys: String, CodingKey {
-        case noteId, directiveId, sortIndex
+        case noteId, directiveId, sortIndex, createdAt
     }
 }
 
@@ -117,6 +118,7 @@ nonisolated struct Folder: Identifiable, Hashable, Sendable, Codable, FetchableR
     var name: String
     var parentFolderId: UUID?
     var sortIndex: Int
+    var version: Int = 1
     let createdAt: Date
     var updatedAt: Date
 
@@ -139,6 +141,7 @@ nonisolated struct DayEntry: Identifiable, Hashable, Sendable, Codable, Fetchabl
     var rating: Int?              // 1–10
     var diary: String
     var tags: [String]
+    var version: Int = 1
     let createdAt: Date
     var updatedAt: Date
 
@@ -147,9 +150,9 @@ nonisolated struct DayEntry: Identifiable, Hashable, Sendable, Codable, Fetchabl
 
     // MARK: Custom encoding — tags stored as JSON column "tagsJSON"
 
-    init(id: UUID, date: String, rating: Int?, diary: String, tags: [String], createdAt: Date, updatedAt: Date) {
+    init(id: UUID, date: String, rating: Int?, diary: String, tags: [String], version: Int = 1, createdAt: Date, updatedAt: Date) {
         self.id = id; self.date = date; self.rating = rating
-        self.diary = diary; self.tags = tags
+        self.diary = diary; self.tags = tags; self.version = version
         self.createdAt = createdAt; self.updatedAt = updatedAt
     }
 
@@ -158,6 +161,7 @@ nonisolated struct DayEntry: Identifiable, Hashable, Sendable, Codable, Fetchabl
         date = row["date"]
         rating = row["rating"]
         diary = row["diary"]
+        version = row["version"]
         createdAt = row["createdAt"]
         updatedAt = row["updatedAt"]
 
@@ -175,6 +179,7 @@ nonisolated struct DayEntry: Identifiable, Hashable, Sendable, Codable, Fetchabl
         container["date"] = date
         container["rating"] = rating
         container["diary"] = diary
+        container["version"] = version
         container["createdAt"] = createdAt
         container["updatedAt"] = updatedAt
 
@@ -196,7 +201,9 @@ nonisolated struct ScheduleRule: Identifiable, Hashable, Sendable, Codable, Fetc
     let directiveId: UUID
     var ruleType: ScheduleType
     var params: [String: [Int]]   // e.g. { "days": [1,3,5] }
+    var version: Int = 1
     let createdAt: Date
+    var updatedAt: Date = Date()
     var lastCompletedDate: String? // yyyy-MM-dd — nil means never completed
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
@@ -207,17 +214,20 @@ nonisolated struct ScheduleRule: Identifiable, Hashable, Sendable, Codable, Fetc
 
     // MARK: Custom encoding — params stored as JSON column "paramsJSON"
 
-    init(id: UUID, directiveId: UUID, ruleType: ScheduleType, params: [String: [Int]], createdAt: Date, lastCompletedDate: String? = nil) {
+    init(id: UUID, directiveId: UUID, ruleType: ScheduleType, params: [String: [Int]], version: Int = 1, createdAt: Date, updatedAt: Date? = nil, lastCompletedDate: String? = nil) {
         self.id = id; self.directiveId = directiveId
-        self.ruleType = ruleType; self.params = params
-        self.createdAt = createdAt; self.lastCompletedDate = lastCompletedDate
+        self.ruleType = ruleType; self.params = params; self.version = version
+        self.createdAt = createdAt; self.updatedAt = updatedAt ?? createdAt
+        self.lastCompletedDate = lastCompletedDate
     }
 
     init(row: Row) {
         id = row["id"]
         directiveId = row["directiveId"]
         ruleType = ScheduleType(rawValue: row["ruleType"]) ?? .weekly
+        version = row["version"]
         createdAt = row["createdAt"]
+        updatedAt = row["updatedAt"]
         lastCompletedDate = row["lastCompletedDate"]
 
         let jsonString: String = row["paramsJSON"]
@@ -233,7 +243,9 @@ nonisolated struct ScheduleRule: Identifiable, Hashable, Sendable, Codable, Fetc
         container["id"] = id
         container["directiveId"] = directiveId
         container["ruleType"] = ruleType.rawValue
+        container["version"] = version
         container["createdAt"] = createdAt
+        container["updatedAt"] = updatedAt
         container["lastCompletedDate"] = lastCompletedDate
 
         if let data = try? JSONEncoder().encode(params),
@@ -278,6 +290,7 @@ nonisolated struct Tag: Identifiable, Hashable, Sendable, Codable, FetchableReco
     let id: UUID
     var name: String
     var color: String?            // hex, e.g. "#FF6B6B"
+    var version: Int = 1
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (lhs: Tag, rhs: Tag) -> Bool { lhs.id == rhs.id }
@@ -308,7 +321,7 @@ nonisolated struct OutboxOp: Identifiable, Hashable, Sendable, Codable, Fetchabl
 
     let id: UUID
     var entityType: String
-    var entityId: UUID
+    var entityId: String
     var op: String               // "create" | "update" | "delete"
     var patch: String            // JSON payload
     var baseUpdatedAt: Date?
@@ -328,7 +341,7 @@ nonisolated struct Tombstone: Identifiable, Hashable, Sendable, Codable, Fetchab
 
     let id: UUID
     var entityType: String
-    var entityId: UUID
+    var entityId: String
     var deletedAt: Date
     var updatedAt: Date
     var deviceId: String
@@ -371,4 +384,68 @@ nonisolated struct Device: Identifiable, Hashable, Sendable, Codable, FetchableR
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (lhs: Device, rhs: Device) -> Bool { lhs.id == rhs.id }
+}
+
+// MARK: - Sync Helpers
+
+private let _syncEncoder: JSONEncoder = {
+    let e = JSONEncoder()
+    e.dateEncodingStrategy = .iso8601
+    return e
+}()
+
+extension Encodable {
+    /// Serialize to JSON string for outbox patch payload.
+    func syncPatch() -> String {
+        guard let data = try? _syncEncoder.encode(self),
+              let json = String(data: data, encoding: .utf8) else { return "{}" }
+        return json
+    }
+}
+
+extension OutboxOp {
+    /// Enqueue a create/update sync operation inside an existing database transaction.
+    @discardableResult
+    static func enqueue(
+        entityType: String,
+        entityId: String,
+        op: String,
+        patch: String = "{}",
+        baseUpdatedAt: Date? = nil,
+        in db: Database
+    ) throws -> OutboxOp {
+        let outboxOp = OutboxOp(
+            id: UUID(),
+            entityType: entityType,
+            entityId: entityId,
+            op: op,
+            patch: patch,
+            baseUpdatedAt: baseUpdatedAt,
+            schemaVersion: 1,
+            createdAt: Date(),
+            attemptCount: 0,
+            lastError: nil
+        )
+        try outboxOp.insert(db)
+        return outboxOp
+    }
+
+    /// Enqueue a delete: creates a tombstone + outbox op inside an existing transaction.
+    static func enqueueDelete(
+        entityType: String,
+        entityId: String,
+        in db: Database
+    ) throws {
+        let deviceId = (try? SyncState.current(in: db)?.deviceId) ?? "unknown"
+        let tombstone = Tombstone(
+            id: UUID(),
+            entityType: entityType,
+            entityId: entityId,
+            deletedAt: Date(),
+            updatedAt: Date(),
+            deviceId: deviceId
+        )
+        try tombstone.insert(db)
+        try enqueue(entityType: entityType, entityId: entityId, op: "delete", in: db)
+    }
 }

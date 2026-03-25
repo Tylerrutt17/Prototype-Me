@@ -334,7 +334,8 @@ class FocusViewController: BaseViewController {
                     .order(Column("sortIndex"))
                     .fetchAll(db)
                 modeDirectives = links.compactMap { link in
-                    guard let dir = try? Directive.fetchOne(db, key: link.directiveId) else { return nil }
+                    guard let dir = try? Directive.fetchOne(db, key: link.directiveId),
+                          dir.status != .archived else { return nil }
                     let scheduled = allRules.contains { $0.directiveId == dir.id && ScheduleRule.ruleMatchesToday($0) }
                     return DirectiveRowData(directive: dir, scheduledToday: scheduled)
                 }
@@ -583,6 +584,8 @@ class FocusViewController: BaseViewController {
             try dbQueue.write { db in
                 guard var r = try ScheduleRule.fetchOne(db, key: rule.id) else { return }
                 r.lastCompletedDate = newDate
+                r.version += 1
+                r.updatedAt = Date()
                 try r.update(db)
             }
             if newDate != nil {

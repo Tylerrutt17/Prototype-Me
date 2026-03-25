@@ -116,7 +116,7 @@ final class LibraryContainerViewController: BaseViewController {
         case 0:
             navBar.setRightButtons([
                 NavBarButton(systemImage: "folder.badge.plus", action: { [weak self] in self?.onAddFolderTapped?() }),
-                NavBarButton(systemImage: "doc.badge.plus", action: { [weak self] in self?.onAddNoteTapped?() }),
+                NavBarButton(systemImage: "plus", action: { [weak self] in self?.onAddNoteTapped?() }),
             ])
         case 1:
             navBar.setRightButtons([

@@ -16,13 +16,17 @@ final class DatabaseManager: Sendable {
             create: true
         )
         let dbURL = appSupport.appendingPathComponent("prototype_me.sqlite")
-        dbQueue = try DatabaseQueue(path: dbURL.path)
+        var config = Configuration()
+        config.foreignKeysEnabled = true
+        dbQueue = try DatabaseQueue(path: dbURL.path, configuration: config)
         try runMigrations()
     }
 
     /// In-memory database for tests / previews.
     init(inMemory: Bool) throws {
-        dbQueue = try DatabaseQueue()
+        var config = Configuration()
+        config.foreignKeysEnabled = true
+        dbQueue = try DatabaseQueue(configuration: config)
         try runMigrations()
     }
 
@@ -31,10 +35,8 @@ final class DatabaseManager: Sendable {
     private func runMigrations() throws {
         var migrator = DatabaseMigrator()
 
-        // In DEBUG, wipe DB on schema change for faster iteration.
-        #if DEBUG
-        migrator.eraseDatabaseOnSchemaChange = true
-        #endif
+        // NOTE: eraseDatabaseOnSchemaChange was removed — it wiped all user data
+        // on every rebuild when migrations changed. Use "Delete app + reinstall" instead.
 
         migrator.registerMigration("v1_createTables") { db in
             // ── folders — created first because notePage references it ──
@@ -186,6 +188,24 @@ final class DatabaseManager: Sendable {
         migrator.registerMigration("v5_addFolderSortIndex") { db in
             try db.alter(table: "folder") { t in
                 t.add(column: "sortIndex", .integer).notNull().defaults(to: 0)
+            }
+        }
+
+        migrator.registerMigration("v6_syncVersionFields") { db in
+            for table in ["folder", "tag"] {
+                try db.alter(table: table) { t in
+                    t.add(column: "version", .integer).notNull().defaults(to: 1)
+                }
+            }
+            try db.alter(table: "dayEntry") { t in
+                t.add(column: "version", .integer).notNull().defaults(to: 1)
+            }
+            try db.alter(table: "scheduleRule") { t in
+                t.add(column: "version", .integer).notNull().defaults(to: 1)
+                t.add(column: "updatedAt", .datetime).notNull().defaults(to: Date())
+            }
+            try db.alter(table: "noteDirective") { t in
+                t.add(column: "createdAt", .datetime).notNull().defaults(to: Date())
             }
         }
 

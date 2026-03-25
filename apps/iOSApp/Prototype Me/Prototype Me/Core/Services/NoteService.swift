@@ -42,6 +42,7 @@ final class NoteService: Sendable {
 
     func delete(id: UUID) async throws {
         _ = try await db.dbQueue.write { db in
+            // Cascade delete handles noteDirective + activeMode cleanup
             try NotePage.deleteOne(db, key: id)
         }
     }
@@ -59,7 +60,7 @@ final class NoteService: Sendable {
             let maxSort = try Int.fetchOne(db, sql: """
                 SELECT COALESCE(MAX(sortIndex), -1) FROM noteDirective WHERE noteId = ?
                 """, arguments: [noteId.uuidString]) ?? -1
-            let link = NoteDirective(noteId: noteId, directiveId: directiveId, sortIndex: maxSort + 1)
+            let link = NoteDirective(noteId: noteId, directiveId: directiveId, sortIndex: maxSort + 1, createdAt: Date())
             try link.insert(db)
         }
     }
@@ -97,9 +98,11 @@ final class NoteService: Sendable {
 
     func moveToFolder(noteId: UUID, folderId: UUID?) async throws {
         try await db.dbQueue.write { db in
-            try db.execute(sql: """
-                UPDATE notePage SET folderId = ?, updatedAt = ? WHERE id = ?
-                """, arguments: [folderId?.uuidString, Date(), noteId.uuidString])
+            guard var note = try NotePage.fetchOne(db, key: noteId) else { return }
+            note.folderId = folderId
+            note.updatedAt = Date()
+            note.version += 1
+            try note.update(db)
         }
     }
 }

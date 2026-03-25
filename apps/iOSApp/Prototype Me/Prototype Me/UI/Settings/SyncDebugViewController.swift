@@ -92,7 +92,7 @@ class SyncDebugViewController: BaseViewController {
                 .stat("Sync Token", info?.lastSyncToken.map { String($0.prefix(16)) + "…" } ?? "None"),
                 .stat("Device ID", String((info?.deviceId ?? "Unknown").prefix(20))),
                 .stat("Last Error", info?.lastError ?? "None"),
-                .stat("Schema Version", "v4"),
+                .stat("Schema Version", "v6"),
                 .action("Force Sync Now"),
             ])
             await dataSource.apply(snapshot, animatingDifferences: false)

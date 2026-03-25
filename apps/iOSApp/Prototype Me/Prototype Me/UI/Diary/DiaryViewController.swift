@@ -13,6 +13,7 @@ nonisolated private enum DiaryItem: Hashable, Sendable {
 
 class DiaryViewController: BaseViewController {
 
+    var dayEntryService: DayEntryService?
     var onAddTapped: (() -> Void)?
     var onEntrySelected: ((UUID) -> Void)?
     var onHistoryTapped: (() -> Void)?
@@ -161,10 +162,10 @@ class DiaryViewController: BaseViewController {
         let alert = UIAlertController(title: "Delete Entry", message: "Are you sure you want to delete this diary entry?", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
-            try? self?.dbQueue.write { db in
-                _ = try DayEntry.deleteOne(db, key: entryId)
+            Task {
+                try? await self?.dayEntryService?.delete(id: entryId)
+                await MainActor.run { Haptics.success() }
             }
-            Haptics.success()
         })
         present(alert, animated: true)
     }

@@ -15,6 +15,7 @@ nonisolated private enum NoteDetailItem: Hashable, Sendable {
 class NoteDetailViewController: BaseViewController {
 
     var noteId: UUID?
+    var noteService: NoteService?
     var onDirectiveSelected: ((UUID) -> Void)?
     var onEditTapped: ((UUID) -> Void)?
     var onLinkDirectiveTapped: ((UUID) -> Void)?
@@ -26,7 +27,7 @@ class NoteDetailViewController: BaseViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         navBar.setRightButtons([
-            NavBarButton(systemImage: "pencil", action: { [weak self] in self?.editTapped() }),
+            NavBarButton(systemImage: "square.and.pencil", action: { [weak self] in self?.editTapped() }),
         ])
         configureCollectionView()
         configureDataSource()
@@ -110,17 +111,65 @@ class NoteDetailViewController: BaseViewController {
         }
     }
 
+    private func showUnlinkConfirmation(for directiveId: UUID, in cell: UICollectionViewCell) {
+        // Check if unlink button already showing
+        if cell.contentView.viewWithTag(999) != nil { return }
+
+        let unlinkBtn = UIButton(type: .system)
+        unlinkBtn.tag = 999
+        var config = UIButton.Configuration.filled()
+        config.title = "Unlink"
+        config.image = UIImage(systemName: "link.badge.minus")
+        config.imagePadding = DesignTokens.Spacing.xs
+        config.baseBackgroundColor = DesignTokens.Colors.warning
+        config.baseForegroundColor = .white
+        config.cornerStyle = .medium
+        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12)
+        config.titleTextAttributesTransformer = .init { attr in
+            var a = attr; a.font = DesignTokens.Typography.rounded(style: .caption1, weight: .bold); return a
+        }
+        unlinkBtn.configuration = config
+        unlinkBtn.translatesAutoresizingMaskIntoConstraints = false
+        cell.contentView.addSubview(unlinkBtn)
+
+        NSLayoutConstraint.activate([
+            unlinkBtn.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -DesignTokens.Spacing.md),
+            unlinkBtn.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
+        ])
+
+        // Slide in from right
+        unlinkBtn.transform = CGAffineTransform(translationX: 80, y: 0)
+        unlinkBtn.alpha = 0
+        UIView.animate(withDuration: 0.25, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0) {
+            unlinkBtn.transform = .identity
+            unlinkBtn.alpha = 1
+        }
+
+        unlinkBtn.addAction(UIAction { [weak self] _ in
+            self?.unlinkDirective(directiveId: directiveId)
+        }, for: .touchUpInside)
+
+        // Auto-dismiss after 3 seconds if not tapped
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak unlinkBtn] in
+            guard let btn = unlinkBtn, btn.superview != nil else { return }
+            UIView.animate(withDuration: 0.2) {
+                btn.alpha = 0
+                btn.transform = CGAffineTransform(translationX: 80, y: 0)
+            } completion: { _ in
+                btn.removeFromSuperview()
+            }
+        }
+    }
+
     private func unlinkDirective(directiveId: UUID) {
         guard let noteId else { return }
-        do {
-            _ = try dbQueue.write { db in
-                try NoteDirective
-                    .filter(Column("noteId") == noteId && Column("directiveId") == directiveId)
-                    .deleteAll(db)
+        Task {
+            do {
+                try await noteService?.unlinkDirective(noteId: noteId, directiveId: directiveId)
+                await MainActor.run { Haptics.success() }
+            } catch {
+                await MainActor.run { Haptics.error() }
             }
-            Haptics.success()
-        } catch {
-            Haptics.error()
         }
     }
 
@@ -146,9 +195,19 @@ class NoteDetailViewController: BaseViewController {
             }
         }
 
-        // Directive cell
-        let directiveReg = UICollectionView.CellRegistration<DirectiveCell, DirectiveRowData> { cell, _, data in
+        // Directive cell with swipe-to-unlink
+        let directiveReg = UICollectionView.CellRegistration<DirectiveCell, DirectiveRowData> { [weak self] cell, _, data in
             cell.configure(with: data)
+
+            // Remove any existing swipe recognizers (cell reuse)
+            cell.gestureRecognizers?.filter { $0 is UISwipeGestureRecognizer }.forEach { cell.removeGestureRecognizer($0) }
+
+            let directiveId = data.directive.id
+            let swipe = BlockSwipeGesture(direction: .left) { [weak self, weak cell] in
+                guard let self, let cell else { return }
+                self.showUnlinkConfirmation(for: directiveId, in: cell)
+            }
+            cell.addGestureRecognizer(swipe)
         }
 
         // Link button cell

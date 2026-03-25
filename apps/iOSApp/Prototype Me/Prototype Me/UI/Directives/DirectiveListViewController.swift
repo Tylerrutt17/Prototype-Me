@@ -16,6 +16,7 @@ nonisolated private enum DirectiveFilter: Int, CaseIterable, Sendable {
 
 class DirectiveListViewController: BaseViewController {
 
+    var directiveService: DirectiveService?
     var onDirectiveSelected: ((UUID) -> Void)?
     var onAddTapped: (() -> Void)?
     var isEmbedded = false
@@ -93,14 +94,20 @@ class DirectiveListViewController: BaseViewController {
     }
 
     private func confirmDelete(directiveId: UUID) {
-        let alert = UIAlertController(title: "Delete Directive", message: "This will also remove linked schedules and history.", preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
-            try? self?.dbQueue.write { db in
-                _ = try Directive.deleteOne(db, key: directiveId)
+        let title = try? dbQueue.read { db in try Directive.fetchOne(db, key: directiveId)?.title }
+
+        let alert = UIAlertController(
+            title: "Permanently Delete Directive?",
+            message: "This will permanently delete \"\(title ?? "this directive")\" and everything associated with it — including its balloon timer, schedule, linked notes, and all history.\n\nThis cannot be undone.",
+            preferredStyle: .actionSheet
+        )
+        alert.addAction(UIAlertAction(title: "Delete Permanently", style: .destructive) { [weak self] _ in
+            Task {
+                try? await self?.directiveService?.delete(id: directiveId)
+                await MainActor.run { Haptics.success() }
             }
-            Haptics.success()
         })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         present(alert, animated: true)
     }
 

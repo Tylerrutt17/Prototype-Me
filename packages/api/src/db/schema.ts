@@ -71,6 +71,8 @@ export const folder = pgTable(
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     parentFolderId: text("parent_folder_id"), // self-referencing, nullable
+    sortIndex: integer("sort_index").notNull().default(0),
+    version: integer("version").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -87,6 +89,7 @@ export const dayEntry = pgTable(
     rating: integer("rating"),
     diary: text("diary").notNull().default(""),
     tags: jsonb("tags").$type<string[]>().notNull().default([]),
+    version: integer("version").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -103,6 +106,9 @@ export const tag = pgTable(
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     color: text("color"),
+    version: integer("version").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("tag_user_name_idx").on(t.userId, t.name)],
 );
@@ -116,7 +122,10 @@ export const scheduleRule = pgTable(
     directiveId: uuid("directive_id").notNull().references(() => directive.id, { onDelete: "cascade" }),
     ruleType: text("rule_type").notNull(), // weekly | monthly | oneOff
     params: jsonb("params").$type<Record<string, number[]>>().notNull(),
+    version: integer("version").notNull().default(1),
+    lastCompletedDate: text("last_completed_date"), // yyyy-MM-dd, nullable
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("schedule_rule_directive_idx").on(t.directiveId)],
 );
@@ -167,6 +176,7 @@ export const noteDirective = pgTable(
     noteId: uuid("note_id").notNull().references(() => notePage.id, { onDelete: "cascade" }),
     directiveId: uuid("directive_id").notNull().references(() => directive.id, { onDelete: "cascade" }),
     sortIndex: integer("sort_index").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.noteId, t.directiveId] })],
 );
@@ -192,12 +202,25 @@ export const tombstone = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     entityType: text("entity_type").notNull(),
-    entityId: uuid("entity_id").notNull(),
+    entityId: text("entity_id").notNull(), // text, not UUID — supports composite keys like "noteId|directiveId"
     deletedAt: timestamp("deleted_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deviceId: text("device_id").notNull(),
   },
   (t) => [index("tombstone_user_updated_idx").on(t.userId, t.updatedAt)],
+);
+
+// ── Sync: Operation Log (idempotency) ───────
+export const syncOpLog = pgTable(
+  "sync_op_log",
+  {
+    opId: text("op_id").primaryKey(), // client-generated UUID string
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("sync_op_log_user_idx").on(t.userId)],
 );
 
 // ── Friendships ─────────────────────────────

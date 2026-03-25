@@ -37,3 +37,14 @@ final class BlockTapGesture: UITapGestureRecognizer {
     }
     @objc private func fired() { action() }
 }
+
+final class BlockSwipeGesture: UISwipeGestureRecognizer {
+    private let action: () -> Void
+    init(direction: UISwipeGestureRecognizer.Direction, action: @escaping () -> Void) {
+        self.action = action
+        super.init(target: nil, action: nil)
+        self.direction = direction
+        addTarget(self, action: #selector(fired))
+    }
+    @objc private func fired() { action() }
+}

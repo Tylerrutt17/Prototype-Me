@@ -24,6 +24,7 @@ final class FolderService: Sendable {
             name: name,
             parentFolderId: parentFolderId,
             sortIndex: nextSort,
+            version: 1,
             createdAt: now,
             updatedAt: now
         )
@@ -36,6 +37,7 @@ final class FolderService: Sendable {
     func update(_ folder: Folder) async throws {
         var updated = folder
         updated.updatedAt = Date()
+        updated.version += 1
         try await db.dbQueue.write { db in
             try updated.update(db)
         }
@@ -43,6 +45,31 @@ final class FolderService: Sendable {
 
     func delete(id: UUID) async throws {
         _ = try await db.dbQueue.write { db in
+            // Collect all descendant folder IDs (recursive)
+            var folderIdsToDelete: [UUID] = [id]
+            var queue: [UUID] = [id]
+            while !queue.isEmpty {
+                let parentId = queue.removeFirst()
+                let children = try Folder.filter(Column("parentFolderId") == parentId).fetchAll(db)
+                for child in children {
+                    folderIdsToDelete.append(child.id)
+                    queue.append(child.id)
+                }
+            }
+
+            // Update notes whose folderId points to any of these folders (SET NULL happens via FK,
+            // but we need version bumps + outbox ops for sync)
+            for fid in folderIdsToDelete {
+                let notes = try NotePage.filter(Column("folderId") == fid).fetchAll(db)
+                for var note in notes {
+                    note.folderId = nil
+                    note.version += 1
+                    note.updatedAt = Date()
+                    try note.update(db)
+                }
+            }
+
+            // Cascade delete handles subfolders
             try Folder.deleteOne(db, key: id)
         }
     }
@@ -70,6 +97,7 @@ final class FolderService: Sendable {
             guard var note = try NotePage.fetchOne(db, key: noteId) else { return }
             note.folderId = toFolderId
             note.updatedAt = Date()
+            note.version += 1
             try note.update(db)
         }
     }

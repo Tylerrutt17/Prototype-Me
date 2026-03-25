@@ -13,7 +13,7 @@ final class TagService: Sendable {
     // MARK: - CRUD
 
     func create(name: String, color: String? = nil) async throws -> Tag {
-        let tag = Tag(id: UUID(), name: name, color: color)
+        let tag = Tag(id: UUID(), name: name, color: color, version: 1)
         try await db.dbQueue.write { db in
             try tag.insert(db)
         }
@@ -32,7 +32,7 @@ final class TagService: Sendable {
             if let existing = try Tag.filter(Column("name") == name).fetchOne(db) {
                 return existing
             }
-            let tag = Tag(id: UUID(), name: name, color: color)
+            let tag = Tag(id: UUID(), name: name, color: color, version: 1)
             try tag.insert(db)
             return tag
         }

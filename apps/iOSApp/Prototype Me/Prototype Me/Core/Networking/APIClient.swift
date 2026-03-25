@@ -25,12 +25,20 @@ final class APIClient: Sendable {
     // MARK: - Errors
 
     enum APIError: Error, Sendable {
-        case unauthorized                // 401 after refresh attempt
-        case clientError(Int, Data?)     // 4xx
-        case serverError(Int, Data?)     // 5xx
+        case unauthorized                       // 401 after refresh attempt
+        case clientError(Int, String?, Data?)    // 4xx + parsed message
+        case serverError(Int, Data?)             // 5xx
         case networkError(Error)
         case decodingError(Error)
         case noData
+
+        /// Human-readable description from the server's error envelope.
+        var serverMessage: String? {
+            switch self {
+            case .clientError(_, let msg, _): return msg
+            default: return nil
+            }
+        }
     }
 
     // MARK: - Auth State
@@ -196,17 +204,28 @@ final class APIClient: Sendable {
 
         switch http.statusCode {
         case 200...299:
-            // Success — handle empty body for Void-like responses
+            // Handle empty body for Void-like responses (204 No Content)
             if T.self == EmptyResponse.self {
                 return EmptyResponse() as! T
             }
+            // Unwrap the { success, data, error, message } envelope
             do {
-                return try decoder.decode(T.self, from: data)
+                let envelope = try decoder.decode(APIResponse<T>.self, from: data)
+                guard envelope.success, let payload = envelope.data else {
+                    throw APIError.serverError(http.statusCode, data)
+                }
+                return payload
+            } catch let error as APIError {
+                throw error
             } catch {
                 throw APIError.decodingError(error)
             }
         case 400...499:
-            throw APIError.clientError(http.statusCode, data)
+            // Try to parse error envelope for a descriptive message
+            if let envelope = try? decoder.decode(APIResponse<EmptyResponse>.self, from: data) {
+                throw APIError.clientError(http.statusCode, envelope.message, data)
+            }
+            throw APIError.clientError(http.statusCode, nil, data)
         default:
             throw APIError.serverError(http.statusCode, data)
         }
@@ -268,6 +287,17 @@ final class APIClient: Sendable {
     private static func deleteToken(key: String) {
         UserDefaults.standard.removeObject(forKey: "com.prototypeme.\(key)")
     }
+}
+
+// MARK: - Response Envelope
+
+/// Matches the backend's unified response shape:
+/// `{ "success": true/false, "data": T?, "error": String?, "message": String? }`
+struct APIResponse<T: Decodable>: Decodable {
+    let success: Bool
+    let data: T?
+    let error: String?
+    let message: String?
 }
 
 // MARK: - Helper Types

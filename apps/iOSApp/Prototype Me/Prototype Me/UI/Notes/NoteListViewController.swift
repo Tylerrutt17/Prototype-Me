@@ -73,7 +73,7 @@ class NoteListViewController: BaseViewController {
 
             navBar.setRightButtons([
                 NavBarButton(systemImage: "folder.badge.plus", action: { [weak self] in self?.onAddFolderTapped?() }),
-                NavBarButton(systemImage: "doc.badge.plus", action: { [weak self] in self?.onAddNoteTapped?() }),
+                NavBarButton(systemImage: "plus", action: { [weak self] in self?.onAddNoteTapped?() }),
             ])
         }
 
@@ -161,8 +161,10 @@ class NoteListViewController: BaseViewController {
         let alert = UIAlertController(title: "Delete Note", message: "Are you sure?", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
-            try? self?.dbQueue.write { db in _ = try NotePage.deleteOne(db, key: noteId) }
-            Haptics.success()
+            Task {
+                try? await self?.noteService?.delete(id: noteId)
+                await MainActor.run { Haptics.success() }
+            }
         })
         present(alert, animated: true)
     }
@@ -171,8 +173,10 @@ class NoteListViewController: BaseViewController {
         let alert = UIAlertController(title: "Delete Folder", message: "Delete \"\(name)\" and all its contents?", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
-            try? self?.dbQueue.write { db in _ = try Folder.deleteOne(db, key: folderId) }
-            Haptics.success()
+            Task {
+                try? await self?.folderService?.delete(id: folderId)
+                await MainActor.run { Haptics.success() }
+            }
         })
         present(alert, animated: true)
     }

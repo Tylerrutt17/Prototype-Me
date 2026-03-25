@@ -19,6 +19,7 @@ final class DayEntryService: Sendable {
                 existing.rating = rating
                 existing.diary = diary
                 existing.tags = tags
+                existing.version += 1
                 existing.updatedAt = Date()
                 try existing.update(db)
                 return existing
@@ -30,6 +31,7 @@ final class DayEntryService: Sendable {
                     rating: rating,
                     diary: diary,
                     tags: tags,
+                    version: 1,
                     createdAt: now,
                     updatedAt: now
                 )

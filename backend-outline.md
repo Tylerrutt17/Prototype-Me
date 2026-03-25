@@ -1,15 +1,18 @@
 ## Backend infrastructure outline
 
+> **Implementation status (2026-03-24):** Backend is built at `packages/api/` using Fastify 5 (not Express). Sync protocol is fully implemented and aligned with iOS client — idempotent push, paginated pull, server-authoritative versioning, all 7 entity types, composite key support for noteDirective. Schema changes: folder got version/sortIndex, tag got version/timestamps, scheduleRule got version/updatedAt/lastCompletedDate, noteDirective got createdAt, tombstone.entityId changed to text, new syncOpLog table. Validation uses Zod (not OpenAPI). Run `npm run db:generate` to create Drizzle migration when DB is available.
+
 See also: `frontend-outline.md` for client-side setup and sync wiring.
 
 ### 1) Architecture overview
 
-* **Backend**: Node.js + TypeScript + Express API.
+* **Backend**: Node.js + TypeScript + Fastify 5 API.
 * **Database**: Postgres system of record.
-* **Sync**: push outbox ops + pull change feed cursor.
-* **Storage**: blob store for snapshots (playbook/snapshots export).
+* **Sync**: push outbox ops + pull change feed cursor. Idempotent push via `syncOpLog` table. Server-authoritative versioning.
+* **Storage**: blob store for snapshots (playbook/snapshots export) — not yet implemented.
 * **Hosting**: AWS.
 * **ORM/Migrations**: Drizzle.
+* **Validation**: Zod 4 schemas (not OpenAPI).
 
 ---
 
@@ -219,12 +222,21 @@ See also: `frontend-outline.md` for client-side setup and sync wiring.
 
 * `id: uuid`
 * `entityType: string`
-* `entityId: uuid`
+* `entityId: text` (not UUID — supports composite keys like `"noteId|directiveId"` for join tables)
 * `deletedAt: timestamp`
 * `updatedAt: timestamp`
 * `deviceId: string`
 * Keeps main tables clean (no `deletedAt` on every entity).
 * Server compaction: delete tombstones older than 30 days after confirmation.
+
+**`SyncOpLog`** (push idempotency — added 2026-03-24)
+
+* `opId: text` (client-generated UUID string, primary key)
+* `userId: uuid`
+* `entityType: text`
+* `entityId: text`
+* `processedAt: timestamp`
+* Server checks this table before processing each push op. If opId exists, op is skipped (already applied). Prevents duplicate writes on retries.
 
 **`SyncState`** (client-side, single-row table)
 
@@ -267,18 +279,27 @@ See also: `frontend-outline.md` for client-side setup and sync wiring.
 
 **Push**
 
-* Client sends ordered `OutboxOp[]` + `deviceId` + `lastSyncToken`.
-* Server applies ops idempotently and returns updated records + new token.
+* Client sends `POST /sync/push` with `{ deviceId, lastSyncToken, ops: OutboxOp[] }`.
+* Server checks each op.id against `syncOpLog` for idempotency — already-processed ops are skipped.
+* Server applies ops and increments `version` on updates (server-authoritative).
+* For `noteDirective`: entityId is composite `"noteId|directiveId"`, parsed on server.
+* Returns `{ applied: [{entityType, entityId}], lastSyncToken }`.
 
 **Pull**
 
-* Client requests changes since `lastSyncToken`.
-* Server returns `ChangeEvent[]` + `nextToken` until empty.
+* Client sends `GET /sync/pull?limit=200&cursor=...`.
+* Server queries all 7 entity tables + tombstones where `updatedAt > cursor`.
+* `noteDirective` pulled via JOIN through `notePage` for user scoping.
+* Returns `{ events: ChangeEvent[], nextToken, hasMore }`.
+* `payload` field is a JSON **string** (not object) — client decodes it.
+* Entity types in responses use camelCase (notePage, dayEntry, scheduleRule).
 
 **Conflict rule**
 
-* **Version-based resolution**: highest `version` wins; `(updatedAt, updatedByDeviceId)` as tiebreaker.
-* Note body conflicts create a conflict copy for manual resolution.
+* **Server-authoritative versioning**: server increments version on every accepted update.
+* Client-side LWW on pull: `if local.version > remote.version { skip }`.
+* Tombstone check before upsert prevents deleted data from being resurrected.
+* Note body conflicts: create a conflict copy for manual resolution (not yet implemented).
 
 **API examples**
 

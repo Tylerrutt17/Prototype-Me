@@ -209,12 +209,15 @@ final class DirectiveEditorViewController: BaseViewController {
             if var existing = self.existingScheduleRule {
                 existing.ruleType = ruleType
                 existing.params = params
+                existing.version += 1
+                existing.updatedAt = Date()
                 try existing.update(db)
             } else {
+                let now = Date()
                 let rule = ScheduleRule(
                     id: UUID(), directiveId: directiveId,
                     ruleType: ruleType, params: params,
-                    createdAt: Date()
+                    version: 1, createdAt: now, updatedAt: now
                 )
                 try rule.insert(db)
             }

@@ -57,6 +57,7 @@ final class DirectiveService: Sendable {
 
     func delete(id: UUID) async throws {
         _ = try await db.dbQueue.write { db in
+            // FK cascades handle NoteDirective, ScheduleRule, DirectiveHistory cleanup
             try Directive.deleteOne(db, key: id)
         }
     }

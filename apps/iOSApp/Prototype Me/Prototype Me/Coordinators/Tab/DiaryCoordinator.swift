@@ -19,6 +19,7 @@ class DiaryCoordinator: Coordinator {
     func start() {
         let vc = DiaryViewController()
         vc.dbQueue = environment.db.dbQueue
+        vc.dayEntryService = environment.dayEntryService
         vc.onAddTapped = { [weak self] in
             self?.presentDayEntryEditor(entryId: nil)
         }

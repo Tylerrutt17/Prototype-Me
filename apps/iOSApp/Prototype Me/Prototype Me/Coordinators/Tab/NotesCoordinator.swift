@@ -53,6 +53,7 @@ class NotesCoordinator: Coordinator {
     private func makeDirectiveListVC() -> DirectiveListViewController {
         let vc = DirectiveListViewController()
         vc.dbQueue = environment.db.dbQueue
+        vc.directiveService = environment.directiveService
         vc.onDirectiveSelected = { [weak self] directiveId in
             self?.showDirectiveDetail(directiveId: directiveId)
         }
@@ -127,6 +128,7 @@ class NotesCoordinator: Coordinator {
     private func showNoteDetail(noteId: UUID) {
         let vc = NoteDetailViewController()
         vc.dbQueue = environment.db.dbQueue
+        vc.noteService = environment.noteService
         vc.noteId = noteId
         vc.onDirectiveSelected = { [weak self] directiveId in
             self?.showDirectiveDetail(directiveId: directiveId)
@@ -161,6 +163,7 @@ class NotesCoordinator: Coordinator {
     private func showDirectiveList() {
         let vc = DirectiveListViewController()
         vc.dbQueue = environment.db.dbQueue
+        vc.directiveService = environment.directiveService
         vc.onDirectiveSelected = { [weak self] directiveId in
             self?.showDirectiveDetail(directiveId: directiveId)
         }

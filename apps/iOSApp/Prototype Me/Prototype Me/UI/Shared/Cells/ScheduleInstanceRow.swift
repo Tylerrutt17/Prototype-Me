@@ -131,6 +131,8 @@ final class ScheduleInstanceRowCell: InteractiveCell {
             try dbQueue.write { db in
                 guard var r = try ScheduleRule.fetchOne(db, key: rule.id) else { return }
                 r.lastCompletedDate = newDate
+                r.version += 1
+                r.updatedAt = Date()
                 try r.update(db)
             }
             Haptics.selection()

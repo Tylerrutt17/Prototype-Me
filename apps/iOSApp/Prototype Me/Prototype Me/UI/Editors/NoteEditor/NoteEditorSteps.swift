@@ -399,7 +399,7 @@ extension NoteEditorViewController {
             mainStack.widthAnchor.constraint(equalTo: scroll.widthAnchor, constant: -padding * 2),
         ])
 
-        populateFolderList(animated: false)
+        populateFolderList()
         return container
     }
 

@@ -1,5 +1,7 @@
 ## Full outline (updated with offline-first sync, Postgres backend, native iOS-first, and “fun but clean” UI)
 
+> **Implementation status (2026-03-24):** Sync engine fully implemented end-to-end. iOS: all services atomically enqueue OutboxOps, SyncEngine auto-pushes via GRDB ValueObservation, pull handles all 7 entity types with tombstone guard, cascade-aware deletes. Backend (Fastify at `packages/api/`): idempotent push via syncOpLog, server-authoritative versioning, paginated pull, entity type mapping (camelCase↔snake_case), composite key support for noteDirective. Validation uses Zod (not OpenAPI). Run `npm run db:generate` for pending Drizzle migration.
+
 ### 1) Core app structure (foundation)
 
 * **Notes (NotePages)** = containers for content.
@@ -56,16 +58,12 @@
 * Network is treated as **eventual consistency**, not required for core flows.
 * Backend storage uses **Postgres** as the system of record.
 
-**Cross-platform type sharing (OpenAPI)**
+**Type sharing**
 
-* An **OpenAPI spec** (`packages/api-spec/openapi.yaml`) is the single source of truth for all API types and endpoints.
-* Codegen produces matching types for each platform:
-  * **Swift** → Apple's `swift-openapi-generator` → `Codable` structs
-  * **TypeScript** → `openapi-typescript` → backend request/response types
-  * **Kotlin** (future) → OpenAPI Generator → data classes
-* Changing a model in the spec and re-running codegen keeps every platform in sync.
-* This replaces the shared `packages/types/` TypeScript package from the React Native plan.
-* **API versioning**: all requests include an `X-API-Version` header. Prevents older clients from breaking when endpoints evolve.
+* ~~OpenAPI was originally planned but not used.~~ Backend uses **Zod 4 schemas** for request/response validation (single source of truth).
+* Swift types are manual `Codable` structs. Sync types defined in `SyncEngine.swift`, entity models in `CoreModels.swift`.
+* TypeScript types inferred from Zod schemas + Drizzle ORM schema.
+* **API versioning**: all requests include `X-API-Version` and `X-Device-Id` headers.
 
 **GRDB migration rules**
 
@@ -95,18 +93,21 @@
   * Includes `updatedAt` for deterministic ordering when update + delete collide during sync.
   * Keeps main tables clean (no `deletedAt` on every entity).
   * Simpler sync logic — query one table for all pending deletes.
-* **Conflict strategy (pragmatic)**
+* **Conflict strategy (implemented)**
 
-  * last-write-wins for small fields (balloon flags/durations/priority/etc.)
-  * for large text bodies (notes), if both edited: keep one + store a **conflict copy** with a “Resolve” UI
+  * **Server-authoritative versioning**: server increments `version` on every accepted update. Client-side LWW on pull skips events where `local.version > remote.version`.
+  * **Tombstone-before-upsert**: pull checks tombstone table before upserting — prevents deleted data from being resurrected.
+  * **Cascade-aware deletes**: services tombstone children (noteDirective, scheduleRule) before parent delete. FolderService recursively tombstones descendants and version-bumps affected notes.
+  * For large text bodies (notes), if both edited: keep one + store a **conflict copy** with a “Resolve” UI (not yet implemented).
 
-**Sync lifecycle**
+**Sync lifecycle (implemented)**
 
-* Push triggers: app foreground, background interval, or manual sync.
-* Pull occurs after a successful push or on a timed interval.
-* Outbox is processed **in order**; each op is idempotent on the server.
-* Retry with exponential backoff on network errors; keep last error for debugging.
-* Server response includes updated records + new cursor token.
+* **Push trigger**: SyncEngine observes outbox table via GRDB `ValueObservation`. When new ops appear, schedules debounced push (2s). Also triggers on network reconnection via `ReachabilityMonitor`.
+* **Dirty flag**: if writes arrive during an active sync cycle, SyncEngine re-syncs automatically when current cycle completes.
+* Push first, then pull. Outbox processed in order by `createdAt`.
+* Server checks each `op.id` against `syncOpLog` table for idempotency — already-processed ops are skipped.
+* Retry with max 5 attempts; exponential backoff helper defined (timing applied via debounce scheduling).
+* Server response: `{ applied: [{entityType, entityId}], lastSyncToken }`.
 * Deletes are soft until server ack, then eligible for local compaction.
 
 **Background sync strategy (iOS)**
@@ -115,11 +116,14 @@
 * iOS background time is limited — always **push first, then pull** to maximize data safety.
 * Register background tasks early in app lifecycle.
 
-**Sync batching**
+**Sync batching (implemented)**
 
-* Pull endpoint must page changes: `GET /sync/pull?cursor=abc&limit=200`.
-* Response: `changes[]` + `nextCursor` + `hasMore`.
-* Never return unlimited change sets.
+* Pull endpoint: `GET /sync/pull?cursor=abc&limit=200`.
+* Response: `{ events: ChangeEvent[], nextToken, hasMore }`.
+* Payload field is a JSON string (not object) — client decodes it.
+* Entity types use camelCase in responses (notePage, dayEntry, scheduleRule).
+* All 7 syncable entity types included: notePage, directive, folder, dayEntry, tag, noteDirective, scheduleRule.
+* `noteDirective` pulled via JOIN through notePage for user scoping; entityId is composite `"noteId|directiveId"`.
 
 **Tombstone compaction**
 

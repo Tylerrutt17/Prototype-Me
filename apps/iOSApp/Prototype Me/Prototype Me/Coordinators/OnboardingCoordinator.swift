@@ -32,7 +32,7 @@ class OnboardingCoordinator: Coordinator {
     }
 
     func start() {
-        let intro = IntroPageViewController()
+        let intro = OnboardingStoryViewController()
         intro.onFinished = { [weak self] in
             self?.showFocusConsole()
         }

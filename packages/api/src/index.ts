@@ -43,6 +43,8 @@ app.setErrorHandler((error, _request, reply) => {
   if (error && typeof error === "object" && "issues" in error && Array.isArray((error as { issues: unknown[] }).issues)) {
     const issues = (error as { issues: Array<{ message: string; path: (string | number)[] }> }).issues;
     return reply.code(400).send({
+      success: false,
+      data: null,
       error: "validation_error",
       message: "Invalid request body",
       details: issues.map((i) => ({ path: i.path.join("."), message: i.message })),
@@ -52,11 +54,21 @@ app.setErrorHandler((error, _request, reply) => {
   // Feature layer throws { status, error, message }
   if (error && typeof error === "object" && "status" in error) {
     const err = error as { status: number; error: string; message: string };
-    return reply.code(err.status).send({ error: err.error, message: err.message });
+    return reply.code(err.status).send({
+      success: false,
+      data: null,
+      error: err.error,
+      message: err.message,
+    });
   }
 
   app.log.error(error);
-  return reply.code(500).send({ error: "internal_error", message: "Something went wrong" });
+  return reply.code(500).send({
+    success: false,
+    data: null,
+    error: "internal_error",
+    message: "Something went wrong",
+  });
 });
 
 // ── Register routes ─────────────────────────
