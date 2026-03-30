@@ -4,6 +4,21 @@ import UIKit
 protocol StoryAnimatable: UIView {
     func playEntrance()
     func stopAnimations()
+    /// Return true to remove horizontal insets so the view goes edge-to-edge.
+    var prefersFullWidth: Bool { get }
+    /// If true, navigation is locked until `onAnimationComplete` fires.
+    var locksNavigation: Bool { get }
+    /// Called when the full animation sequence finishes. Set by the hosting VC.
+    var onAnimationComplete: (() -> Void)? { get set }
+}
+
+extension StoryAnimatable {
+    var prefersFullWidth: Bool { false }
+    var locksNavigation: Bool { false }
+    var onAnimationComplete: (() -> Void)? {
+        get { nil }
+        set {}
+    }
 }
 
 /// Reusable story page with a configurable visual animation area + title + subtitle.
@@ -17,22 +32,45 @@ final class BalloonStoryPageViewController: UIViewController {
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
 
+    private var isVisible = false
+
     // MARK: - Lifecycle
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
         buildLayout()
+
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification, object: nil
+        )
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        isVisible = true
         animateIn()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        isVisible = false
         animationView?.stopAnimations()
+    }
+
+    @objc private func appDidEnterBackground() {
+        guard isVisible else { return }
+        animationView?.stopAnimations()
+    }
+
+    @objc private func appWillEnterForeground() {
+        guard isVisible else { return }
+        animateIn()
     }
 
     // MARK: - Layout

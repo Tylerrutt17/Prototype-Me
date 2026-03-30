@@ -10,31 +10,63 @@ final class OnboardingStoryPageViewController: UIViewController {
 
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
+    private var isVisible = false
+
+    // MARK: - Lifecycle
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
         buildLayout()
+
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification, object: nil
+        )
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        isVisible = true
         animateIn()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        isVisible = false
         animationView?.stopAnimations()
     }
+
+    @objc private func appDidEnterBackground() {
+        guard isVisible else { return }
+        animationView?.stopAnimations()
+    }
+
+    @objc private func appWillEnterForeground() {
+        guard isVisible else { return }
+        // Reset text to starting state so animateIn replays cleanly
+        titleLabel.alpha = 0
+        titleLabel.transform = CGAffineTransform(translationX: 0, y: 20)
+        subtitleLabel.alpha = 0
+        subtitleLabel.transform = CGAffineTransform(translationX: 0, y: 15)
+        animateIn()
+    }
+
+    // MARK: - Layout
 
     private func buildLayout() {
         if let animView = animationView {
             animView.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(animView)
+            let hInset = animView.prefersFullWidth ? 0 : DesignTokens.Spacing.xl
             NSLayoutConstraint.activate([
                 animView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: DesignTokens.Spacing.xxxl),
-                animView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.xl),
-                animView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.xl),
+                animView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: hInset),
+                animView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -hInset),
                 animView.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.4),
             ])
         }
@@ -74,6 +106,8 @@ final class OnboardingStoryPageViewController: UIViewController {
         subtitleLabel.alpha = 0
         subtitleLabel.transform = CGAffineTransform(translationX: 0, y: 15)
     }
+
+    // MARK: - Animation
 
     private func animateIn() {
         guard !UIAccessibility.isReduceMotionEnabled else {

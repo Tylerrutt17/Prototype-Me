@@ -21,6 +21,7 @@ final class BalloonStoryViewController: UIViewController {
             case balloonPump
             case celebration
             case forgettingCurve
+            case brainRAM
             case spacedRepetition
         }
     }
@@ -45,6 +46,12 @@ final class BalloonStoryViewController: UIViewController {
             subtitle: "Balloons are built on this science. They periodically remind you of the things that matter — so nothing quietly slips away.",
             visualType: .balloonRise,
             particleIntensity: 1.0
+        ),
+        PageConfig(
+            title: "How the system works",
+            subtitle: "Here's the full cycle — from things you're trying to remember, to life getting in the way, to balloons bringing them back.",
+            visualType: .brainRAM,
+            particleIntensity: 0.6
         ),
         PageConfig(
             title: "What are some examples?",
@@ -85,6 +92,8 @@ final class BalloonStoryViewController: UIViewController {
     private let nextButton = AppButton(title: "Next")
     private let skipButton = UIButton(type: .system)
     private var currentIndex = 0
+    private var navigationLocked = false
+    private var brainRAMVisited = false
 
     // Shared background
     private let gradientLayer: CAGradientLayer = {
@@ -118,7 +127,7 @@ final class BalloonStoryViewController: UIViewController {
         CATransaction.setDisableActions(true)
         gradientLayer.frame = view.bounds
         CATransaction.commit()
-        skView.frame = view.bounds
+        skView?.frame = view.bounds
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -134,14 +143,14 @@ final class BalloonStoryViewController: UIViewController {
     // MARK: - Particles
 
     private func setupParticles() {
-        skView = SKView()
-        skView.allowsTransparency = true
-        skView.backgroundColor = .clear
-        view.addSubview(skView)
-
-        particleScene = AmbientParticleScene(size: view.bounds.size)
-        particleScene.intensityMultiplier = pages[0].particleIntensity
-        skView.presentScene(particleScene)
+//        skView = SKView()
+//        skView.allowsTransparency = true
+//        skView.backgroundColor = .clear
+//        view.addSubview(skView)
+//
+//        particleScene = AmbientParticleScene(size: view.bounds.size)
+//        particleScene.intensityMultiplier = pages[0].particleIntensity
+//        skView.presentScene(particleScene)
     }
 
     // MARK: - Page VC
@@ -205,11 +214,13 @@ final class BalloonStoryViewController: UIViewController {
     // MARK: - Actions
 
     @objc private func nextTapped() {
+        guard !navigationLocked else { return }
         if currentIndex < pages.count - 1 {
             currentIndex += 1
             let nextPage = makePageVC(at: currentIndex)
             pageVC.setViewControllers([nextPage], direction: .forward, animated: true)
             updateControls()
+            checkNavigationLock()
             Haptics.selection()
         } else {
             finish()
@@ -225,13 +236,36 @@ final class BalloonStoryViewController: UIViewController {
         dismiss(animated: true)
     }
 
+    private func checkNavigationLock() {
+        let config = pages[currentIndex]
+        guard config.visualType == .brainRAM, !brainRAMVisited else { return }
+
+        navigationLocked = true
+        nextButton.isEnabled = false
+        nextButton.alpha = 0.4
+        skipButton.isEnabled = false
+        skipButton.alpha = 0.3
+    }
+
+    private func unlockNavigation() {
+        brainRAMVisited = true
+        navigationLocked = false
+        nextButton.isEnabled = true
+        skipButton.isEnabled = true
+
+        UIView.animate(withDuration: 0.3) {
+            self.nextButton.alpha = 1.0
+            self.skipButton.alpha = 1.0
+        }
+    }
+
     private func updateControls() {
         pageControl.currentPage = currentIndex
         let isLast = currentIndex == pages.count - 1
         nextButton.setTitle(isLast ? "Got it!" : "Next", for: .normal)
 
         // Update particle intensity
-        particleScene.intensityMultiplier = pages[currentIndex].particleIntensity
+        particleScene?.intensityMultiplier = pages[currentIndex].particleIntensity
 
         // Page-specific haptics
         switch pages[currentIndex].visualType {
@@ -266,7 +300,13 @@ final class BalloonStoryViewController: UIViewController {
         vc.titleText = config.title
         vc.subtitleText = config.subtitle
         vc.pageIndex = index
-        vc.animationView = makeVisual(for: config.visualType)
+        var visual = makeVisual(for: config.visualType)
+        if visual.locksNavigation {
+            visual.onAnimationComplete = { [weak self] in
+                self?.unlockNavigation()
+            }
+        }
+        vc.animationView = visual
         return vc
     }
 
@@ -288,6 +328,8 @@ final class BalloonStoryViewController: UIViewController {
             return StoryBalloonRiseView(isCelebration: true)
         case .forgettingCurve:
             return StoryScienceGraphView(graphType: .forgettingCurve)
+        case .brainRAM:
+            return StoryBrainRAMView()
         case .spacedRepetition:
             return StoryScienceGraphView(graphType: .spacedRepetition)
         }
@@ -298,11 +340,13 @@ final class BalloonStoryViewController: UIViewController {
 
 extension BalloonStoryViewController: UIPageViewControllerDataSource {
     func pageViewController(_ pageViewController: UIPageViewController, viewControllerBefore viewController: UIViewController) -> UIViewController? {
+        guard !navigationLocked else { return nil }
         guard let pageVC = viewController as? BalloonStoryPageViewController, pageVC.pageIndex > 0 else { return nil }
         return makePageVC(at: pageVC.pageIndex - 1)
     }
 
     func pageViewController(_ pageViewController: UIPageViewController, viewControllerAfter viewController: UIViewController) -> UIViewController? {
+        guard !navigationLocked else { return nil }
         guard let pageVC = viewController as? BalloonStoryPageViewController, pageVC.pageIndex < pages.count - 1 else { return nil }
         return makePageVC(at: pageVC.pageIndex + 1)
     }
@@ -315,5 +359,6 @@ extension BalloonStoryViewController: UIPageViewControllerDelegate {
         guard completed, let pageVC = pageViewController.viewControllers?.first as? BalloonStoryPageViewController else { return }
         currentIndex = pageVC.pageIndex
         updateControls()
+        checkNavigationLock()
     }
 }
