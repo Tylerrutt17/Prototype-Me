@@ -33,7 +33,7 @@ export const notePage = pgTable(
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     body: text("body").notNull().default(""),
-    kind: text("kind").notNull().default("regular"), // regular | mode | framework
+    kind: text("kind").notNull().default("regular"), // regular | mode | framework | situation | goal
     folderId: uuid("folder_id").references(() => folder.id, { onDelete: "set null" }),
     sortIndex: integer("sort_index").notNull().default(0),
     version: integer("version").notNull().default(1),
@@ -162,7 +162,7 @@ export const directiveHistory = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     directiveId: uuid("directive_id").notNull().references(() => directive.id, { onDelete: "cascade" }),
-    action: text("action").notNull(), // create | update | graduate | snooze | balloon_pump | shrink | split
+    action: text("action").notNull(), // create | update | graduate | snooze | balloon_pump | shrink | split | checklist_complete
     payload: text("payload").notNull().default("{}"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

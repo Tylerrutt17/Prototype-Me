@@ -1,9 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { config } from "../config.js";
+import { callLLMJson } from "../lib/llm.js";
 import * as usageQueries from "../db/queries/usage.js";
 import * as profileQueries from "../db/queries/profiles.js";
-
-const anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
 
 const FREE_DAILY_LIMIT = 5;
 const PRO_DAILY_LIMIT = 50;
@@ -14,27 +11,20 @@ export async function suggest(userId: string, context?: string) {
     throw { status: 429, error: "quota_exceeded", message: "Daily AI quota exceeded" };
   }
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 1024,
-    system: `You are a personal development assistant for the Prototype Me app. Generate actionable suggestions as JSON chips. Each chip has: action (createDirective|updateDirective|createNote|activateMode|addSchedule|createSituation), title, subtitle, destination, prefillTitle, prefillBody. Return a JSON array of 2-4 chips.`,
-    messages: [{ role: "user", content: context || "Give me suggestions based on my current setup." }],
-  });
+  const { data: chips } = await callLLMJson<unknown[]>(
+    {
+      system: `You are a personal development assistant for the Prototype Me app. Generate actionable suggestions as JSON chips. Each chip has: action (createDirective|updateDirective|createNote|activateMode|addSchedule|createSituation), title, subtitle, destination, prefillTitle, prefillBody. Return a JSON array of 2-4 chips.`,
+      prompt: context || "Give me suggestions based on my current setup.",
+    },
+    [],
+  );
 
   await usageQueries.increment(userId);
-
-  const text = message.content[0]?.type === "text" ? message.content[0].text : "[]";
-  let chips;
-  try {
-    chips = JSON.parse(text);
-  } catch {
-    chips = [];
-  }
 
   const updatedQuota = await getQuota(userId);
   return {
     chips: Array.isArray(chips)
-      ? chips.map((c: Record<string, unknown>, i: number) => ({
+      ? chips.map((c: Record<string, unknown>) => ({
           id: crypto.randomUUID(),
           action: c.action ?? "createDirective",
           title: c.title ?? "Suggestion",
@@ -51,20 +41,13 @@ export async function suggest(userId: string, context?: string) {
 }
 
 export async function onboard(prompt: string) {
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 1024,
-    system: `You are an onboarding assistant for the Prototype Me app. Based on the user's goals, generate a seed plan as a JSON array of cards. Each card has: type ("directive" or "playbook"), title, body. Return 3-5 cards.`,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  const text = message.content[0]?.type === "text" ? message.content[0].text : "[]";
-  let cards;
-  try {
-    cards = JSON.parse(text);
-  } catch {
-    cards = [];
-  }
+  const { data: cards } = await callLLMJson<unknown[]>(
+    {
+      system: `You are an onboarding assistant for the Prototype Me app. Based on the user's goals, generate a seed plan as a JSON array of cards. Each card has: type ("directive" or "playbook"), title, body. Return 3-5 cards.`,
+      prompt,
+    },
+    [],
+  );
 
   return {
     cards: Array.isArray(cards)
@@ -75,6 +58,52 @@ export async function onboard(prompt: string) {
           body: c.body ?? "",
         }))
       : [],
+  };
+}
+
+export async function directiveWizard(userId: string, problem: string) {
+  const quota = await getQuota(userId);
+  if (quota.dailyUsed >= quota.dailyLimit) {
+    throw { status: 429, error: "quota_exceeded", message: "Daily AI quota exceeded" };
+  }
+
+  const systemPrompt = `You are a directive suggestion engine for the Prototype Me app — a personal optimization system based on trial and error.
+
+The user will describe a problem or weak point. Suggest exactly 3 directives — specific, high-impact things they can actually do. Not a laundry list of small habits. Each one should meaningfully move the needle on this specific problem.
+
+Rules:
+- Via negativa: remove what's causing the problem, don't just add positive habits on top
+- Be SPECIFIC and DIRECT. "Clear your desk of everything except what you're working on" not "reduce distractions." "No caffeine after 12pm" not "watch your caffeine intake."
+- Back each one up with WHY it works — cite the actual mechanism. Neuroscience, Huberman, research, physiology. Not "because it's good for you."
+- Each directive is ONE thing. Not a routine, not a system — one clear action or rule.
+- These are experiments to try, not permanent life rules. Frame them that way.
+- Don't suggest obvious stuff everyone already knows unless there's a specific angle they probably haven't tried.
+- Fewer is better. 3 strong ones beats 5 mediocre ones.
+
+Return a JSON array of objects, each with:
+- "title": short, imperative, no fluff (e.g. "No caffeine after 12pm", "NSDR for 10 min when energy dips")
+- "body": 1-2 sentences explaining the mechanism — why this actually works, not just what to do
+
+Return ONLY the JSON array. No markdown, no explanation, no preamble.`;
+
+  const { data: suggestions } = await callLLMJson<unknown[]>(
+    { system: systemPrompt, prompt: problem },
+    [],
+  );
+
+  await usageQueries.increment(userId);
+
+  const updatedQuota = await getQuota(userId);
+  return {
+    suggestions: Array.isArray(suggestions)
+      ? suggestions.slice(0, 3).map((s: Record<string, unknown>) => ({
+          id: crypto.randomUUID(),
+          title: (s.title as string) ?? "Suggestion",
+          body: (s.body as string) ?? "",
+        }))
+      : [],
+    remainingQuota: updatedQuota.dailyLimit - updatedQuota.dailyUsed,
+    resetAt: getResetTime(),
   };
 }
 

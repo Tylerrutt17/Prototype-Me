@@ -57,10 +57,11 @@ final class NoteService: Sendable {
 
     func linkDirective(noteId: UUID, directiveId: UUID) async throws {
         try await db.dbQueue.write { db in
-            let maxSort = try Int.fetchOne(db, sql: """
-                SELECT COALESCE(MAX(sortIndex), -1) FROM noteDirective WHERE noteId = ?
-                """, arguments: [noteId.uuidString]) ?? -1
-            let link = NoteDirective(noteId: noteId, directiveId: directiveId, sortIndex: maxSort + 1, createdAt: Date())
+            // Bump all existing links down by 1 so the new one goes to the top
+            try db.execute(sql: """
+                UPDATE noteDirective SET sortIndex = sortIndex + 1 WHERE noteId = ?
+                """, arguments: [noteId])
+            let link = NoteDirective(noteId: noteId, directiveId: directiveId, sortIndex: 0, createdAt: Date())
             try link.insert(db)
         }
     }
@@ -69,7 +70,7 @@ final class NoteService: Sendable {
         try await db.dbQueue.write { db in
             try db.execute(sql: """
                 DELETE FROM noteDirective WHERE noteId = ? AND directiveId = ?
-                """, arguments: [noteId.uuidString, directiveId.uuidString])
+                """, arguments: [noteId, directiveId])
         }
     }
 
@@ -78,7 +79,7 @@ final class NoteService: Sendable {
             for (index, dirId) in directiveIds.enumerated() {
                 try db.execute(sql: """
                     UPDATE noteDirective SET sortIndex = ? WHERE noteId = ? AND directiveId = ?
-                    """, arguments: [index, noteId.uuidString, dirId.uuidString])
+                    """, arguments: [index, noteId, dirId])
             }
         }
     }
@@ -89,7 +90,7 @@ final class NoteService: Sendable {
         try await db.dbQueue.write { db in
             for (index, id) in ids.enumerated() {
                 try db.execute(sql: "UPDATE notePage SET sortIndex = ? WHERE id = ?",
-                               arguments: [index, id.uuidString])
+                               arguments: [index, id])
             }
         }
     }

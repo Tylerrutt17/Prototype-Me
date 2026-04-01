@@ -1043,12 +1043,11 @@ final class StoryBrainRAMView: UIView, StoryAnimatable {
         // Pulse the dot + turn green + ring burst
         UIView.animate(withDuration: 0.15, delay: 0.1) {
             entry.dot.transform = CGAffineTransform(scaleX: 1.6, y: 1.6)
-            entry.dot.alpha = 0.8
+            entry.dot.alpha = 1.0
             entry.dot.backgroundColor = DesignTokens.Colors.success
         } completion: { _ in
             UIView.animate(withDuration: 0.15) {
                 entry.dot.transform = .identity
-                entry.dot.alpha = 0.5
             }
         }
 

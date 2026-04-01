@@ -1,19 +1,37 @@
 import UIKit
 
+private extension UIImage {
+    func resized(to size: CGSize) -> UIImage {
+        UIGraphicsImageRenderer(size: size).image { _ in
+            draw(in: CGRect(origin: .zero, size: size))
+        }.withRenderingMode(renderingMode)
+    }
+}
+
 /// Lightweight button descriptor for `AppNavBar`.
 struct NavBarButton {
     let systemImage: String?
+    let assetImage: String?
     let title: String?
     let action: () -> Void
 
     init(systemImage: String, action: @escaping () -> Void) {
         self.systemImage = systemImage
+        self.assetImage = nil
+        self.title = nil
+        self.action = action
+    }
+
+    init(assetImage: String, action: @escaping () -> Void) {
+        self.systemImage = nil
+        self.assetImage = assetImage
         self.title = nil
         self.action = action
     }
 
     init(title: String, action: @escaping () -> Void) {
         self.systemImage = nil
+        self.assetImage = nil
         self.title = title
         self.action = action
     }
@@ -234,6 +252,12 @@ final class AppNavBar: UIView {
             if let systemImage = btn.systemImage {
                 let config = UIImage.SymbolConfiguration(weight: .medium)
                 button.setImage(UIImage(systemName: systemImage, withConfiguration: config), for: .normal)
+            } else if let assetImage = btn.assetImage {
+                let size: CGFloat = 22
+                let img = UIImage(named: assetImage)?
+                    .withRenderingMode(.alwaysTemplate)
+                    .resized(to: CGSize(width: size, height: size))
+                button.setImage(img, for: .normal)
             } else if let title = btn.title {
                 button.setTitle(title, for: .normal)
                 button.titleLabel?.font = DesignTokens.Typography.rounded(style: .body, weight: .semibold)

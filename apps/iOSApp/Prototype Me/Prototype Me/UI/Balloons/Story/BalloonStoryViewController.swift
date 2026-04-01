@@ -94,6 +94,7 @@ final class BalloonStoryViewController: UIViewController {
     private var currentIndex = 0
     private var navigationLocked = false
     private var brainRAMVisited = false
+    private var isTransitioning = false
 
     // Shared background
     private let gradientLayer: CAGradientLayer = {
@@ -214,11 +215,14 @@ final class BalloonStoryViewController: UIViewController {
     // MARK: - Actions
 
     @objc private func nextTapped() {
-        guard !navigationLocked else { return }
+        guard !navigationLocked, !isTransitioning else { return }
         if currentIndex < pages.count - 1 {
+            isTransitioning = true
             currentIndex += 1
             let nextPage = makePageVC(at: currentIndex)
-            pageVC.setViewControllers([nextPage], direction: .forward, animated: true)
+            pageVC.setViewControllers([nextPage], direction: .forward, animated: true) { [weak self] _ in
+                self?.isTransitioning = false
+            }
             updateControls()
             checkNavigationLock()
             Haptics.selection()

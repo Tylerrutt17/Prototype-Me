@@ -10,7 +10,21 @@ final class DirectiveEditorViewController: BaseViewController {
     var balloonNotificationService: BalloonNotificationService?
     var onSave: (() -> Void)?
 
-    // MARK: - Form Controls
+    // MARK: - Mode Toggle
+
+    private let modeSegment = UISegmentedControl(items: ["Wizard", "Manual"])
+    private let wizardContainer = UIView()
+    private let manualContainer = UIView()
+
+    // MARK: - Wizard Controls
+
+    private let problemField = UITextField()
+    private let suggestButton = AppButton(title: "Suggest Directives")
+    private let suggestionsStack = UIStackView()
+    private let suggestionsScrollView = UIScrollView()
+    private var currentSuggestions: [DirectiveWizard.Suggestion] = []
+
+    // MARK: - Manual Form Controls
 
     private let titleField = FormTextField(title: "TITLE", placeholder: "Directive title")
     private let bodyField = FormTextView(title: "DESCRIPTION (OPTIONAL)", minHeight: 80)
@@ -31,28 +45,326 @@ final class DirectiveEditorViewController: BaseViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        navBar.setTitle(directiveId == nil ? "New Directive" : "Edit Directive", animated: false)
+        let isCreate = directiveId == nil
+        navBar.setTitle(isCreate ? "New Directive" : "Edit Directive", animated: false)
         navBar.setLeftButton(title: "Cancel", systemImage: nil, action: { [weak self] in self?.cancelTapped() })
         navBar.setRightButtons([NavBarButton(title: "Save", action: { [weak self] in self?.saveTapped() })])
 
-        buildForm()
+        if isCreate {
+            buildModeToggle()
+            buildWizardView()
+        }
+        buildManualForm()
         bindControls()
         if directiveId != nil { loadExistingDirective() }
         observeKeyboard()
+
+        // Show wizard by default for create, manual for edit
+        if isCreate {
+            modeSegment.selectedSegmentIndex = 0
+            showMode(0)
+        } else {
+            wizardContainer.isHidden = true
+            manualContainer.isHidden = false
+        }
     }
 
-    // MARK: - Build Form
+    // MARK: - Mode Toggle
 
-    private func buildForm() {
+    private func buildModeToggle() {
+        modeSegment.selectedSegmentTintColor = DesignTokens.Colors.accent
+        modeSegment.setTitleTextAttributes([
+            .foregroundColor: DesignTokens.Colors.textPrimary,
+            .font: DesignTokens.Typography.rounded(style: .footnote, weight: .semibold),
+        ], for: .selected)
+        modeSegment.setTitleTextAttributes([
+            .foregroundColor: DesignTokens.Colors.textSecondary,
+            .font: DesignTokens.Typography.rounded(style: .footnote, weight: .medium),
+        ], for: .normal)
+        modeSegment.backgroundColor = DesignTokens.Colors.surfaceSecondary
+        modeSegment.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
+        modeSegment.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(modeSegment)
+
+        NSLayoutConstraint.activate([
+            modeSegment.topAnchor.constraint(equalTo: contentTopAnchor, constant: DesignTokens.Spacing.sm),
+            modeSegment.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.lg),
+            modeSegment.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.lg),
+            modeSegment.heightAnchor.constraint(equalToConstant: 32),
+        ])
+    }
+
+    @objc private func modeChanged() {
+        showMode(modeSegment.selectedSegmentIndex)
+        view.endEditing(true)
+    }
+
+    private func showMode(_ index: Int) {
+        let isWizard = index == 0
+        wizardContainer.isHidden = !isWizard
+        manualContainer.isHidden = isWizard
+
+        // Hide save button in wizard mode (suggestions auto-create)
+        if directiveId == nil {
+            navBar.setRightButtons(isWizard ? [] : [NavBarButton(title: "Save", action: { [weak self] in self?.saveTapped() })])
+        }
+    }
+
+    // MARK: - Wizard View
+
+    private func buildWizardView() {
+        wizardContainer.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(wizardContainer)
+
+        let topAnchor = modeSegment.bottomAnchor
+
+        NSLayoutConstraint.activate([
+            wizardContainer.topAnchor.constraint(equalTo: topAnchor, constant: DesignTokens.Spacing.lg),
+            wizardContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            wizardContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            wizardContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+
+        // Problem input
+        let promptLabel = UILabel()
+        promptLabel.text = "What are you struggling with?"
+        promptLabel.font = DesignTokens.Typography.rounded(style: .title3, weight: .bold)
+        promptLabel.textColor = DesignTokens.Colors.textPrimary
+        promptLabel.numberOfLines = 0
+
+        let promptSubtitle = UILabel()
+        promptSubtitle.text = "Describe the issue and we'll suggest directives to help."
+        promptSubtitle.font = DesignTokens.Typography.subheadline
+        promptSubtitle.textColor = DesignTokens.Colors.textSecondary
+        promptSubtitle.numberOfLines = 0
+
+        problemField.placeholder = "e.g. I can't focus at work, I stay up too late..."
+        problemField.font = DesignTokens.Typography.body
+        problemField.textColor = DesignTokens.Colors.textPrimary
+        problemField.tintColor = DesignTokens.Colors.accent
+        problemField.backgroundColor = DesignTokens.Colors.surfacePrimary
+        problemField.layer.cornerRadius = DesignTokens.Radii.md
+        problemField.layer.borderWidth = 1
+        problemField.layer.borderColor = DesignTokens.Colors.separator.cgColor
+        problemField.returnKeyType = .done
+        problemField.delegate = self
+        problemField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 12, height: 0))
+        problemField.leftViewMode = .always
+        problemField.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 12, height: 0))
+        problemField.rightViewMode = .always
+        problemField.attributedPlaceholder = NSAttributedString(
+            string: "e.g. I can't focus at work, I stay up too late...",
+            attributes: [.foregroundColor: DesignTokens.Colors.textTertiary]
+        )
+        problemField.addTarget(self, action: #selector(problemTextChanged), for: .editingChanged)
+
+        suggestButton.addTarget(self, action: #selector(suggestTapped), for: .touchUpInside)
+        suggestButton.isEnabled = false
+        suggestButton.alpha = 0.5
+
+        // Suggestions scroll area
+        suggestionsScrollView.showsVerticalScrollIndicator = false
+        suggestionsScrollView.keyboardDismissMode = .onDrag
+        suggestionsScrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        suggestionsStack.axis = .vertical
+        suggestionsStack.spacing = DesignTokens.Spacing.sm
+        suggestionsStack.alignment = .fill
+        suggestionsStack.translatesAutoresizingMaskIntoConstraints = false
+        suggestionsScrollView.addSubview(suggestionsStack)
+
+        // Layout
+        let padding = DesignTokens.Spacing.lg
+
+        for v in [promptLabel, promptSubtitle, problemField, suggestButton, suggestionsScrollView] as [UIView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            wizardContainer.addSubview(v)
+        }
+
+        NSLayoutConstraint.activate([
+            promptLabel.topAnchor.constraint(equalTo: wizardContainer.topAnchor, constant: DesignTokens.Spacing.sm),
+            promptLabel.leadingAnchor.constraint(equalTo: wizardContainer.leadingAnchor, constant: padding),
+            promptLabel.trailingAnchor.constraint(equalTo: wizardContainer.trailingAnchor, constant: -padding),
+
+            promptSubtitle.topAnchor.constraint(equalTo: promptLabel.bottomAnchor, constant: DesignTokens.Spacing.xs),
+            promptSubtitle.leadingAnchor.constraint(equalTo: wizardContainer.leadingAnchor, constant: padding),
+            promptSubtitle.trailingAnchor.constraint(equalTo: wizardContainer.trailingAnchor, constant: -padding),
+
+            problemField.topAnchor.constraint(equalTo: promptSubtitle.bottomAnchor, constant: DesignTokens.Spacing.lg),
+            problemField.leadingAnchor.constraint(equalTo: wizardContainer.leadingAnchor, constant: padding),
+            problemField.trailingAnchor.constraint(equalTo: wizardContainer.trailingAnchor, constant: -padding),
+            problemField.heightAnchor.constraint(equalToConstant: 48),
+
+            suggestButton.topAnchor.constraint(equalTo: problemField.bottomAnchor, constant: DesignTokens.Spacing.md),
+            suggestButton.leadingAnchor.constraint(equalTo: wizardContainer.leadingAnchor, constant: padding),
+            suggestButton.trailingAnchor.constraint(equalTo: wizardContainer.trailingAnchor, constant: -padding),
+
+            suggestionsScrollView.topAnchor.constraint(equalTo: suggestButton.bottomAnchor, constant: DesignTokens.Spacing.xl),
+            suggestionsScrollView.leadingAnchor.constraint(equalTo: wizardContainer.leadingAnchor),
+            suggestionsScrollView.trailingAnchor.constraint(equalTo: wizardContainer.trailingAnchor),
+            suggestionsScrollView.bottomAnchor.constraint(equalTo: wizardContainer.bottomAnchor),
+
+            suggestionsStack.topAnchor.constraint(equalTo: suggestionsScrollView.topAnchor),
+            suggestionsStack.leadingAnchor.constraint(equalTo: suggestionsScrollView.leadingAnchor, constant: padding),
+            suggestionsStack.trailingAnchor.constraint(equalTo: suggestionsScrollView.trailingAnchor, constant: -padding),
+            suggestionsStack.bottomAnchor.constraint(equalTo: suggestionsScrollView.bottomAnchor, constant: -padding),
+            suggestionsStack.widthAnchor.constraint(equalTo: suggestionsScrollView.widthAnchor, constant: -padding * 2),
+        ])
+    }
+
+    @objc private func problemTextChanged() {
+        let hasText = !(problemField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        suggestButton.isEnabled = hasText
+        UIView.animate(withDuration: 0.2) {
+            self.suggestButton.alpha = hasText ? 1.0 : 0.5
+        }
+    }
+
+    @objc private func suggestTapped() {
+        guard let text = problemField.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        view.endEditing(true)
+        Haptics.light()
+
+        // Clear old suggestions
+        for v in suggestionsStack.arrangedSubviews { v.removeFromSuperview() }
+
+        // Get dummy suggestions
+        currentSuggestions = DirectiveWizard.suggest(for: text)
+
+        // Build suggestion cards with staggered animation
+        for (i, suggestion) in currentSuggestions.enumerated() {
+            let card = makeSuggestionCard(suggestion, index: i)
+            card.alpha = 0
+            card.transform = CGAffineTransform(translationX: 0, y: 15)
+            suggestionsStack.addArrangedSubview(card)
+
+            UIView.animate(
+                withDuration: 0.4,
+                delay: 0.1 + Double(i) * 0.1,
+                usingSpringWithDamping: 0.8,
+                initialSpringVelocity: 0.3
+            ) {
+                card.alpha = 1
+                card.transform = .identity
+            }
+        }
+    }
+
+    private func makeSuggestionCard(_ suggestion: DirectiveWizard.Suggestion, index: Int) -> UIView {
+        let card = UIView()
+        card.backgroundColor = DesignTokens.Colors.surfacePrimary
+        card.layer.cornerRadius = DesignTokens.Radii.lg
+        card.layer.borderWidth = 1
+        card.layer.borderColor = DesignTokens.Colors.separator.cgColor
+
+        let titleLabel = UILabel()
+        titleLabel.text = suggestion.title
+        titleLabel.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
+        titleLabel.textColor = DesignTokens.Colors.textPrimary
+        titleLabel.numberOfLines = 0
+
+        let bodyLabel = UILabel()
+        bodyLabel.text = suggestion.body
+        bodyLabel.font = DesignTokens.Typography.caption1
+        bodyLabel.textColor = DesignTokens.Colors.textSecondary
+        bodyLabel.numberOfLines = 0
+
+        let addIcon = UIImageView(image: UIImage(systemName: "plus.circle.fill"))
+        addIcon.tintColor = DesignTokens.Colors.accent
+        addIcon.contentMode = .scaleAspectFit
+        addIcon.setContentHuggingPriority(.required, for: .horizontal)
+
+        let textStack = UIStackView(arrangedSubviews: [titleLabel, bodyLabel])
+        textStack.axis = .vertical
+        textStack.spacing = DesignTokens.Spacing.xs
+
+        let rowStack = UIStackView(arrangedSubviews: [textStack, addIcon])
+        rowStack.axis = .horizontal
+        rowStack.spacing = DesignTokens.Spacing.md
+        rowStack.alignment = .center
+        rowStack.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(rowStack)
+
+        let pad = DesignTokens.Spacing.lg
+        NSLayoutConstraint.activate([
+            addIcon.widthAnchor.constraint(equalToConstant: 28),
+            addIcon.heightAnchor.constraint(equalToConstant: 28),
+            rowStack.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
+            rowStack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -pad),
+            rowStack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
+            rowStack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
+        ])
+
+        // Tap gesture
+        card.tag = index
+        card.isUserInteractionEnabled = true
+        card.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(suggestionTapped(_:))))
+
+        return card
+    }
+
+    @objc private func suggestionTapped(_ gesture: UITapGestureRecognizer) {
+        guard let card = gesture.view, card.tag < currentSuggestions.count else { return }
+        let suggestion = currentSuggestions[card.tag]
+
+        // Flash the card
+        UIView.animate(withDuration: 0.1, animations: {
+            card.backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.1)
+            card.layer.borderColor = DesignTokens.Colors.accent.cgColor
+            card.transform = CGAffineTransform(scaleX: 0.98, y: 0.98)
+        }) { _ in
+            UIView.animate(withDuration: 0.1) {
+                card.transform = .identity
+            }
+        }
+
+        Haptics.success()
+
+        // Create the directive
+        Task {
+            do {
+                _ = try await directiveService?.create(
+                    title: suggestion.title,
+                    body: suggestion.body
+                )
+                await MainActor.run {
+                    self.onSave?()
+                }
+            } catch {
+                Haptics.error()
+            }
+        }
+    }
+
+    // MARK: - Manual Form
+
+    private func buildManualForm() {
+        manualContainer.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(manualContainer)
+
+        let topAnchor: NSLayoutYAxisAnchor
+        if directiveId == nil {
+            topAnchor = modeSegment.bottomAnchor
+        } else {
+            topAnchor = contentTopAnchor
+        }
+
+        NSLayoutConstraint.activate([
+            manualContainer.topAnchor.constraint(equalTo: topAnchor, constant: DesignTokens.Spacing.sm),
+            manualContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            manualContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            manualContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.keyboardDismissMode = .interactive
-        view.addSubview(scrollView)
+        manualContainer.addSubview(scrollView)
 
         stackView.axis = .vertical
         stackView.spacing = DesignTokens.Spacing.xl
         stackView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.addSubview(stackView)
-
 
         stackView.addArrangedSubview(titleField)
         stackView.addArrangedSubview(bodyField)
@@ -63,10 +375,10 @@ final class DirectiveEditorViewController: BaseViewController {
         let padding = DesignTokens.Spacing.lg
 
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: contentTopAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            scrollView.topAnchor.constraint(equalTo: manualContainer.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: manualContainer.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: manualContainer.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: manualContainer.bottomAnchor),
 
             stackView.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: padding),
             stackView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor, constant: padding),
@@ -93,12 +405,6 @@ final class DirectiveEditorViewController: BaseViewController {
         }
     }
 
-    private func showInfo(title: String, message: String) {
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Got it", style: .default))
-        present(alert, animated: true)
-    }
-
     // MARK: - Data Loading
 
     private func loadExistingDirective() {
@@ -117,7 +423,6 @@ final class DirectiveEditorViewController: BaseViewController {
             durationHours = directive.balloonDurationSec / 3600
             balloonSection.configure(isEnabled: directive.balloonEnabled, durationHours: durationHours)
 
-            // Load existing schedule rule
             existingScheduleRule = try dbQueue.read { db in
                 try ScheduleRule
                     .filter(Column("directiveId") == directiveId)
@@ -150,7 +455,6 @@ final class DirectiveEditorViewController: BaseViewController {
                     existing.body = body
                     existing.status = selectedStatus
                     existing.balloonEnabled = balloonEnabled
-                    // Only reset remaining if duration changed or balloon just enabled
                     if existing.balloonDurationSec != durationSec || (!existing.balloonEnabled && balloonEnabled) {
                         existing.balloonSnapshotSec = durationSec
                     }
@@ -164,12 +468,10 @@ final class DirectiveEditorViewController: BaseViewController {
                     )
                     newDirectiveId = newDir?.id
                 }
-                // Save schedule rule
                 let dirId = directiveId ?? newDirectiveId
                 if let dirId {
                     try? self.saveScheduleRule(directiveId: dirId)
 
-                    // Schedule or cancel balloon notification
                     if self.balloonEnabled {
                         if let saved = try? await self.directiveService?.fetch(id: dirId) {
                             self.balloonNotificationService?.scheduleBalloonNotification(for: saved)
@@ -193,7 +495,6 @@ final class DirectiveEditorViewController: BaseViewController {
     private func saveScheduleRule(directiveId: UUID) throws {
         let params = scheduleSection.buildParams()
 
-        // If no schedule types enabled, delete existing rule
         guard !params.isEmpty else {
             if let existing = existingScheduleRule {
                 try dbQueue.write { db in
@@ -245,10 +546,26 @@ final class DirectiveEditorViewController: BaseViewController {
         guard let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
         scrollView.contentInset.bottom = frame.height
         scrollView.verticalScrollIndicatorInsets.bottom = frame.height
+        suggestionsScrollView.contentInset.bottom = frame.height
+        suggestionsScrollView.verticalScrollIndicatorInsets.bottom = frame.height
     }
 
     @objc private func keyboardWillHide(_ note: Notification) {
         scrollView.contentInset.bottom = 0
         scrollView.verticalScrollIndicatorInsets.bottom = 0
+        suggestionsScrollView.contentInset.bottom = 0
+        suggestionsScrollView.verticalScrollIndicatorInsets.bottom = 0
+    }
+}
+
+// MARK: - UITextFieldDelegate
+
+extension DirectiveEditorViewController: UITextFieldDelegate {
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        if textField == problemField {
+            suggestTapped()
+        }
+        textField.resignFirstResponder()
+        return true
     }
 }

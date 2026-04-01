@@ -20,18 +20,26 @@ final class OnboardingStoryViewController: UIViewController {
             case buildFade
             case bestWorstDays
             case wavyLine
+            case framework
+            case modesVision
+            case directiveTrial
+            case weakPoints
+            case shortcomings
+            case systemEvolves
             case journal
             case aiInsights
             case directives
             case modes
             case balloons
             case notesFolders
+            case converge
             case relaxed
             case hero
         }
     }
 
     private let pages: [PageConfig] = [
+        // ── Narrative ──────────────────────────────
         // 1. Hook
         PageConfig(
             title: "You've done this before",
@@ -48,78 +56,66 @@ final class OnboardingStoryViewController: UIViewController {
         ),
         // 3. The Insight
         PageConfig(
-            title: "What makes your best days?",
-            subtitle: "It's not random. Your best days have patterns — the habits you kept, the ones you didn't. But you never tracked them.",
+            title: "What makes your best & worst days?",
+            subtitle: "It's not random. Your worst days have patterns — the things you skipped, the habits you dropped. Fix those, and your best days happen on their own.",
             visualType: .bestWorstDays,
             particleIntensity: 0.4
         ),
-        // 4. The Solution
+        // 4. Escalation
         PageConfig(
-            title: "Now you can track them",
-            subtitle: "Build better habits and figure out what works best for you. Because everyone's different — and no one can figure it out how you work best but you.",
+            title: "What's actually dragging you down?",
+            subtitle: "Low energy, bad habits, irritability. Some are always there. Some only show up in certain situations. If you've never mapped them out, how would you know what to fix?",
+            visualType: .shortcomings,
+            particleIntensity: 0.6
+        ),
+//        // 5. Failed solutions
+//        PageConfig(
+//            title: "You've tried routines. They don't adapt.",
+//            subtitle: "Habits apps, rules, willpower. They work until life changes — then they break. Because they were built for a version of you that doesn't exist anymore.",
+//            visualType: nil,
+//            particleIntensity: 0.4
+//        ),
+        // 5. The Real Solution
+        PageConfig(
+            title: "Try things. See what sticks.",
+            subtitle: "Find the habits and practices that keep the lows from happening. Track what works, drop what doesn't. No one can figure this out for you.",
             visualType: .wavyLine,
             particleIntensity: 0.8
         ),
-        // 5. Transition
+        // ── How It Works ───────────────────────────
+        // 7. Transition
         PageConfig(
-            title: "Here's how it works",
+            title: "So how does it work?",
             subtitle: "",
             visualType: nil,
             particleIntensity: 0.4
         ),
-        // 6. Directives
+        // 8. Directives
         PageConfig(
-            title: "\"Directives\"",
-            subtitle: "Goals, habits, reminders — anything you're working on or want to remember. Write them down so they're not just floating around in your head.",
-            visualType: .directives,
+            title: "These are Directives",
+            subtitle: "The small things that keep you from hitting a low. Habits, rules, reminders — they're not always exciting, but they're what make the difference.",
+            visualType: .directiveTrial,
             particleIntensity: 0.8
         ),
-        // 6. Modes
+        // 9. System evolves
         PageConfig(
-            title: "Modes",
-            subtitle: "Switch into a mode based on where you're at — deep work, recovery, social, whatever fits. It filters your directives to just what's relevant right now.",
-            visualType: .modes,
+            title: "Figure out what works best",
+            subtitle: "Some things will help, some won't. Swap what doesn't work, double down on what does. Over time, you learn exactly what keeps you steady.",
+            visualType: .systemEvolves,
             particleIntensity: 0.8
         ),
-        // 7. Balloons
+        // 10. Journal + AI
         PageConfig(
-            title: "Balloons",
-            subtitle: "Attach a balloon to anything you want to periodically keep top of mind. You'll get a push notification when it runs out — pump it back up to keep it fresh.",
-            visualType: .balloons,
-            particleIntensity: 1.0
-        ),
-        // 8. Journal
-        PageConfig(
-            title: "Journal",
-            subtitle: "Rate your day. Write what happened. Over time, you'll see exactly what your best and worst days have in common.",
+            title: "Track what's working",
+            subtitle: "Rate your day. Write what happened. The app finds patterns — what dragged you down, what kept you steady. So you can see what's actually making the difference.",
             visualType: .journal,
             particleIntensity: 0.8
         ),
-        // 9. Intelligence
-        PageConfig(
-            title: "Built-in intelligence",
-            subtitle: "Your journal is automatically analyzed to find what your best and worst days have in common — so you don't have to figure it out yourself.",
-            visualType: .aiInsights,
-            particleIntensity: 0.8
-        ),
-        // 10. Notes & Folders
-        PageConfig(
-            title: "Notes & Folders",
-            subtitle: "Capture thoughts, organize by topic, keep everything in one place. Your system, structured your way.",
-            visualType: .notesFolders,
-            particleIntensity: 0.4
-        ),
-        // 11. Differentiator
-        PageConfig(
-            title: "This is not a rulebook",
-            subtitle: "Skip days. Change your mind. The system adapts to how you actually live — not how you think you should.",
-            visualType: .relaxed,
-            particleIntensity: 0.4
-        ),
-        // 10. CTA
+        // ── The Close ──────────────────────────────
+        // 11. CTA
         PageConfig(
             title: "Let's build your system",
-            subtitle: "We'll help you set up a starter plan. You can change everything later — this is just the beginning.",
+            subtitle: "Skip days. Change your mind. The system adapts to how you actually live. We'll help you set up a starter plan — you can change everything later.",
             visualType: .hero,
             particleIntensity: 2.5
         ),
@@ -299,7 +295,138 @@ final class OnboardingStoryViewController: UIViewController {
         if let visualType = config.visualType {
             vc.animationView = makeVisual(for: visualType)
         }
+        if let attributed = Self.attributedSubtitles[index] {
+            vc.attributedSubtitle = attributed
+        }
         return vc
+    }
+
+    // MARK: - Attributed Subtitles
+
+    /// Styled subtitles with bold/italic emphasis for specific pages.
+    private static let attributedSubtitles: [Int: NSAttributedString] = {
+        let body = DesignTokens.Typography.body
+        let bold = DesignTokens.Typography.rounded(style: .body, weight: .bold)
+        let italic = UIFont.italicSystemFont(ofSize: body.pointSize)
+        let boldItalic = UIFont(descriptor: bold.fontDescriptor.withSymbolicTraits(.traitItalic) ?? bold.fontDescriptor, size: bold.pointSize)
+        let color = DesignTokens.Colors.textSecondary
+        let accent = DesignTokens.Colors.accent
+        let fwColor = NoteKind.framework.color
+        let modeColor = NoteKind.mode.color
+
+        var map: [Int: NSAttributedString] = [:]
+
+        // 0 - Hook
+        map[0] = styled {
+            $0.normal("The better habits. The goals. The fresh starts. It works for a while — ")
+            $0.italic("then it doesn't.")
+        }
+
+        // 1 - The Gap
+        map[1] = styled {
+            $0.normal("It's ")
+            $0.bold("sticking with it")
+            $0.normal(". You try building better habits, it works, then life gets in the way and it fades. ")
+            $0.italic("Every time.")
+        }
+
+        // 2 - Insight
+        map[2] = styled {
+            $0.normal("It's not random. Your worst days have patterns — the things you skipped, the habits you dropped. ")
+            $0.bold("Fix those, and your best days happen on their own.")
+        }
+
+        // 3 - Escalation
+        map[3] = styled {
+            $0.normal("Low energy, bad habits, irritability. Some are ")
+            $0.bold("always there")
+            $0.normal(". Some only show up in ")
+            $0.bold("certain situations")
+            $0.normal(". If you've never mapped them out, ")
+            $0.italic("how would you know what to fix?")
+        }
+
+        // 4 - Real solution
+        map[4] = styled {
+            $0.normal("Find the habits and practices that keep the lows from happening. Track what works, drop what doesn't. ")
+            $0.italic("No one can figure this out for you.")
+        }
+
+        // 6 - Directives
+        map[6] = styled {
+            $0.normal("The small things that keep you from hitting a low. Habits, rules, reminders — they're not always exciting, ")
+            $0.bold("but they're what make the difference")
+            $0.normal(".")
+        }
+
+        // 7 - System evolves
+        map[7] = styled {
+            $0.normal("Some things will help, some won't. Swap what doesn't work, double down on what does. Over time, you learn exactly what ")
+            $0.bold("keeps you steady")
+            $0.normal(".")
+        }
+
+        // 8 - Journal
+        map[8] = styled {
+            $0.normal("Rate your day. Write what happened. The app finds ")
+            $0.bold("patterns")
+            $0.normal(" — what dragged you down, what kept you steady. So you can see what's ")
+            $0.italic("actually")
+            $0.normal(" making the difference.")
+        }
+
+        // 9 - CTA
+        map[9] = styled {
+            $0.normal("Skip days. Change your mind. ")
+            $0.italic("The system adapts to how you actually live.")
+            $0.normal(" We'll help you set up a starter plan — you can change ")
+            $0.italic("everything")
+            $0.normal(" later.")
+        }
+
+        return map
+    }()
+
+    /// Helper to build attributed strings with a builder pattern.
+    private static func styled(_ build: (StyledStringBuilder) -> Void) -> NSAttributedString {
+        let builder = StyledStringBuilder()
+        build(builder)
+        return builder.result
+    }
+
+    private class StyledStringBuilder {
+        let result = NSMutableAttributedString()
+        private let body = DesignTokens.Typography.body
+        private let boldFont = DesignTokens.Typography.rounded(style: .body, weight: .bold)
+        private let color = DesignTokens.Colors.textSecondary
+
+        private var italicFont: UIFont {
+            UIFont.italicSystemFont(ofSize: body.pointSize)
+        }
+
+        private var boldItalicFont: UIFont {
+            UIFont(descriptor: boldFont.fontDescriptor.withSymbolicTraits(.traitItalic) ?? boldFont.fontDescriptor, size: boldFont.pointSize)
+        }
+
+        func normal(_ text: String) {
+            result.append(NSAttributedString(string: text, attributes: [.font: body, .foregroundColor: color]))
+        }
+
+        func bold(_ text: String) {
+            result.append(NSAttributedString(string: text, attributes: [.font: boldFont, .foregroundColor: color]))
+        }
+
+        func italic(_ text: String) {
+            result.append(NSAttributedString(string: text, attributes: [.font: italicFont, .foregroundColor: color]))
+        }
+
+        func boldItalic(_ text: String) {
+            result.append(NSAttributedString(string: text, attributes: [.font: boldItalicFont, .foregroundColor: color]))
+        }
+
+        func colored(_ text: String, _ textColor: UIColor, _ font: UIFont) {
+            result.append(NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: textColor]))
+        }
     }
 
     private func makeVisual(for type: PageConfig.VisualType) -> (UIView & StoryAnimatable) {
@@ -312,6 +439,18 @@ final class OnboardingStoryViewController: UIViewController {
             return OnboardingBestWorstDaysView()
         case .wavyLine:
             return OnboardingWavyLineView()
+        case .framework:
+            return OnboardingFrameworkView()
+        case .modesVision:
+            return OnboardingModesVisionView()
+        case .directiveTrial:
+            return OnboardingDirectiveTrialView()
+        case .weakPoints:
+            return OnboardingWeakPointsView()
+        case .shortcomings:
+            return OnboardingShortcomingsView()
+        case .systemEvolves:
+            return OnboardingSystemEvolvesView()
         case .journal:
             return OnboardingJournalDemoView()
         case .aiInsights:
@@ -324,6 +463,8 @@ final class OnboardingStoryViewController: UIViewController {
             return OnboardingBalloonDemoView()
         case .notesFolders:
             return OnboardingNotesFoldersView()
+        case .converge:
+            return OnboardingConvergeView()
         case .relaxed:
             return OnboardingRelaxedView()
         case .hero:

@@ -14,5 +14,6 @@ export const config = {
     clientId: required("COGNITO_CLIENT_ID"),
     region: required("COGNITO_REGION"),
   },
-  anthropicApiKey: required("ANTHROPIC_API_KEY"),
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
 } as const;

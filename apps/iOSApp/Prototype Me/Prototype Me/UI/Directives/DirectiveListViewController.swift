@@ -21,10 +21,15 @@ class DirectiveListViewController: BaseViewController {
     var onAddTapped: (() -> Void)?
     var isEmbedded = false
 
+    private var searchBar: UISearchBar!
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<DirectiveListSection, DirectiveRowData>!
     private var allItems: [DirectiveRowData] = []
     private var currentFilter: DirectiveFilter = .all
+    private var searchText = ""
+
+    private let infoPill = UIButton(type: .system)
+    private static let hasSeenStoryKey = "hasSeenDirectiveStory"
 
     override func viewDidLoad() {
         if isEmbedded { hidesNavBar = true }
@@ -35,9 +40,18 @@ class DirectiveListViewController: BaseViewController {
             ])
         }
         configureSegmentedControl()
+        configureInfoPill()
+        configureSearchBar()
         configureCollectionView()
         configureDataSource()
         loadData()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        if !UserDefaults.standard.bool(forKey: Self.hasSeenStoryKey) {
+            ShimmerBorder.restart(on: infoPill)
+        }
     }
 
     // MARK: - Segmented Control
@@ -49,17 +63,137 @@ class DirectiveListViewController: BaseViewController {
         navBar.setTitleView(segmented)
     }
 
+    // MARK: - Info Pill
+
+    private func configureInfoPill() {
+        let hasSeen = UserDefaults.standard.bool(forKey: Self.hasSeenStoryKey)
+
+        var config = UIButton.Configuration.filled()
+        config.title = "What are Directives?"
+        config.image = UIImage(systemName: "questionmark.circle.fill")
+        config.imagePadding = DesignTokens.Spacing.xs
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 12)
+        config.cornerStyle = .capsule
+        config.titleTextAttributesTransformer = .init { container in
+            var c = container
+            c.font = DesignTokens.Typography.rounded(style: .caption2, weight: .semibold)
+            return c
+        }
+
+        if hasSeen {
+            config.background.backgroundColor = DesignTokens.Colors.surfaceSecondary
+            config.baseForegroundColor = DesignTokens.Colors.textSecondary
+        } else {
+            config.background.backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.15)
+            config.baseForegroundColor = DesignTokens.Colors.accent
+        }
+        config.background.cornerRadius = DesignTokens.Radii.pill
+        infoPill.configuration = config
+        infoPill.addTarget(self, action: #selector(infoPillTapped), for: .touchUpInside)
+
+        infoPill.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(infoPill)
+
+        NSLayoutConstraint.activate([
+            infoPill.topAnchor.constraint(equalTo: contentTopAnchor, constant: DesignTokens.Spacing.sm),
+            infoPill.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.lg),
+        ])
+
+        if !hasSeen {
+            startInfoPillPulse()
+        }
+    }
+
+    private func startInfoPillPulse() {
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
+
+        infoPill.layer.shadowColor = DesignTokens.Colors.accent.cgColor
+        infoPill.layer.shadowRadius = 8
+        infoPill.layer.shadowOpacity = 0.4
+        infoPill.layer.shadowOffset = .zero
+
+        let glow = CABasicAnimation(keyPath: "shadowRadius")
+        glow.fromValue = 4
+        glow.toValue = 12
+        glow.duration = 1.2
+        glow.autoreverses = true
+        glow.repeatCount = .infinity
+        glow.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        infoPill.layer.add(glow, forKey: "glowPulse")
+
+        let opacityPulse = CABasicAnimation(keyPath: "shadowOpacity")
+        opacityPulse.fromValue = 0.2
+        opacityPulse.toValue = 0.5
+        opacityPulse.duration = 1.2
+        opacityPulse.autoreverses = true
+        opacityPulse.repeatCount = .infinity
+        opacityPulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        infoPill.layer.add(opacityPulse, forKey: "opacityPulse")
+
+        infoPill.clipsToBounds = false
+        DispatchQueue.main.async {
+            let pillHeight = self.infoPill.bounds.height
+            ShimmerBorder.add(
+                to: self.infoPill,
+                color: DesignTokens.Colors.accent,
+                cornerRadius: pillHeight / 2
+            )
+        }
+    }
+
+    @objc private func infoPillTapped() {
+        Haptics.light()
+
+        if !UserDefaults.standard.bool(forKey: Self.hasSeenStoryKey) {
+            UserDefaults.standard.set(true, forKey: Self.hasSeenStoryKey)
+            infoPill.layer.removeAnimation(forKey: "glowPulse")
+            infoPill.layer.removeAnimation(forKey: "opacityPulse")
+            infoPill.layer.shadowOpacity = 0
+            ShimmerBorder.remove(from: infoPill)
+
+            var config = infoPill.configuration
+            config?.background.backgroundColor = DesignTokens.Colors.surfaceSecondary
+            config?.baseForegroundColor = DesignTokens.Colors.textSecondary
+            infoPill.configuration = config
+        }
+
+        let storyVC = DirectiveStoryViewController()
+        storyVC.modalPresentationStyle = .overFullScreen
+        storyVC.modalTransitionStyle = .coverVertical
+        present(storyVC, animated: true)
+    }
+
+    // MARK: - Search Bar
+
+    private func configureSearchBar() {
+        searchBar = UISearchBar()
+        searchBar.placeholder = "Search directives"
+        searchBar.searchBarStyle = .minimal
+        searchBar.delegate = self
+        searchBar.tintColor = DesignTokens.Colors.accent
+        searchBar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(searchBar)
+
+        NSLayoutConstraint.activate([
+            searchBar.topAnchor.constraint(equalTo: infoPill.bottomAnchor, constant: DesignTokens.Spacing.xs),
+            searchBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.sm),
+            searchBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.sm),
+        ])
+    }
+
     // MARK: - Collection View
 
     private func configureCollectionView() {
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: createLayout())
         collectionView.backgroundColor = .clear
         collectionView.delegate = self
+        collectionView.keyboardDismissMode = .onDrag
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(collectionView)
 
         NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: contentTopAnchor),
+            collectionView.topAnchor.constraint(equalTo: searchBar.bottomAnchor),
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -153,10 +287,13 @@ class DirectiveListViewController: BaseViewController {
     }
 
     private func applyFilter() {
-        let filtered: [DirectiveRowData] = switch currentFilter {
+        var filtered: [DirectiveRowData] = switch currentFilter {
         case .all:      allItems.filter { $0.directive.status != .archived }
         case .active:   allItems.filter { $0.directive.status == .active }
         case .archived: allItems.filter { $0.directive.status == .archived }
+        }
+        if !searchText.isEmpty {
+            filtered = filtered.filter { $0.directive.title.localizedCaseInsensitiveContains(searchText) }
         }
         var snapshot = NSDiffableDataSourceSnapshot<DirectiveListSection, DirectiveRowData>()
         snapshot.appendSections([.main])
@@ -167,6 +304,19 @@ class DirectiveListViewController: BaseViewController {
         var reconfigSnap = dataSource.snapshot()
         reconfigSnap.reconfigureItems(reconfigSnap.itemIdentifiers)
         dataSource.apply(reconfigSnap, animatingDifferences: false)
+    }
+}
+
+// MARK: - UISearchBarDelegate
+
+extension DirectiveListViewController: UISearchBarDelegate {
+    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        self.searchText = searchText
+        applyFilter()
+    }
+
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        searchBar.resignFirstResponder()
     }
 }
 

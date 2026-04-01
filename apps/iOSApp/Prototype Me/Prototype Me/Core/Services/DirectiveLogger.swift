@@ -42,6 +42,6 @@ enum DirectiveLogger {
     }
 
     static func logChecklistComplete(directiveId: UUID, date: String, dbQueue: DatabaseQueue) {
-        log(.update, directiveId: directiveId, payload: "checklist_done:\(date)", dbQueue: dbQueue)
+        log(.checklistComplete, directiveId: directiveId, payload: "{\"date\":\"\(date)\"}", dbQueue: dbQueue)
     }
 }

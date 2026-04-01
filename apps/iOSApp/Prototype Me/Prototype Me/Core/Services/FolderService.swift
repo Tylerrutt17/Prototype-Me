@@ -17,7 +17,7 @@ final class FolderService: Sendable {
         let nextSort = try await db.dbQueue.read { db in
             try Int.fetchOne(db, sql: """
                 SELECT COALESCE(MAX(sortIndex), -1) + 1 FROM folder WHERE parentFolderId IS ?
-                """, arguments: [parentFolderId?.uuidString]) ?? 0
+                """, arguments: [parentFolderId]) ?? 0
         }
         let folder = Folder(
             id: UUID(),
@@ -86,8 +86,19 @@ final class FolderService: Sendable {
         try await db.dbQueue.write { db in
             for (index, id) in ids.enumerated() {
                 try db.execute(sql: "UPDATE folder SET sortIndex = ? WHERE id = ?",
-                               arguments: [index, id.uuidString])
+                               arguments: [index, id])
             }
+        }
+    }
+
+    /// Move a folder under a new parent (or to root if parentId is nil).
+    func moveFolder(folderId: UUID, toParentId: UUID?) async throws {
+        try await db.dbQueue.write { db in
+            guard var folder = try Folder.fetchOne(db, key: folderId) else { return }
+            folder.parentFolderId = toParentId
+            folder.updatedAt = Date()
+            folder.version += 1
+            try folder.update(db)
         }
     }
 

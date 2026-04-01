@@ -8,6 +8,7 @@ nonisolated enum NoteKind: String, Hashable, Codable, CaseIterable, Sendable {
     case mode        // Operating‑mode instructions shown on Focus tab
     case framework   // Personal constitution (one per user)
     case situation   // Contextual scenario with linked directives
+    case goal        // Goal tracking with linked directives
 
     var color: UIColor {
         switch self {
@@ -15,6 +16,7 @@ nonisolated enum NoteKind: String, Hashable, Codable, CaseIterable, Sendable {
         case .mode:      UIColor(red: 0.65, green: 0.40, blue: 0.95, alpha: 1.0)  // Purple
         case .framework: UIColor(red: 0.95, green: 0.65, blue: 0.20, alpha: 1.0)  // Gold
         case .situation: UIColor(red: 0.30, green: 0.80, blue: 0.65, alpha: 1.0)  // Teal
+        case .goal:      UIColor(red: 0.95, green: 0.45, blue: 0.40, alpha: 1.0)  // Salmon
         }
     }
 
@@ -24,6 +26,17 @@ nonisolated enum NoteKind: String, Hashable, Codable, CaseIterable, Sendable {
         case .mode:      "bolt.fill"
         case .framework: "star.fill"
         case .situation: "cloud.sun.fill"
+        case .goal:      "flag.fill"
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .regular:   "Simple"
+        case .mode:      "Situational Mode"
+        case .framework: "Framework"
+        case .situation: "Situation"
+        case .goal:      "Goal"
         }
     }
 }
@@ -80,6 +93,7 @@ nonisolated enum DirectiveHistoryAction: String, Hashable, Codable, CaseIterable
     case balloonPump = "balloon_pump"
     case shrink
     case split
+    case checklistComplete = "checklist_complete"
 }
 
 // MARK: - Subscription Plan

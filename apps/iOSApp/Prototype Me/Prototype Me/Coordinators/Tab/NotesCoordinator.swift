@@ -93,6 +93,12 @@ class NotesCoordinator: Coordinator {
         vc.onEditFolderTapped = { [weak self] folderId in
             self?.presentFolderEditor(folderId: folderId, parentFolderId: nil)
         }
+        vc.onMoveNoteTapped = { [weak self] noteId in
+            self?.presentFolderPicker(noteId: noteId, folderId: nil)
+        }
+        vc.onMoveFolderTapped = { [weak self] folderId in
+            self?.presentFolderPicker(noteId: nil, folderId: folderId)
+        }
         vc.onAddNoteTapped = { [weak self] in
             self?.presentNoteEditor(noteId: nil, folderId: folderId)
         }
@@ -220,6 +226,20 @@ class NotesCoordinator: Coordinator {
             self?.navigationController.dismiss(animated: true)
         }
         let nav = UINavigationController(rootViewController: editor)
+        navigationController.present(nav, animated: true)
+    }
+
+    private func presentFolderPicker(noteId: UUID?, folderId: UUID?) {
+        let picker = FolderPickerViewController()
+        picker.dbQueue = environment.db.dbQueue
+        picker.noteService = environment.noteService
+        picker.folderService = environment.folderService
+        picker.noteId = noteId
+        picker.folderId = folderId
+        picker.onDone = { [weak self] in
+            self?.navigationController.dismiss(animated: true)
+        }
+        let nav = UINavigationController(rootViewController: picker)
         navigationController.present(nav, animated: true)
     }
 

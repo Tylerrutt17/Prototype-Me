@@ -16,22 +16,18 @@ final class NoteEditorViewController: BaseViewController {
 
     var selectedKind: NoteKind = .regular
     var selectedFolderId: UUID?
-    var folders: [Folder] = []
-    var expandedFolderIds: Set<UUID> = []
-    /// Reference to the folder list stack for in-place updates.
-    weak var folderListStack: UIStackView?
     var enteredTitle = ""
     var enteredBody = ""
 
     var isCreateMode: Bool { noteId == nil }
     var currentStep = 0
-    let stepLabels = ["Content", "Type", "Folder"]
+    let stepLabels = ["Content", "Type"]
     var kindPageDebounce: Timer?
     var kindDS: UICollectionViewDiffableDataSource<Int, Int>?
 
     // MARK: - UI
 
-    let stepIndicator = StepIndicatorView(count: 3)
+    let stepIndicator = StepIndicatorView(count: 2)
     let stepContainer = UIView()
 
     // MARK: - Lifecycle
@@ -44,7 +40,6 @@ final class NoteEditorViewController: BaseViewController {
         navBar.setLeftButton(title: "Cancel", systemImage: nil, action: { [weak self] in self?.dismiss(animated: true) })
 
         setupLayout()
-        loadFolders()
         if !isCreateMode { loadExistingNote() }
         showStep(0, animated: false)
         observeKeyboard()
@@ -98,12 +93,9 @@ final class NoteEditorViewController: BaseViewController {
             })
         }
 
-        // Right nav button: Next on steps 0 and 1, nothing on last step (has its own Save button)
-        if step < 2 {
-            let nextAction: () -> Void = step == 0
-                ? { [weak self] in self?.step1Next() }
-                : { [weak self] in self?.showStep(2, animated: true) }
-            navBar.setRightButtons([NavBarButton(title: "Next", action: nextAction)])
+        // Right nav button: Next on step 0, nothing on step 1 (has its own Save button)
+        if step == 0 {
+            navBar.setRightButtons([NavBarButton(title: "Next", action: { [weak self] in self?.step1Next() })])
         } else {
             navBar.setRightButtons([])
         }
@@ -112,7 +104,6 @@ final class NoteEditorViewController: BaseViewController {
         switch step {
         case 0: stepView = buildTitleBodyStep()
         case 1: stepView = buildKindStep()
-        case 2: stepView = buildFolderStep()
         default: return
         }
 
@@ -199,12 +190,6 @@ final class NoteEditorViewController: BaseViewController {
     }
 
     // MARK: - Data Loading
-
-    func loadFolders() {
-        folders = (try? dbQueue.read { db in
-            try Folder.order(Column("name")).fetchAll(db)
-        }) ?? []
-    }
 
     private func loadExistingNote() {
         guard let noteId else { return }

@@ -98,7 +98,7 @@ final class FocusConsoleViewController: UIViewController {
         titleLabel.textAlignment = .center
 
         // Subtitle
-        subtitleLabel.text = "Let's build your personal system"
+        subtitleLabel.text = "Let's set up your personal system"
         subtitleLabel.font = DesignTokens.Typography.body
         subtitleLabel.textColor = DesignTokens.Colors.textSecondary
         subtitleLabel.textAlignment = .center

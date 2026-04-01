@@ -31,6 +31,12 @@ app.addHook("onRequest", async (request, reply) => {
   const publicPaths = ["/health", "/v1/ai/onboard"];
   if (publicPaths.some((p) => request.url.startsWith(p))) return;
 
+  // Dev bypass: skip auth and use a test user ID
+  if (process.env.DEV_SKIP_AUTH === "true") {
+    request.userId = process.env.DEV_USER_ID || "dev-test-user";
+    return;
+  }
+
   await requireAuth(request, reply);
 });
 

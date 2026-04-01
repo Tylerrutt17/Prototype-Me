@@ -27,7 +27,7 @@ class NoteDetailViewController: BaseViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         navBar.setRightButtons([
-            NavBarButton(systemImage: "square.and.pencil", action: { [weak self] in self?.editTapped() }),
+            NavBarButton(assetImage: "edit", action: { [weak self] in self?.editTapped() }),
         ])
         configureCollectionView()
         configureDataSource()
@@ -45,6 +45,9 @@ class NoteDetailViewController: BaseViewController {
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: createLayout())
         collectionView.backgroundColor = .clear
         collectionView.delegate = self
+        collectionView.dragInteractionEnabled = true
+        collectionView.dragDelegate = self
+        collectionView.dropDelegate = self
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(collectionView)
 
@@ -236,6 +239,7 @@ class NoteDetailViewController: BaseViewController {
         dataSource.supplementaryViewProvider = { collectionView, kind, indexPath in
             collectionView.dequeueConfiguredReusableSupplementary(using: sectionHeaderReg, for: indexPath)
         }
+
     }
 
     // MARK: - Observe Data
@@ -287,6 +291,19 @@ class NoteDetailViewController: BaseViewController {
     }
 }
 
+// MARK: - UICollectionViewDragDelegate
+
+extension NoteDetailViewController: UICollectionViewDragDelegate {
+    func collectionView(_ collectionView: UICollectionView, itemsForBeginning session: any UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
+        guard let item = dataSource.itemIdentifier(for: indexPath),
+              case .directive = item else { return [] }
+        let provider = NSItemProvider(object: "\(indexPath)" as NSString)
+        let dragItem = UIDragItem(itemProvider: provider)
+        dragItem.localObject = item
+        return [dragItem]
+    }
+}
+
 // MARK: - UICollectionViewDelegate
 
 extension NoteDetailViewController: UICollectionViewDelegate {
@@ -305,6 +322,56 @@ extension NoteDetailViewController: UICollectionViewDelegate {
     }
 }
 
+// MARK: - UICollectionViewDropDelegate
+
+extension NoteDetailViewController: UICollectionViewDropDelegate {
+    func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: any UIDropSession, withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
+        guard session.localDragSession != nil else {
+            return UICollectionViewDropProposal(operation: .cancel)
+        }
+        // Only allow drops in the directives section
+        if let dest = destinationIndexPath, dest.section == NoteDetailSection.directives.rawValue {
+            return UICollectionViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
+        }
+        return UICollectionViewDropProposal(operation: .cancel)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: any UICollectionViewDropCoordinator) {
+        guard let destinationIndexPath = coordinator.destinationIndexPath,
+              let dragItem = coordinator.items.first,
+              let sourceRow = dragItem.dragItem.localObject as? NoteDetailItem,
+              let sourceIndexPath = dragItem.sourceIndexPath else { return }
+
+        // Only within directives section
+        let directivesSection = NoteDetailSection.directives.rawValue
+        guard sourceIndexPath.section == directivesSection,
+              destinationIndexPath.section == directivesSection else { return }
+
+        var snapshot = dataSource.snapshot()
+        let section = NoteDetailSection.directives
+        var sectionItems = snapshot.itemIdentifiers(inSection: section)
+        guard let sourceIndex = sectionItems.firstIndex(of: sourceRow) else { return }
+
+        sectionItems.remove(at: sourceIndex)
+        let destIndex = min(destinationIndexPath.item, sectionItems.count)
+        sectionItems.insert(sourceRow, at: destIndex)
+
+        snapshot.deleteItems(snapshot.itemIdentifiers(inSection: section))
+        snapshot.appendItems(sectionItems, toSection: section)
+        dataSource.apply(snapshot, animatingDifferences: true)
+
+        coordinator.drop(dragItem.dragItem, toItemAt: destinationIndexPath)
+
+        // Persist — extract only directive IDs (skip linkButton)
+        guard let noteId else { return }
+        let directiveIds = sectionItems.compactMap { item -> UUID? in
+            if case .directive(let data) = item { return data.directive.id }
+            return nil
+        }
+        Task { try? await noteService?.reorderDirectives(noteId: noteId, directiveIds: directiveIds) }
+    }
+}
+
 // MARK: - NoteHeaderCell
 
 private final class NoteHeaderCell: UICollectionViewCell {
@@ -315,7 +382,6 @@ private final class NoteHeaderCell: UICollectionViewCell {
     private let iconView = UIImageView()
     private let kindBadge = UIButton(type: .system)
     private let titleLabel = UILabel()
-    private let divider = UIView()
     private let bodyLabel = UILabel()
     private let showMoreButton = UIButton(type: .system)
 
@@ -352,9 +418,6 @@ private final class NoteHeaderCell: UICollectionViewCell {
         titleLabel.textColor = DesignTokens.Colors.textPrimary
         titleLabel.numberOfLines = 0
 
-        divider.widthAnchor.constraint(equalToConstant: 40).isActive = true
-        divider.heightAnchor.constraint(equalToConstant: 3).isActive = true
-
         bodyLabel.font = DesignTokens.Typography.body
         bodyLabel.textColor = DesignTokens.Colors.textSecondary
         bodyLabel.numberOfLines = 0
@@ -366,18 +429,8 @@ private final class NoteHeaderCell: UICollectionViewCell {
         showMoreButton.addTarget(self, action: #selector(tappedShowMore), for: .touchUpInside)
         showMoreButton.isHidden = true
 
-        // Wrap divider so .fill alignment doesn't stretch it
-        let dividerWrapper = UIView()
-        divider.translatesAutoresizingMaskIntoConstraints = false
-        dividerWrapper.addSubview(divider)
-        NSLayoutConstraint.activate([
-            divider.leadingAnchor.constraint(equalTo: dividerWrapper.leadingAnchor),
-            divider.topAnchor.constraint(equalTo: dividerWrapper.topAnchor),
-            divider.bottomAnchor.constraint(equalTo: dividerWrapper.bottomAnchor),
-        ])
-
         // .fill alignment gives labels correct width during sizing pass
-        let stack = UIStackView(arrangedSubviews: [titleLabel, dividerWrapper, bodyLabel, showMoreButton])
+        let stack = UIStackView(arrangedSubviews: [titleLabel, bodyLabel, showMoreButton])
         stack.axis = .vertical
         stack.spacing = DesignTokens.Spacing.md
         stack.alignment = .fill
@@ -436,7 +489,7 @@ private final class NoteHeaderCell: UICollectionViewCell {
         accentBar.backgroundColor = color
 
         var badgeConfig = kindBadge.configuration ?? .filled()
-        badgeConfig.title = note.kind.rawValue.uppercased()
+        badgeConfig.title = note.kind.displayName.uppercased()
         badgeConfig.baseBackgroundColor = color.withAlphaComponent(0.15)
         badgeConfig.baseForegroundColor = color
         badgeConfig.titleTextAttributesTransformer = .init { container in
@@ -447,9 +500,6 @@ private final class NoteHeaderCell: UICollectionViewCell {
         kindBadge.configuration = badgeConfig
 
         titleLabel.text = note.title
-
-        divider.backgroundColor = color.withAlphaComponent(0.4)
-        divider.layer.cornerRadius = 1.5
 
         if note.body.isEmpty {
             bodyLabel.isHidden = true

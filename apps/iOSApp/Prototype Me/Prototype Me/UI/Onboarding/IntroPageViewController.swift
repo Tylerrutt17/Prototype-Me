@@ -15,10 +15,10 @@ final class IntroPageViewController: UIViewController {
     }
 
     private let slides: [SlideData] = [
-        SlideData(icon: "sparkles", title: "Your Personal OS", subtitle: "Organize your life with directives, modes, and notes.", accentColor: DesignTokens.Colors.accent),
+        SlideData(icon: "sparkles", title: "Your Personal OS", subtitle: "Organize your life with directives, situational modes, and notes.", accentColor: DesignTokens.Colors.accent),
         SlideData(icon: "brain.head.profile", title: "AI Drafts, You Confirm", subtitle: "AI suggests structure. You review, edit, and own every decision.", accentColor: DesignTokens.Colors.accentSecondary),
         SlideData(icon: "balloon.fill", title: "Visual Accountability", subtitle: "Balloons rise with urgency. Keep them pumped. Stay on track.", accentColor: DesignTokens.Colors.accentTertiary),
-        SlideData(icon: "scope", title: "Focus on What Matters", subtitle: "One launch surface. Your modes, your schedule, your momentum.", accentColor: DesignTokens.Colors.accent),
+        SlideData(icon: "scope", title: "Focus on What Matters", subtitle: "One launch surface. Your situational modes, your schedule, your momentum.", accentColor: DesignTokens.Colors.accent),
     ]
 
     // MARK: - UI

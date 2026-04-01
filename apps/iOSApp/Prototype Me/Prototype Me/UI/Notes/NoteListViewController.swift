@@ -38,6 +38,8 @@ class NoteListViewController: BaseViewController {
     var onEditFolderTapped: ((UUID) -> Void)?
     var onAddNoteTapped: (() -> Void)?
     var onAddFolderTapped: (() -> Void)?
+    var onMoveNoteTapped: ((UUID) -> Void)?
+    var onMoveFolderTapped: ((UUID) -> Void)?
     var onDirectivesTapped: (() -> Void)?
     var onBalloonsTapped: (() -> Void)?
 
@@ -117,31 +119,46 @@ class NoteListViewController: BaseViewController {
                     completion(true)
                 }
                 editAction.backgroundColor = DesignTokens.Colors.accent
-                return UISwipeActionsConfiguration(actions: [editAction])
+                let moveAction = UIContextualAction(style: .normal, title: "Move") { _, _, completion in
+                    self.onMoveNoteTapped?(note.id)
+                    completion(true)
+                }
+                moveAction.backgroundColor = DesignTokens.Colors.textSecondary
+                return UISwipeActionsConfiguration(actions: [editAction, moveAction])
             case .note(let item):
                 let editAction = UIContextualAction(style: .normal, title: "Edit") { _, _, completion in
                     self.onEditNoteTapped?(item.note.id)
                     completion(true)
                 }
                 editAction.backgroundColor = DesignTokens.Colors.accent
+                let moveAction = UIContextualAction(style: .normal, title: "Move") { _, _, completion in
+                    self.onMoveNoteTapped?(item.note.id)
+                    completion(true)
+                }
+                moveAction.backgroundColor = DesignTokens.Colors.textSecondary
                 let deleteAction = UIContextualAction(style: .destructive, title: "Delete") { _, _, completion in
                     self.confirmDeleteNote(noteId: item.note.id)
                     completion(true)
                 }
                 deleteAction.backgroundColor = DesignTokens.Colors.destructive
-                return UISwipeActionsConfiguration(actions: [deleteAction, editAction])
+                return UISwipeActionsConfiguration(actions: [deleteAction, editAction, moveAction])
             case .folder(let folder):
                 let editAction = UIContextualAction(style: .normal, title: "Edit") { _, _, completion in
                     self.onEditFolderTapped?(folder.id)
                     completion(true)
                 }
                 editAction.backgroundColor = DesignTokens.Colors.accent
+                let moveAction = UIContextualAction(style: .normal, title: "Move") { _, _, completion in
+                    self.onMoveFolderTapped?(folder.id)
+                    completion(true)
+                }
+                moveAction.backgroundColor = DesignTokens.Colors.textSecondary
                 let deleteAction = UIContextualAction(style: .destructive, title: "Delete") { _, _, completion in
                     self.confirmDeleteFolder(folderId: folder.id, name: folder.name)
                     completion(true)
                 }
                 deleteAction.backgroundColor = DesignTokens.Colors.destructive
-                return UISwipeActionsConfiguration(actions: [deleteAction, editAction])
+                return UISwipeActionsConfiguration(actions: [deleteAction, editAction, moveAction])
             }
         }
         return UICollectionViewCompositionalLayout { _, layoutEnv in

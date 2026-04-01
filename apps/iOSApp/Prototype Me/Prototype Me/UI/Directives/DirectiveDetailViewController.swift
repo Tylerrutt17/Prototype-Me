@@ -5,18 +5,21 @@ nonisolated private enum DirectiveDetailSection: Int, Sendable {
     case header
     case balloon
     case settings  // Balloon + checklist summary
+    case history
 }
 
 nonisolated private enum DirectiveDetailItem: Hashable, Sendable {
     case header(Directive)
     case settingRow(String, String, String)  // icon, title, subtitle
     case balloon(DirectiveRowData)
+    case historyEntry(DirectiveHistory)
 
     func hash(into hasher: inout Hasher) {
         switch self {
         case .header(let d): hasher.combine("h"); hasher.combine(d.id)
         case .settingRow(_, let t, _): hasher.combine("s"); hasher.combine(t)
         case .balloon(let d): hasher.combine("b"); hasher.combine(d.directive.id)
+        case .historyEntry(let e): hasher.combine("hi"); hasher.combine(e.id)
         }
     }
     static func == (lhs: DirectiveDetailItem, rhs: DirectiveDetailItem) -> Bool {
@@ -24,6 +27,7 @@ nonisolated private enum DirectiveDetailItem: Hashable, Sendable {
         case (.header(let a), .header(let b)): return a.id == b.id
         case (.settingRow(_, let a, _), .settingRow(_, let b, _)): return a == b
         case (.balloon(let a), .balloon(let b)): return a.directive.id == b.directive.id
+        case (.historyEntry(let a), .historyEntry(let b)): return a.id == b.id
         default: return false
         }
     }
@@ -43,7 +47,7 @@ class DirectiveDetailViewController: BaseViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         navBar.setRightButtons([
-            NavBarButton(systemImage: "square.and.pencil", action: { [weak self] in self?.editTapped() }),
+            NavBarButton(assetImage: "edit", action: { [weak self] in self?.editTapped() }),
         ])
         configureCollectionView()
         configureDataSource()
@@ -123,7 +127,7 @@ class DirectiveDetailViewController: BaseViewController {
 
                 if data.directive.liveRemainingSec <= 0 {
                     let color = DesignTokens.Colors.destructive
-                    ShimmerBorder.add(to: cell.contentView, color: color, cornerRadius: DesignTokens.Radii.lg)
+                    ShimmerBorder.add(to: cell.contentView, color: color, cornerRadius: DesignTokens.Radii.lg, borderWidth: 2.5)
 
                     cell.contentView.layer.shadowColor = color.cgColor
                     cell.contentView.layer.shadowRadius = 8
@@ -142,6 +146,10 @@ class DirectiveDetailViewController: BaseViewController {
                     cell.contentView.layer.shadowOpacity = 0
                 }
             }
+        }
+
+        let historyReg = UICollectionView.CellRegistration<HistoryEntryCell, DirectiveHistory> { cell, _, entry in
+            cell.configure(with: entry)
         }
 
         let settingReg = UICollectionView.CellRegistration<UICollectionViewListCell, (String, String, String)> { cell, _, data in
@@ -169,6 +177,8 @@ class DirectiveDetailViewController: BaseViewController {
                 return collectionView.dequeueConfiguredReusableCell(using: settingReg, for: indexPath, item: (icon, title, subtitle))
             case .balloon(let data):
                 return collectionView.dequeueConfiguredReusableCell(using: balloonReg, for: indexPath, item: data)
+            case .historyEntry(let entry):
+                return collectionView.dequeueConfiguredReusableCell(using: historyReg, for: indexPath, item: entry)
             }
         }
 
@@ -177,6 +187,7 @@ class DirectiveDetailViewController: BaseViewController {
             let title: String = switch section {
             case .settings: "Active Features"
             case .balloon:  "Balloon Timer"
+            case .history:  "History"
             default:        ""
             }
             supplementaryView.configure(title: title)
@@ -192,15 +203,19 @@ class DirectiveDetailViewController: BaseViewController {
     private func loadData() {
         guard let directiveId else { return }
 
-        let observation = ValueObservation.tracking { db -> (Directive?, ScheduleRule?) in
+        let observation = ValueObservation.tracking { db -> (Directive?, ScheduleRule?, [DirectiveHistory]) in
             let directive = try Directive.fetchOne(db, key: directiveId)
             let rule = try ScheduleRule
                 .filter(Column("directiveId") == directiveId)
                 .fetchOne(db)
-            return (directive, rule)
+            let history = try DirectiveHistory
+                .filter(Column("directiveId") == directiveId)
+                .order(Column("createdAt").desc)
+                .fetchAll(db)
+            return (directive, rule, history)
         }
 
-        observationCancellable = observation.start(in: dbQueue, onError: { _ in }, onChange: { [weak self] (directive, rule) in
+        observationCancellable = observation.start(in: dbQueue, onError: { _ in }, onChange: { [weak self] (directive, rule, history) in
             guard let directive else { return }
             self?.navBar.setTitle(directive.title)
 
@@ -252,6 +267,11 @@ class DirectiveDetailViewController: BaseViewController {
             if !settingRows.isEmpty {
                 snapshot.appendSections([.settings])
                 snapshot.appendItems(settingRows, toSection: .settings)
+            }
+
+            if !history.isEmpty {
+                snapshot.appendSections([.history])
+                snapshot.appendItems(history.map { .historyEntry($0) }, toSection: .history)
             }
 
             self?.dataSource.apply(snapshot, animatingDifferences: false)
@@ -543,20 +563,26 @@ private final class HistoryEntryCell: UICollectionViewCell {
 
     func configure(with entry: DirectiveHistory) {
         let (icon, color): (String, UIColor) = switch entry.action {
-        case .create:      ("plus.circle.fill",           DesignTokens.Colors.accent)
-        case .update:       ("pencil.circle.fill",         DesignTokens.Colors.accent)
-        case .graduate:     ("checkmark.seal.fill",        DesignTokens.Colors.warning)
-        case .snooze:       ("moon.zzz.fill",              DesignTokens.Colors.accentSecondary)
-        case .balloonPump:  ("arrow.up.circle.fill",       DesignTokens.Colors.success)
-        case .shrink:       ("arrow.down.circle.fill",     DesignTokens.Colors.warning)
-        case .split:        ("arrow.triangle.branch",      DesignTokens.Colors.accent)
+        case .create:             ("plus.circle.fill",           DesignTokens.Colors.accent)
+        case .update:              ("pencil.circle.fill",         DesignTokens.Colors.accent)
+        case .graduate:            ("checkmark.seal.fill",        DesignTokens.Colors.warning)
+        case .snooze:              ("moon.zzz.fill",              DesignTokens.Colors.accentSecondary)
+        case .balloonPump:         ("arrow.up.circle.fill",       DesignTokens.Colors.success)
+        case .shrink:              ("arrow.down.circle.fill",     DesignTokens.Colors.warning)
+        case .split:               ("arrow.triangle.branch",      DesignTokens.Colors.accent)
+        case .checklistComplete:   ("checkmark.circle.fill",      DesignTokens.Colors.success)
         }
 
         let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)
         iconView.image = UIImage(systemName: icon, withConfiguration: config)
         iconView.tintColor = color
 
-        actionLabel.text = entry.action.rawValue.replacingOccurrences(of: "_", with: " ").capitalized
+        let actionText: String = switch entry.action {
+        case .checklistComplete: "Completed"
+        case .balloonPump:      "Balloon Pump"
+        default: entry.action.rawValue.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+        actionLabel.text = actionText
 
         let fmt = RelativeDateTimeFormatter()
         fmt.unitsStyle = .abbreviated

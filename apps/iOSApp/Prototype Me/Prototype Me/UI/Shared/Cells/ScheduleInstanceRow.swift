@@ -135,6 +135,13 @@ final class ScheduleInstanceRowCell: InteractiveCell {
                 r.updatedAt = Date()
                 try r.update(db)
             }
+            if newDate != nil {
+                DirectiveLogger.logChecklistComplete(
+                    directiveId: rule.directiveId,
+                    date: todayStr,
+                    dbQueue: dbQueue
+                )
+            }
             Haptics.selection()
         } catch {
             Haptics.error()

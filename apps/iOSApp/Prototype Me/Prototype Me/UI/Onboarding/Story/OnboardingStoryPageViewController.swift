@@ -5,6 +5,7 @@ final class OnboardingStoryPageViewController: UIViewController {
 
     var titleText: String = ""
     var subtitleText: String = ""
+    var attributedSubtitle: NSAttributedString?
     var pageIndex: Int = 0
     var animationView: (UIView & StoryAnimatable)?
 
@@ -78,9 +79,18 @@ final class OnboardingStoryPageViewController: UIViewController {
         titleLabel.numberOfLines = 0
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        subtitleLabel.text = subtitleText
-        subtitleLabel.font = DesignTokens.Typography.body
-        subtitleLabel.textColor = DesignTokens.Colors.textSecondary
+        if let attributed = attributedSubtitle {
+            // Create a centered copy of the attributed string
+            let centered = NSMutableAttributedString(attributedString: attributed)
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .center
+            centered.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: centered.length))
+            subtitleLabel.attributedText = centered
+        } else {
+            subtitleLabel.text = subtitleText
+            subtitleLabel.font = DesignTokens.Typography.body
+            subtitleLabel.textColor = DesignTokens.Colors.textSecondary
+        }
         subtitleLabel.textAlignment = .center
         subtitleLabel.numberOfLines = 0
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false

@@ -126,18 +126,21 @@ extension NoteEditorViewController {
         let frameworkExists = existingFrameworkId != nil && existingFrameworkId != noteId
 
         let kinds: [(kind: NoteKind, icon: String, title: String, desc: String, detail: String)] = [
-            (.regular, "doc.text", "Regular",
+            (.regular, "doc.text", "Simple",
              "A freeform note for anything.",
              "Use regular notes for ideas, references, learning materials, or anything you want to capture. They can be organized into folders and linked to directives."),
-            (.mode, "bolt.fill", "Mode",
+            (.mode, "bolt.fill", "Situational Mode",
              "An operating mode that filters your Focus.",
-             "Modes represent different states of working — like \"Deep Work\", \"Social\", or \"Recovery\". When you activate a mode on the Focus tab, it filters which directives and schedule items you see. Create modes that match how you actually work."),
-            (.situation, "cloud.sun.fill", "Situation",
-             "A contextual scenario with linked directives.",
-             "Situations describe recurring contexts — like \"Feeling overwhelmed\" or \"Starting a new project\". Link directives to situations so you know exactly what to do when they arise."),
-            (.framework, "star.fill", "Framework",
-             frameworkExists ? "Already created." : "Your personal values and principles.",
-             frameworkExists ? "You can only have one framework." : "Your personal constitution. Write down your core values, principles, and non-negotiables. This note is pinned at the top of your Notes tab and limited to one per account."),
+             "Situational modes represent different states of working — like \"Deep Work\", \"Social\", or \"Recovery\". When you activate a mode on the Focus tab, it filters which directives and schedule items you see. Create modes that match how you actually work."),
+            // (.situation, "cloud.sun.fill", "Situation",
+            //  "A contextual scenario with linked directives.",
+            //  "Situations describe recurring contexts — like \"Feeling overwhelmed\" or \"Starting a new project\". Link directives to situations so you know exactly what to do when they arise."),
+            // (.goal, "flag.fill", "Goal",
+            //  "A goal with actionable directives.",
+            //  "Goals represent outcomes you're working toward — like \"Ship v2\" or \"Run a marathon\". Link directives to break them into concrete steps and track your progress."),
+            // (.framework, "star.fill", "Framework",
+            //  frameworkExists ? "Already created." : "Your personal values and principles.",
+            //  frameworkExists ? "You can only have one framework." : "Your personal constitution. Write down your core values, principles, and non-negotiables. This note is pinned at the top of your Notes tab and limited to one per account."),
         ]
 
         let container = UIView()
@@ -294,16 +297,16 @@ extension NoteEditorViewController {
             }
             self.selectedKind = kind
             Haptics.success()
-            self.showStep(2, animated: true)
+            self.saveNote()
         }
         cv.addGestureRecognizer(tapGesture)
 
-        let nextButton = AppButton(title: "Next")
-        nextButton.translatesAutoresizingMaskIntoConstraints = false
-        nextButton.addAction(UIAction { [weak self] _ in
-            self?.showStep(2, animated: true)
+        let saveButton = AppButton(title: isCreateMode ? "Create Note" : "Save")
+        saveButton.translatesAutoresizingMaskIntoConstraints = false
+        saveButton.addAction(UIAction { [weak self] _ in
+            self?.saveNote()
         }, for: .touchUpInside)
-        container.addSubview(nextButton)
+        container.addSubview(saveButton)
 
         let padding = DesignTokens.Spacing.xl
         NSLayoutConstraint.activate([
@@ -323,17 +326,19 @@ extension NoteEditorViewController {
             pageStack.topAnchor.constraint(equalTo: cv.bottomAnchor, constant: DesignTokens.Spacing.sm),
             pageStack.centerXAnchor.constraint(equalTo: container.centerXAnchor),
 
-            nextButton.topAnchor.constraint(equalTo: pageStack.bottomAnchor, constant: DesignTokens.Spacing.lg),
-            nextButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: padding),
-            nextButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -padding),
+            saveButton.topAnchor.constraint(equalTo: pageStack.bottomAnchor, constant: DesignTokens.Spacing.lg),
+            saveButton.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: padding),
+            saveButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -padding),
         ])
 
-        // Scroll carousel to the current kind when editing.
-        // orthogonalScrollingBehavior uses an internal UIScrollView, so scrollToItem
-        // doesn't work — we find the internal scroll view and set its offset directly.
-        if initialPage > 0 {
-            DispatchQueue.main.async {
-                cv.layoutIfNeeded()
+        // After cells are ready, scroll to the initial page (if needed) and
+        // re-trigger the layout so 3D deck transforms are applied to actual cells.
+        DispatchQueue.main.async {
+            cv.layoutIfNeeded()
+
+            if initialPage > 0 {
+                // orthogonalScrollingBehavior uses an internal UIScrollView, so scrollToItem
+                // doesn't work — find it and set offset directly.
                 for subview in cv.subviews {
                     guard let scrollView = subview as? UIScrollView, scrollView !== cv else { continue }
                     let sideInset = DesignTokens.Spacing.xl
@@ -347,196 +352,13 @@ extension NoteEditorViewController {
                     break
                 }
             }
+
+            // Force the visibleItemsInvalidationHandler to re-fire now that cells exist,
+            // so 3D transforms (scale, depth, rotation) are applied on first display.
+            cv.collectionViewLayout.invalidateLayout()
         }
 
         return container
-    }
-
-    // MARK: - Step 2: Folder
-
-    func buildFolderStep() -> UIView {
-        // Pre-expand the parent chain of the selected folder on first build
-        if let selectedId = selectedFolderId, expandedFolderIds.isEmpty {
-            var current = selectedId
-            while let folder = folders.first(where: { $0.id == current }), let parentId = folder.parentFolderId {
-                expandedFolderIds.insert(parentId)
-                current = parentId
-            }
-        }
-
-        let container = UIView()
-        let titleLabel = makeStepTitle(isCreateMode ? "Add to a folder?" : "Move to a folder?")
-        let subtitleLabel = makeStepSubtitle("Optional. You can change this later.")
-
-        let cardsStack = UIStackView()
-        cardsStack.axis = .vertical
-        cardsStack.spacing = DesignTokens.Spacing.xs
-        self.folderListStack = cardsStack
-
-        let button = AppButton(title: isCreateMode ? "Create Note" : "Save")
-        button.addAction(UIAction { [weak self] _ in self?.saveNote() }, for: .touchUpInside)
-
-        let mainStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel, cardsStack, button])
-        mainStack.axis = .vertical
-        mainStack.spacing = DesignTokens.Spacing.lg
-        mainStack.translatesAutoresizingMaskIntoConstraints = false
-
-        let scroll = UIScrollView()
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        scroll.addSubview(mainStack)
-        container.addSubview(scroll)
-
-        let padding = DesignTokens.Spacing.xl
-        NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: container.topAnchor),
-            scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            mainStack.topAnchor.constraint(equalTo: scroll.topAnchor, constant: DesignTokens.Spacing.xl),
-            mainStack.leadingAnchor.constraint(equalTo: scroll.leadingAnchor, constant: padding),
-            mainStack.trailingAnchor.constraint(equalTo: scroll.trailingAnchor, constant: -padding),
-            mainStack.bottomAnchor.constraint(equalTo: scroll.bottomAnchor, constant: -DesignTokens.Spacing.xxxl),
-            mainStack.widthAnchor.constraint(equalTo: scroll.widthAnchor, constant: -padding * 2),
-        ])
-
-        populateFolderList()
-        return container
-    }
-
-    /// Rebuilds just the folder rows inside the existing stack, with an optional crossfade.
-    func populateFolderList() {
-        guard let stack = folderListStack else { return }
-
-        let rootFolders = folders.filter { $0.parentFolderId == nil }.sorted { $0.sortIndex < $1.sortIndex }
-        func children(of parentId: UUID) -> [Folder] {
-            folders.filter { $0.parentFolderId == parentId }.sorted { $0.sortIndex < $1.sortIndex }
-        }
-
-        // Snapshot old views for crossfade
-        let oldViews = stack.arrangedSubviews
-
-        // Build new rows into a temporary array
-        var newViews: [UIView] = []
-
-        // "No Folder" option
-        newViews.append(makeOptionCard(
-            icon: "tray", title: "No Folder",
-            description: "Keep at root level.", isSelected: selectedFolderId == nil,
-            onTap: { [weak self] in
-                self?.selectedFolderId = nil
-                Haptics.selection()
-                self?.populateFolderList()
-            }
-        ))
-
-        func addFolderRows(folder: Folder, depth: Int) {
-            let fId = folder.id
-            let subs = children(of: fId)
-            let hasChildren = !subs.isEmpty
-            let isExpanded = expandedFolderIds.contains(fId)
-            let isSelected = selectedFolderId == fId
-
-            let row = TappableCardView(onTap: { [weak self] in
-                guard let self else { return }
-                self.selectedFolderId = fId
-                if hasChildren {
-                    if self.expandedFolderIds.contains(fId) {
-                        if isSelected { self.expandedFolderIds.remove(fId) }
-                    } else {
-                        self.expandedFolderIds.insert(fId)
-                    }
-                }
-                Haptics.selection()
-                self.populateFolderList()
-            })
-            row.backgroundColor = isSelected
-                ? DesignTokens.Colors.accent.withAlphaComponent(0.12)
-                : DesignTokens.Colors.surfacePrimary
-            row.layer.cornerRadius = DesignTokens.Radii.md
-            row.layer.borderWidth = isSelected ? 1.5 : 1
-            row.layer.borderColor = isSelected
-                ? DesignTokens.Colors.accent.cgColor
-                : DesignTokens.Colors.separator.cgColor
-            row.clipsToBounds = true
-
-            let iconConfig = UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)
-            let folderIcon = UIImageView(image: UIImage(systemName: "folder.fill", withConfiguration: iconConfig))
-            folderIcon.tintColor = isSelected ? DesignTokens.Colors.accent : DesignTokens.Colors.textSecondary
-            folderIcon.contentMode = .scaleAspectFit
-            folderIcon.translatesAutoresizingMaskIntoConstraints = false
-            folderIcon.widthAnchor.constraint(equalToConstant: 20).isActive = true
-
-            let nameLabel = UILabel()
-            nameLabel.text = folder.name
-            nameLabel.font = DesignTokens.Typography.rounded(style: .subheadline, weight: isSelected ? .semibold : .medium)
-            nameLabel.textColor = isSelected ? DesignTokens.Colors.accent : DesignTokens.Colors.textPrimary
-
-            let checkConfig = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
-            let checkView = UIImageView()
-            checkView.image = UIImage(systemName: isSelected ? "checkmark.circle.fill" : "circle", withConfiguration: checkConfig)
-            checkView.tintColor = isSelected ? DesignTokens.Colors.accent : DesignTokens.Colors.textTertiary
-            checkView.translatesAutoresizingMaskIntoConstraints = false
-            checkView.widthAnchor.constraint(equalToConstant: 18).isActive = true
-
-            var rowViews: [UIView] = [folderIcon, nameLabel, UIView(), checkView]
-            if hasChildren {
-                let chevronConfig = UIImage.SymbolConfiguration(pointSize: 10, weight: .bold)
-                let chevron = UIImageView(image: UIImage(systemName: isExpanded ? "chevron.down" : "chevron.right", withConfiguration: chevronConfig))
-                chevron.tintColor = DesignTokens.Colors.textTertiary
-                chevron.contentMode = .scaleAspectFit
-                chevron.translatesAutoresizingMaskIntoConstraints = false
-                chevron.widthAnchor.constraint(equalToConstant: 12).isActive = true
-                rowViews.append(chevron)
-            }
-
-            let hStack = UIStackView(arrangedSubviews: rowViews)
-            hStack.axis = .horizontal
-            hStack.spacing = DesignTokens.Spacing.sm
-            hStack.alignment = .center
-            hStack.isUserInteractionEnabled = false
-            hStack.translatesAutoresizingMaskIntoConstraints = false
-            row.addSubview(hStack)
-
-            let vPad = DesignTokens.Spacing.md
-            let hPad = DesignTokens.Spacing.md
-            NSLayoutConstraint.activate([
-                hStack.topAnchor.constraint(equalTo: row.topAnchor, constant: vPad),
-                hStack.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -vPad),
-                hStack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: hPad),
-                hStack.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -hPad),
-            ])
-
-            if depth > 0 {
-                let wrapper = UIView()
-                row.translatesAutoresizingMaskIntoConstraints = false
-                wrapper.addSubview(row)
-                NSLayoutConstraint.activate([
-                    row.topAnchor.constraint(equalTo: wrapper.topAnchor),
-                    row.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor),
-                    row.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: CGFloat(depth) * DesignTokens.Spacing.xl),
-                    row.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
-                ])
-                newViews.append(wrapper)
-            } else {
-                newViews.append(row)
-            }
-
-            if isExpanded {
-                for child in subs {
-                    addFolderRows(folder: child, depth: depth + 1)
-                }
-            }
-        }
-
-        for folder in rootFolders {
-            addFolderRows(folder: folder, depth: 0)
-        }
-
-        // Swap content instantly — no animation to avoid layout jumps
-        oldViews.forEach { $0.removeFromSuperview() }
-        for view in newViews {
-            stack.addArrangedSubview(view)
-        }
     }
 
     // MARK: - Generic Card Step Builder

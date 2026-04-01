@@ -316,7 +316,7 @@ final class SyncEngine: @unchecked Sendable {
                   let noteId = UUID(uuidString: String(parts[0])),
                   let dirId = UUID(uuidString: String(parts[1])) else { return }
             try db.execute(sql: "DELETE FROM noteDirective WHERE noteId = ? AND directiveId = ?",
-                           arguments: [noteId.uuidString, dirId.uuidString])
+                           arguments: [noteId, dirId])
         case "scheduleRule":
             guard let entityId = UUID(uuidString: event.entityId) else { return }
             try ScheduleRule.deleteOne(db, key: entityId)

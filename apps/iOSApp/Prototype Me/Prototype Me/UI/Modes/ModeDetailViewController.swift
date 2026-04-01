@@ -43,7 +43,7 @@ class ModeDetailViewController: BaseViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         navBar.setRightButtons([
-            NavBarButton(systemImage: "square.and.pencil", action: { [weak self] in self?.editTapped() }),
+            NavBarButton(assetImage: "edit", action: { [weak self] in self?.editTapped() }),
         ])
         configureCollectionView()
         configureDataSource()
@@ -61,6 +61,9 @@ class ModeDetailViewController: BaseViewController {
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: createLayout())
         collectionView.backgroundColor = .clear
         collectionView.delegate = self
+        collectionView.dragDelegate = self
+        collectionView.dropDelegate = self
+        collectionView.dragInteractionEnabled = true
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(collectionView)
 
@@ -255,6 +258,73 @@ extension ModeDetailViewController: UICollectionViewDelegate {
     }
 }
 
+// MARK: - UICollectionViewDragDelegate
+
+extension ModeDetailViewController: UICollectionViewDragDelegate {
+    func collectionView(_ collectionView: UICollectionView, itemsForBeginning session: any UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
+        guard let item = dataSource.itemIdentifier(for: indexPath),
+              case .directive = item else { return [] }
+        let provider = NSItemProvider(object: "\(indexPath)" as NSString)
+        let dragItem = UIDragItem(itemProvider: provider)
+        dragItem.localObject = item
+        return [dragItem]
+    }
+}
+
+// MARK: - UICollectionViewDropDelegate
+
+extension ModeDetailViewController: UICollectionViewDropDelegate {
+    func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: any UIDropSession, withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
+        guard session.localDragSession != nil else {
+            return UICollectionViewDropProposal(operation: .cancel)
+        }
+        if let dest = destinationIndexPath, dest.section == ModeDetailSection.directives.rawValue {
+            return UICollectionViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
+        }
+        return UICollectionViewDropProposal(operation: .cancel)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: any UICollectionViewDropCoordinator) {
+        guard let destinationIndexPath = coordinator.destinationIndexPath,
+              let dragItem = coordinator.items.first,
+              let sourceRow = dragItem.dragItem.localObject as? ModeDetailItem,
+              let sourceIndexPath = dragItem.sourceIndexPath else { return }
+
+        let directivesSection = ModeDetailSection.directives.rawValue
+        guard sourceIndexPath.section == directivesSection,
+              destinationIndexPath.section == directivesSection else { return }
+
+        var snapshot = dataSource.snapshot()
+        let section = ModeDetailSection.directives
+        var sectionItems = snapshot.itemIdentifiers(inSection: section)
+        guard let sourceIndex = sectionItems.firstIndex(of: sourceRow) else { return }
+
+        sectionItems.remove(at: sourceIndex)
+        let destIndex = min(destinationIndexPath.item, sectionItems.count)
+        sectionItems.insert(sourceRow, at: destIndex)
+
+        snapshot.deleteItems(snapshot.itemIdentifiers(inSection: section))
+        snapshot.appendItems(sectionItems, toSection: section)
+        dataSource.apply(snapshot, animatingDifferences: true)
+
+        coordinator.drop(dragItem.dragItem, toItemAt: destinationIndexPath)
+
+        // Persist reorder to DB
+        guard let noteId else { return }
+        let directiveIds = sectionItems.compactMap { item -> UUID? in
+            if case .directive(let data) = item { return data.directive.id }
+            return nil
+        }
+        try? dbQueue.write { db in
+            for (index, dirId) in directiveIds.enumerated() {
+                try db.execute(sql: """
+                    UPDATE noteDirective SET sortIndex = ? WHERE noteId = ? AND directiveId = ?
+                    """, arguments: [index, noteId.uuidString, dirId.uuidString])
+            }
+        }
+    }
+}
+
 // MARK: - ModeHeaderCell
 
 private final class ModeHeaderCell: UICollectionViewCell {
@@ -267,7 +337,6 @@ private final class ModeHeaderCell: UICollectionViewCell {
     private let iconView = UIImageView()
     private let kindBadge = UIButton(type: .system)
     private let titleLabel = UILabel()
-    private let divider = UIView()
     private let bodyLabel = UILabel()
     private let showMoreButton = UIButton(type: .system)
     private var bodyStack: UIStackView!
@@ -374,12 +443,6 @@ private final class ModeHeaderCell: UICollectionViewCell {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(titleLabel)
 
-        // Divider
-        divider.backgroundColor = modeColor.withAlphaComponent(0.4)
-        divider.layer.cornerRadius = 1.5
-        divider.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(divider)
-
         // Body
         bodyLabel.font = DesignTokens.Typography.body
         bodyLabel.textColor = DesignTokens.Colors.textSecondary
@@ -442,11 +505,6 @@ private final class ModeHeaderCell: UICollectionViewCell {
             titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: padding),
             titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -padding),
 
-            divider.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: DesignTokens.Spacing.md),
-            divider.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: padding),
-            divider.widthAnchor.constraint(equalToConstant: 40),
-            divider.heightAnchor.constraint(equalToConstant: 3),
-
         ])
 
         // .fill gives labels correct width during sizing pass
@@ -459,7 +517,7 @@ private final class ModeHeaderCell: UICollectionViewCell {
         contentView.addSubview(bodyStack)
 
         NSLayoutConstraint.activate([
-            bodyStack.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: DesignTokens.Spacing.md),
+            bodyStack.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: DesignTokens.Spacing.md),
             bodyStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: padding),
             bodyStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -padding),
             bodyStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -padding),

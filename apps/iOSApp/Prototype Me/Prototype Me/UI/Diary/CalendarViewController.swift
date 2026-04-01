@@ -526,7 +526,7 @@ private final class CalendarDayCell: InteractiveCell {
 
         dayLabel.text = "\(day.dayOfMonth)"
 
-        // Dot indicates entry exists
+        // Dot indicates entry exists, colored by rating
         dot.isHidden = day.entryId == nil
         if let rating = day.rating {
             if rating >= 7 {

@@ -279,6 +279,10 @@ enum SampleData {
         DirectiveHistory(id: UUID(uuidString: "00000008-0008-0008-0008-000000000006")!, directiveId: IDs.dirVocab, action: .update, payload: "{\"field\": \"status\", \"old\": \"active\", \"new\": \"retired\"}", createdAt: daysAgo(20)),
         DirectiveHistory(id: UUID(uuidString: "00000008-0008-0008-0008-000000000007")!, directiveId: IDs.dirColdShower, action: .snooze, payload: "{\"until\": \"2 days from now\"}", createdAt: daysAgo(4)),
         DirectiveHistory(id: UUID(uuidString: "00000008-0008-0008-0008-000000000008")!, directiveId: IDs.dirDeepWork, action: .balloonPump, payload: "{\"resetTo\": 28800}", createdAt: daysAgo(0)),
+        DirectiveHistory(id: UUID(uuidString: "00000008-0008-0008-0008-000000000009")!, directiveId: IDs.dirMeditate, action: .checklistComplete, payload: "{\"date\":\"2026-03-28\"}", createdAt: daysAgo(2)),
+        DirectiveHistory(id: UUID(uuidString: "00000008-0008-0008-0008-00000000000A")!, directiveId: IDs.dirMeditate, action: .checklistComplete, payload: "{\"date\":\"2026-03-29\"}", createdAt: daysAgo(1)),
+        DirectiveHistory(id: UUID(uuidString: "00000008-0008-0008-0008-00000000000B")!, directiveId: IDs.dirExercise, action: .checklistComplete, payload: "{\"date\":\"2026-03-27\"}", createdAt: daysAgo(3)),
+        DirectiveHistory(id: UUID(uuidString: "00000008-0008-0008-0008-00000000000C")!, directiveId: IDs.dirExercise, action: .checklistComplete, payload: "{\"date\":\"2026-03-29\"}", createdAt: daysAgo(1)),
     ]
 
     // MARK: - Onboarding Seed Plan
@@ -480,9 +484,9 @@ enum SampleData {
             AiChip(
                 id: UUID(uuidString: "0000000D-000D-000D-000D-000000000003")!,
                 action: .activateMode,
-                title: "Activate Recovery Mode",
+                title: "Activate Recovery Situational Mode",
                 subtitle: "Your diary ratings dropped — take it easy today",
-                destination: "Modes",
+                destination: "Situational Modes",
                 status: .suggested,
                 prefillTitle: nil,
                 prefillBody: nil
@@ -506,12 +510,12 @@ enum SampleData {
 
     static let coachMarks: [CoachMark] = [
         // Focus tab (0)
-        CoachMark(id: "focus_overview", title: "Your Focus Dashboard", body: "This is your home base. See active modes, balloons, and today's schedule at a glance.", pointingDirection: .down, tabIndex: 0),
+        CoachMark(id: "focus_overview", title: "Your Focus Dashboard", body: "This is your home base. See active situational modes, balloons, and today's schedule at a glance.", pointingDirection: .down, tabIndex: 0),
         CoachMark(id: "focus_ai", title: "AI Assistant", body: "Tap the sparkle button to get AI-powered suggestions for your directives.", pointingDirection: .down, tabIndex: 0),
         CoachMark(id: "focus_balloons", title: "Balloon Timers", body: "Balloons deflate over time. Tap to pump them up when you complete the habit.", pointingDirection: .up, tabIndex: 0),
 
         // Notes tab (1)
-        CoachMark(id: "notes_overview", title: "Notes, Modes & Frameworks", body: "All your personal guidelines live here. Use the toolbar for directives, balloons, and situations.", pointingDirection: .down, tabIndex: 1),
+        CoachMark(id: "notes_overview", title: "Notes, Situational Modes & Frameworks", body: "All your personal guidelines live here. Use the toolbar for directives, balloons, and situations.", pointingDirection: .down, tabIndex: 1),
 
         // Playbooks tab (2)
         CoachMark(id: "playbooks_overview", title: "Playbooks", body: "Group related notes into themed collections for different areas of your life.", pointingDirection: .down, tabIndex: 2),

@@ -57,25 +57,40 @@ final class OnboardingWavyLineView: UIView, StoryAnimatable {
         lineLayer.strokeEnd = 0
         layer.addSublayer(lineLayer)
 
-        // Feature icons at key points along the line
-        let iconData: [(xFrac: CGFloat, icon: String, color: UIColor)] = [
-            (0.25, "arrow.right.circle.fill", DesignTokens.Colors.accent),       // Directives
-            (0.50, "bolt.fill", NoteKind.mode.color),                             // Modes
-            (0.75, "balloon.fill", DesignTokens.Colors.success),                  // Balloons
-        ]
+        // Find the low points (valleys) on the line and place exclamation marks
+        var lowPoints: [(x: CGFloat, y: CGFloat)] = []
+        var prevY = centerY
+        var prevPrevY = centerY
 
-        for data in iconData {
-            let x = rect.minX + data.xFrac * rect.width
-            // Calculate Y at this point on the line
-            let amplitude = rect.height * 0.4 * (1.0 - data.xFrac * 0.85)
-            let frequency: CGFloat = 8 + (1.0 - data.xFrac) * 6
-            let y = centerY + sin(data.xFrac * frequency * .pi) * amplitude
+        for i in 1...steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            let amplitude = rect.height * 0.4 * (1.0 - t * 0.85)
+            let frequency: CGFloat = 8 + (1.0 - t) * 6
+            let noise: CGFloat = t < 0.3 ? CGFloat.random(in: -10...10) * (1.0 - t * 3) : 0
+            let y = centerY + sin(t * frequency * .pi) * amplitude + noise
+            let x = rect.minX + t * rect.width
 
-            let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .bold)
-            let iv = UIImageView(image: UIImage(systemName: data.icon, withConfiguration: config))
-            iv.tintColor = data.color
+            // A valley: previous point was lower than both neighbors
+            if i > 2 && prevY > centerY && prevY > prevPrevY && prevY >= y {
+                let prevX = rect.minX + CGFloat(i - 1) / CGFloat(steps) * rect.width
+                lowPoints.append((x: prevX, y: prevY))
+            }
+            prevPrevY = prevY
+            prevY = y
+        }
+
+        // Take up to 3 of the deepest valleys (in the chaotic left side)
+        let deepest = lowPoints
+            .filter { $0.x < rect.minX + rect.width * 0.6 }
+            .sorted { $0.y > $1.y }
+            .prefix(3)
+
+        for point in deepest {
+            let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .bold)
+            let iv = UIImageView(image: UIImage(systemName: "exclamationmark.triangle.fill", withConfiguration: config))
+            iv.tintColor = DesignTokens.Colors.warning
             iv.contentMode = .scaleAspectFit
-            iv.frame = CGRect(x: x - 14, y: y - 28, width: 28, height: 28)
+            iv.frame = CGRect(x: point.x - 12, y: point.y + 4, width: 24, height: 24)
             iv.alpha = 0
             iv.transform = CGAffineTransform(scaleX: 0.3, y: 0.3)
             addSubview(iv)

@@ -73,7 +73,7 @@ final class NoteCell: InteractiveCell {
         kindIcon.tintColor = item.note.kind.color
 
         // Subtitle — always show kind, then directive count and folder if present
-        var parts: [String] = [item.note.kind.rawValue.capitalized]
+        var parts: [String] = [item.note.kind.displayName]
         if item.directiveCount > 0 {
             parts.append("\(item.directiveCount) directive\(item.directiveCount == 1 ? "" : "s")")
         }
