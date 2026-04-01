@@ -24,16 +24,19 @@ export async function suggest(userId: string, context?: string) {
   const updatedQuota = await getQuota(userId);
   return {
     chips: Array.isArray(chips)
-      ? chips.map((c: Record<string, unknown>) => ({
-          id: crypto.randomUUID(),
-          action: c.action ?? "createDirective",
-          title: c.title ?? "Suggestion",
-          subtitle: c.subtitle ?? "",
-          destination: c.destination ?? "",
-          status: "suggested",
-          prefillTitle: c.prefillTitle ?? null,
-          prefillBody: c.prefillBody ?? null,
-        }))
+      ? chips.map((_c: unknown) => {
+          const c = _c as Record<string, unknown>;
+          return {
+            id: crypto.randomUUID(),
+            action: c.action ?? "createDirective",
+            title: c.title ?? "Suggestion",
+            subtitle: c.subtitle ?? "",
+            destination: c.destination ?? "",
+            status: "suggested",
+            prefillTitle: c.prefillTitle ?? null,
+            prefillBody: c.prefillBody ?? null,
+          };
+        })
       : [],
     remainingQuota: updatedQuota.dailyLimit - updatedQuota.dailyUsed,
     resetAt: getResetTime(),
@@ -51,12 +54,15 @@ export async function onboard(prompt: string) {
 
   return {
     cards: Array.isArray(cards)
-      ? cards.map((c: Record<string, unknown>) => ({
-          id: crypto.randomUUID(),
-          type: c.type ?? "directive",
-          title: c.title ?? "Untitled",
-          body: c.body ?? "",
-        }))
+      ? cards.map((_c: unknown) => {
+          const c = _c as Record<string, unknown>;
+          return {
+            id: crypto.randomUUID(),
+            type: c.type ?? "directive",
+            title: c.title ?? "Untitled",
+            body: c.body ?? "",
+          };
+        })
       : [],
   };
 }
@@ -96,11 +102,14 @@ Return ONLY the JSON array. No markdown, no explanation, no preamble.`;
   const updatedQuota = await getQuota(userId);
   return {
     suggestions: Array.isArray(suggestions)
-      ? suggestions.slice(0, 3).map((s: Record<string, unknown>) => ({
-          id: crypto.randomUUID(),
-          title: (s.title as string) ?? "Suggestion",
-          body: (s.body as string) ?? "",
-        }))
+      ? suggestions.slice(0, 3).map((_s: unknown) => {
+          const s = _s as Record<string, unknown>;
+          return {
+            id: crypto.randomUUID(),
+            title: (s.title as string) ?? "Suggestion",
+            body: (s.body as string) ?? "",
+          };
+        })
       : [],
     remainingQuota: updatedQuota.dailyLimit - updatedQuota.dailyUsed,
     resetAt: getResetTime(),
