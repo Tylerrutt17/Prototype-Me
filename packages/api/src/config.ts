@@ -6,13 +6,17 @@ function required(name: string): string {
   return val;
 }
 
+const skipAuth = process.env.DEV_SKIP_AUTH === "true";
+
 export const config = {
   port: parseInt(process.env.PORT || "3000", 10),
   databaseUrl: required("DATABASE_URL"),
+  skipAuth,
+  devUserId: process.env.DEV_USER_ID || "00000000-0000-0000-0000-000000000001",
   cognito: {
-    userPoolId: required("COGNITO_USER_POOL_ID"),
-    clientId: required("COGNITO_CLIENT_ID"),
-    region: required("COGNITO_REGION"),
+    userPoolId: skipAuth ? (process.env.COGNITO_USER_POOL_ID ?? "") : required("COGNITO_USER_POOL_ID"),
+    clientId: skipAuth ? (process.env.COGNITO_CLIENT_ID ?? "") : required("COGNITO_CLIENT_ID"),
+    region: skipAuth ? (process.env.COGNITO_REGION ?? "us-east-1") : required("COGNITO_REGION"),
   },
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",

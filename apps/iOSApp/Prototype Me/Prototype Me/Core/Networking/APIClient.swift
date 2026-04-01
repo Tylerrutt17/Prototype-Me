@@ -11,9 +11,19 @@ final class APIClient: Sendable {
         let apiVersion: String
 
         static let `default` = Config(
-            baseURL: URL(string: "https://api.prototypeme.app")!,
+            baseURL: URL(string: Self.resolvedBaseURL)!,
             apiVersion: "1"
         )
+
+        private static var resolvedBaseURL: String {
+            #if DEBUG
+            // Local dev: use your Mac's IP so the iOS simulator/device can reach it.
+            // Change this IP to your machine's local IP if needed.
+            return "http://localhost:3000"
+            #else
+            return "https://api.prototypeme.app"
+            #endif
+        }
     }
 
     enum Timeout {
