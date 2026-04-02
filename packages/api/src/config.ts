@@ -13,11 +13,6 @@ export const config = {
   databaseUrl: required("DATABASE_URL"),
   skipAuth,
   devUserId: process.env.DEV_USER_ID || "00000000-0000-0000-0000-000000000001",
-  cognito: {
-    userPoolId: skipAuth ? (process.env.COGNITO_USER_POOL_ID ?? "") : required("COGNITO_USER_POOL_ID"),
-    clientId: skipAuth ? (process.env.COGNITO_CLIENT_ID ?? "") : required("COGNITO_CLIENT_ID"),
-    region: skipAuth ? (process.env.COGNITO_REGION ?? "us-east-1") : required("COGNITO_REGION"),
-  },
   jwtSecret: process.env.JWT_SECRET || "dev-secret-change-in-production",
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
