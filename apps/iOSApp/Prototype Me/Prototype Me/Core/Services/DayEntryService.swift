@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-/// Owns all write operations for DayEntry (diary).
+/// Owns all write operations for DayEntry (journal).
 final class DayEntryService: Sendable {
 
     private let db: DatabaseManager
@@ -22,6 +22,7 @@ final class DayEntryService: Sendable {
                 existing.version += 1
                 existing.updatedAt = Date()
                 try existing.update(db)
+                try OutboxOp.enqueue(entityType: "dayEntry", entityId: existing.id.uuidString, op: "update", patch: existing.syncPatch(), baseUpdatedAt: existing.updatedAt, in: db)
                 return existing
             } else {
                 let now = Date()
@@ -36,6 +37,7 @@ final class DayEntryService: Sendable {
                     updatedAt: now
                 )
                 try entry.insert(db)
+                try OutboxOp.enqueue(entityType: "dayEntry", entityId: entry.id.uuidString, op: "create", patch: entry.syncPatch(), in: db)
                 return entry
             }
         }
@@ -44,6 +46,7 @@ final class DayEntryService: Sendable {
     func delete(id: UUID) async throws {
         _ = try await db.dbQueue.write { db in
             try DayEntry.deleteOne(db, key: id)
+            try OutboxOp.enqueueDelete(entityType: "dayEntry", entityId: id.uuidString, in: db)
         }
     }
 

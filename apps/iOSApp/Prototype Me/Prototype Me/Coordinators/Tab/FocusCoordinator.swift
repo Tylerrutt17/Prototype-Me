@@ -101,6 +101,7 @@ class FocusCoordinator: Coordinator {
         editor.dbQueue = environment.db.dbQueue
         editor.directiveService = environment.directiveService
         editor.balloonNotificationService = environment.balloonNotificationService
+        editor.apiClient = environment.apiClient
         editor.directiveId = directiveId
         editor.onSave = { [weak self] in
             self?.navigationController.dismiss(animated: true)

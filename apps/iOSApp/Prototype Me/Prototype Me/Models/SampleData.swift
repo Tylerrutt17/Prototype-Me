@@ -350,7 +350,7 @@ enum SampleData {
     static var dayEntrySummaries: [DayEntrySummary] {
         dayEntries.map { entry in
             let preview = String(entry.diary.prefix(100))
-            return DayEntrySummary(entry: entry, tagNames: entry.tags, diaryPreview: preview)
+            return DayEntrySummary(entry: entry, tagNames: entry.tags, journalPreview: preview)
         }
     }
 
@@ -485,7 +485,7 @@ enum SampleData {
                 id: UUID(uuidString: "0000000D-000D-000D-000D-000000000003")!,
                 action: .activateMode,
                 title: "Activate Recovery Situational Mode",
-                subtitle: "Your diary ratings dropped — take it easy today",
+                subtitle: "Your journal ratings dropped — take it easy today",
                 destination: "Situational Modes",
                 status: .suggested,
                 prefillTitle: nil,
@@ -520,9 +520,9 @@ enum SampleData {
         // Playbooks tab (2)
         CoachMark(id: "playbooks_overview", title: "Playbooks", body: "Group related notes into themed collections for different areas of your life.", pointingDirection: .down, tabIndex: 2),
 
-        // Diary tab (3)
-        CoachMark(id: "diary_overview", title: "Daily Diary", body: "Rate your day, tag it, and write a reflection. Build the habit of tracking.", pointingDirection: .down, tabIndex: 3),
-        CoachMark(id: "diary_history", title: "History & Calendar", body: "Use the toolbar to see monthly summaries and a calendar heat map of your progress.", pointingDirection: .up, tabIndex: 3),
+        // Journal tab (3)
+        CoachMark(id: "journal_overview", title: "Daily Journal", body: "Rate your day, tag it, and write a reflection. Build the habit of tracking.", pointingDirection: .down, tabIndex: 3),
+        CoachMark(id: "journal_history", title: "History & Calendar", body: "Use the toolbar to see monthly summaries and a calendar heat map of your progress.", pointingDirection: .up, tabIndex: 3),
 
         // Settings tab (4)
         CoachMark(id: "settings_overview", title: "Settings & Profile", body: "Manage your account, subscription, friends, and replay this tour anytime.", pointingDirection: .down, tabIndex: 4),

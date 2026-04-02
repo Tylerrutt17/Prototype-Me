@@ -2,7 +2,7 @@ import UIKit
 
 /// Onboarding screen: Animated calendar grid with a mini-editor overlay.
 /// Shows pre-filled days, then demos the entry flow: tap day → editor slides up →
-/// rating selected → diary typed → save → dot fills on calendar. Loops.
+/// rating selected → journal typed → save → dot fills on calendar. Loops.
 final class OnboardingJournalDemoView: UIView, StoryAnimatable {
 
     private let containerView = UIView()
@@ -15,9 +15,9 @@ final class OnboardingJournalDemoView: UIView, StoryAnimatable {
     private let editorDateLabel = UILabel()
     private let editorRatingHeader = UILabel()
     private var editorRatingButtons: [UIView] = []
-    private let editorDiaryHeader = UILabel()
-    private let editorDiaryField = UIView()
-    private let editorDiaryText = UILabel()
+    private let editorJournalHeader = UILabel()
+    private let editorJournalField = UIView()
+    private let editorJournalText = UILabel()
     private let editorSaveButton = UIView()
     private let editorSaveLabel = UILabel()
 
@@ -30,7 +30,7 @@ final class OnboardingJournalDemoView: UIView, StoryAnimatable {
         8,    nil, nil, nil, nil, nil, nil,
     ]
 
-    // Demo entries: (dayIndex, rating, date text, diary text to "type")
+    // Demo entries: (dayIndex, rating, date text, journal text to "type")
     private let demoEntries: [(dayIndex: Int, rating: Int, date: String, diary: String)] = [
         (29, 9, "Tue, Mar 30", "Crushed it today. Morning routine was on point."),
         (30, 7, "Wed, Mar 31", "Solid day. Could have been more focused."),
@@ -188,34 +188,34 @@ final class OnboardingJournalDemoView: UIView, StoryAnimatable {
         ratingRow.axis = .vertical
         ratingRow.spacing = DesignTokens.Spacing.xs
 
-        // Diary header + field
-        editorDiaryHeader.text = "DIARY"
-        editorDiaryHeader.font = DesignTokens.Typography.caption1
-        editorDiaryHeader.textColor = DesignTokens.Colors.textSecondary
+        // Journal header + field
+        editorJournalHeader.text = "JOURNAL"
+        editorJournalHeader.font = DesignTokens.Typography.caption1
+        editorJournalHeader.textColor = DesignTokens.Colors.textSecondary
 
-        editorDiaryField.backgroundColor = DesignTokens.Colors.surfacePrimary
-        editorDiaryField.layer.cornerRadius = DesignTokens.Radii.md
-        editorDiaryField.layer.borderWidth = 1
-        editorDiaryField.layer.borderColor = DesignTokens.Colors.separator.cgColor
+        editorJournalField.backgroundColor = DesignTokens.Colors.surfacePrimary
+        editorJournalField.layer.cornerRadius = DesignTokens.Radii.md
+        editorJournalField.layer.borderWidth = 1
+        editorJournalField.layer.borderColor = DesignTokens.Colors.separator.cgColor
 
-        editorDiaryText.font = DesignTokens.Typography.caption1
-        editorDiaryText.textColor = DesignTokens.Colors.textPrimary
-        editorDiaryText.numberOfLines = 2
-        editorDiaryText.text = ""
-        editorDiaryText.translatesAutoresizingMaskIntoConstraints = false
-        editorDiaryField.addSubview(editorDiaryText)
+        editorJournalText.font = DesignTokens.Typography.caption1
+        editorJournalText.textColor = DesignTokens.Colors.textPrimary
+        editorJournalText.numberOfLines = 2
+        editorJournalText.text = ""
+        editorJournalText.translatesAutoresizingMaskIntoConstraints = false
+        editorJournalField.addSubview(editorJournalText)
 
         NSLayoutConstraint.activate([
-            editorDiaryText.topAnchor.constraint(equalTo: editorDiaryField.topAnchor, constant: DesignTokens.Spacing.sm),
-            editorDiaryText.leadingAnchor.constraint(equalTo: editorDiaryField.leadingAnchor, constant: DesignTokens.Spacing.sm),
-            editorDiaryText.trailingAnchor.constraint(equalTo: editorDiaryField.trailingAnchor, constant: -DesignTokens.Spacing.sm),
-            editorDiaryText.bottomAnchor.constraint(equalTo: editorDiaryField.bottomAnchor, constant: -DesignTokens.Spacing.sm),
-            editorDiaryField.heightAnchor.constraint(greaterThanOrEqualToConstant: 36),
+            editorJournalText.topAnchor.constraint(equalTo: editorJournalField.topAnchor, constant: DesignTokens.Spacing.sm),
+            editorJournalText.leadingAnchor.constraint(equalTo: editorJournalField.leadingAnchor, constant: DesignTokens.Spacing.sm),
+            editorJournalText.trailingAnchor.constraint(equalTo: editorJournalField.trailingAnchor, constant: -DesignTokens.Spacing.sm),
+            editorJournalText.bottomAnchor.constraint(equalTo: editorJournalField.bottomAnchor, constant: -DesignTokens.Spacing.sm),
+            editorJournalField.heightAnchor.constraint(greaterThanOrEqualToConstant: 36),
         ])
 
-        let diaryRow = UIStackView(arrangedSubviews: [editorDiaryHeader, editorDiaryField])
-        diaryRow.axis = .vertical
-        diaryRow.spacing = DesignTokens.Spacing.xs
+        let journalRow = UIStackView(arrangedSubviews: [editorJournalHeader, editorJournalField])
+        journalRow.axis = .vertical
+        journalRow.spacing = DesignTokens.Spacing.xs
 
         // Save button
         editorSaveButton.backgroundColor = DesignTokens.Colors.accent
@@ -235,7 +235,7 @@ final class OnboardingJournalDemoView: UIView, StoryAnimatable {
         ])
 
         // Main stack
-        let mainStack = UIStackView(arrangedSubviews: [editorDateLabel, ratingRow, diaryRow, editorSaveButton])
+        let mainStack = UIStackView(arrangedSubviews: [editorDateLabel, ratingRow, journalRow, editorSaveButton])
         mainStack.axis = .vertical
         mainStack.spacing = DesignTokens.Spacing.md
         mainStack.translatesAutoresizingMaskIntoConstraints = false
@@ -328,7 +328,7 @@ final class OnboardingJournalDemoView: UIView, StoryAnimatable {
 
     private func showEditor(for entry: (dayIndex: Int, rating: Int, date: String, diary: String)) {
         editorDateLabel.text = entry.date
-        editorDiaryText.text = ""
+        editorJournalText.text = ""
         resetEditorRatingButtons()
 
         UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.3) {
@@ -341,7 +341,7 @@ final class OnboardingJournalDemoView: UIView, StoryAnimatable {
             guard let self, !self.isStopped else { return }
             self.selectRating(entry.rating)
 
-            // Step 4: Type the diary text
+            // Step 4: Type the journal text
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                 guard let self, !self.isStopped else { return }
                 self.typeText(entry.diary) {
@@ -400,7 +400,7 @@ final class OnboardingJournalDemoView: UIView, StoryAnimatable {
             }
             let endIndex = min(charIndex + chunkSize, text.count)
             let partial = String(text.prefix(endIndex))
-            self.editorDiaryText.text = partial
+            self.editorJournalText.text = partial
             charIndex = endIndex
 
             DispatchQueue.main.asyncAfter(deadline: .now() + interval) {

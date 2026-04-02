@@ -52,19 +52,23 @@ export async function push(userId: string, deviceId: string, operations: OutboxO
     try {
       // 1. Idempotency check
       if (await syncQueries.isOpProcessed(op.id)) {
+        console.log(`[Sync] Op ${op.id} already processed (idempotent), skipping`);
         applied.push({ entityType: op.entityType, entityId: op.entityId });
         continue;
       }
 
       // 2. Process the operation
+      console.log(`[Sync] Processing op: ${op.op} ${op.entityType} ${op.entityId}`);
+      console.log(`[Sync] Patch: ${op.patch.substring(0, 200)}`);
       await processOp(userId, deviceId, op);
 
       // 3. Log for idempotency
       await syncQueries.logOp(op.id, userId, op.entityType, op.entityId);
       applied.push({ entityType: op.entityType, entityId: op.entityId });
+      console.log(`[Sync] Op ${op.id} applied successfully`);
     } catch (err) {
       // Log error but continue processing remaining ops
-      console.error(`Sync push error for op ${op.id}:`, err);
+      console.error(`[Sync] Push error for op ${op.id}:`, err);
     }
   }
 
@@ -86,7 +90,7 @@ async function processOp(userId: string, deviceId: string, op: OutboxOp): Promis
 
   switch (op.op) {
     case "create": {
-      const data = JSON.parse(op.patch);
+      const data = parsePatchDates(JSON.parse(op.patch));
       // Strip fields that should be server-controlled
       const { updatedAt: _u, ...rest } = data;
       await db
@@ -97,7 +101,7 @@ async function processOp(userId: string, deviceId: string, op: OutboxOp): Promis
     }
 
     case "update": {
-      const data = JSON.parse(op.patch);
+      const data = parsePatchDates(JSON.parse(op.patch));
       const existing = await syncQueries.findById(op.entityType, op.entityId);
       if (!existing) break;
 
@@ -249,4 +253,22 @@ export async function pull(userId: string, deviceId: string, cursor?: string, li
     nextToken: hasMore ? nextToken : null,
     hasMore,
   };
+}
+
+// ── Helpers ──
+
+/** Convert ISO date strings in a patch object to Date objects for Drizzle. */
+function parsePatchDates(data: Record<string, unknown>): Record<string, unknown> {
+  const dateFields = ["createdAt", "updatedAt", "snoozedUntil", "activatedAt", "deletedAt", "lastCompletedDate"];
+  const result = { ...data };
+  for (const key of dateFields) {
+    if (key in result && typeof result[key] === "string") {
+      const parsed = new Date(result[key] as string);
+      // Only convert if it's a valid date (not a yyyy-MM-dd string like lastCompletedDate)
+      if (!isNaN(parsed.getTime()) && (result[key] as string).includes("T")) {
+        result[key] = parsed;
+      }
+    }
+  }
+  return result;
 }

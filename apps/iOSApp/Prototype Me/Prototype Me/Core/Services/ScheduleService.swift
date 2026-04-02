@@ -29,6 +29,7 @@ final class ScheduleService: Sendable {
         )
         try await db.dbQueue.write { db in
             try rule.insert(db)
+            try OutboxOp.enqueue(entityType: "scheduleRule", entityId: rule.id.uuidString, op: "create", patch: rule.syncPatch(), in: db)
         }
         return rule
     }
@@ -36,6 +37,7 @@ final class ScheduleService: Sendable {
     func deleteRule(id: UUID) async throws {
         _ = try await db.dbQueue.write { db in
             try ScheduleRule.deleteOne(db, key: id)
+            try OutboxOp.enqueueDelete(entityType: "scheduleRule", entityId: id.uuidString, in: db)
         }
     }
 
@@ -48,6 +50,7 @@ final class ScheduleService: Sendable {
             rule.version += 1
             rule.updatedAt = Date()
             try rule.update(db)
+            try OutboxOp.enqueue(entityType: "scheduleRule", entityId: id.uuidString, op: "update", patch: rule.syncPatch(), baseUpdatedAt: rule.updatedAt, in: db)
         }
     }
 
@@ -58,6 +61,7 @@ final class ScheduleService: Sendable {
             rule.version += 1
             rule.updatedAt = Date()
             try rule.update(db)
+            try OutboxOp.enqueue(entityType: "scheduleRule", entityId: id.uuidString, op: "update", patch: rule.syncPatch(), baseUpdatedAt: rule.updatedAt, in: db)
         }
     }
 
@@ -71,6 +75,7 @@ final class ScheduleService: Sendable {
             rule.version += 1
             rule.updatedAt = Date()
             try rule.update(db)
+            try OutboxOp.enqueue(entityType: "scheduleRule", entityId: id.uuidString, op: "update", patch: rule.syncPatch(), baseUpdatedAt: rule.updatedAt, in: db)
         }
     }
 }

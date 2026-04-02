@@ -1,6 +1,6 @@
 import UIKit
 
-/// Full-screen story experience explaining the Journal/Diary feature through animated pages.
+/// Full-screen story experience explaining the Journal feature through animated pages.
 final class JournalStoryViewController: UIViewController {
 
     // MARK: - Page Config

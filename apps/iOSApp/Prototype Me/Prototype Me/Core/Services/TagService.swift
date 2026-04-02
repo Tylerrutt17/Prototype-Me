@@ -16,6 +16,7 @@ final class TagService: Sendable {
         let tag = Tag(id: UUID(), name: name, color: color, version: 1)
         try await db.dbQueue.write { db in
             try tag.insert(db)
+            try OutboxOp.enqueue(entityType: "tag", entityId: tag.id.uuidString, op: "create", patch: tag.syncPatch(), in: db)
         }
         return tag
     }
@@ -23,6 +24,7 @@ final class TagService: Sendable {
     func delete(id: UUID) async throws {
         _ = try await db.dbQueue.write { db in
             try Tag.deleteOne(db, key: id)
+            try OutboxOp.enqueueDelete(entityType: "tag", entityId: id.uuidString, in: db)
         }
     }
 
@@ -34,6 +36,7 @@ final class TagService: Sendable {
             }
             let tag = Tag(id: UUID(), name: name, color: color, version: 1)
             try tag.insert(db)
+            try OutboxOp.enqueue(entityType: "tag", entityId: tag.id.uuidString, op: "create", patch: tag.syncPatch(), in: db)
             return tag
         }
     }

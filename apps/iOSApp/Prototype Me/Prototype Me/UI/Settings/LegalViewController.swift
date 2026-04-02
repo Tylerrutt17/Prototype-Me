@@ -157,7 +157,7 @@ class LegalViewController: BaseViewController {
 
     ## 1. Information We Collect
 
-    Local Data: The App stores your notes, directives, diary entries, schedules, and preferences locally on your device using an encrypted SQLite database.
+    Local Data: The App stores your notes, directives, journal entries, schedules, and preferences locally on your device using an encrypted SQLite database.
 
     Synced Data: If you enable sync, your data is transmitted to our servers over encrypted connections (TLS 1.3) and stored in an encrypted database.
 
@@ -165,7 +165,7 @@ class LegalViewController: BaseViewController {
 
     Usage Analytics: We collect anonymous usage metrics (feature usage, crash reports) to improve the App. No personally identifiable information is included.
 
-    AI Interactions: When you use AI features, your prompts and relevant context (directive titles, diary excerpts) are sent to our servers for processing. We do not store AI conversation history beyond what is needed to generate a response.
+    AI Interactions: When you use AI features, your prompts and relevant context (directive titles, journal excerpts) are sent to our servers for processing. We do not store AI conversation history beyond what is needed to generate a response.
 
     ## 2. How We Use Your Information
 

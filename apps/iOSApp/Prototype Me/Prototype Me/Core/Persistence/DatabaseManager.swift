@@ -84,7 +84,7 @@ final class DatabaseManager: Sendable {
                 t.primaryKey(["noteId", "directiveId"])
             }
 
-            // ── day entries (diary) ──
+            // ── day entries (journal) ──
             try db.create(table: "dayEntry") { t in
                 t.primaryKey("id", .text).notNull()
                 t.column("date", .text).notNull()  // yyyy-MM-dd

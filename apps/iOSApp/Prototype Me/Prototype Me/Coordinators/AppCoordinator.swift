@@ -44,7 +44,7 @@ class AppCoordinator: Coordinator {
         let focusCoordinator = FocusCoordinator(environment: environment)
         self.focusCoordinator = focusCoordinator
         let notesCoordinator = NotesCoordinator(environment: environment)
-        let diaryCoordinator = DiaryCoordinator(environment: environment)
+        let journalCoordinator = JournalCoordinator(environment: environment)
         let settingsCoordinator = SettingsCoordinator(environment: environment)
 
         settingsCoordinator.onReplayTourRequested = { [weak self] in
@@ -54,7 +54,7 @@ class AppCoordinator: Coordinator {
         let coordinators: [Coordinator] = [
             focusCoordinator,
             notesCoordinator,
-            diaryCoordinator,
+            journalCoordinator,
             settingsCoordinator
         ]
 
@@ -66,7 +66,7 @@ class AppCoordinator: Coordinator {
         tabBarController.viewControllers = [
             focusCoordinator.navigationController,
             notesCoordinator.navigationController,
-            diaryCoordinator.navigationController,
+            journalCoordinator.navigationController,
             settingsCoordinator.navigationController
         ]
 

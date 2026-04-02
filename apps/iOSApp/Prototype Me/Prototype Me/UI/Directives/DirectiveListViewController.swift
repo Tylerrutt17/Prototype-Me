@@ -29,6 +29,9 @@ class DirectiveListViewController: BaseViewController {
     private var searchText = ""
 
     private let infoPill = UIButton(type: .system)
+    private let addBanner = UIButton(type: .system)
+    private var searchTrailingToPill: NSLayoutConstraint!
+    private var searchTrailingToView: NSLayoutConstraint!
     private static let hasSeenStoryKey = "hasSeenDirectiveStory"
 
     override func viewDidLoad() {
@@ -42,6 +45,7 @@ class DirectiveListViewController: BaseViewController {
         configureSegmentedControl()
         configureInfoPill()
         configureSearchBar()
+        configureAddBanner()
         configureCollectionView()
         configureDataSource()
         loadData()
@@ -91,12 +95,13 @@ class DirectiveListViewController: BaseViewController {
         config.background.cornerRadius = DesignTokens.Radii.pill
         infoPill.configuration = config
         infoPill.addTarget(self, action: #selector(infoPillTapped), for: .touchUpInside)
+        infoPill.setContentCompressionResistancePriority(.required, for: .horizontal)
+        infoPill.setContentHuggingPriority(.required, for: .horizontal)
 
         infoPill.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(infoPill)
 
         NSLayoutConstraint.activate([
-            infoPill.topAnchor.constraint(equalTo: contentTopAnchor, constant: DesignTokens.Spacing.sm),
             infoPill.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.lg),
         ])
 
@@ -175,11 +180,69 @@ class DirectiveListViewController: BaseViewController {
         searchBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(searchBar)
 
+        // Two mutually-exclusive trailing constraints
+        searchTrailingToPill = searchBar.trailingAnchor.constraint(equalTo: infoPill.leadingAnchor, constant: -DesignTokens.Spacing.xs)
+        searchTrailingToView = searchBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.sm)
+        searchTrailingToPill.isActive = true
+        searchTrailingToView.isActive = false
+
         NSLayoutConstraint.activate([
-            searchBar.topAnchor.constraint(equalTo: infoPill.bottomAnchor, constant: DesignTokens.Spacing.xs),
+            searchBar.topAnchor.constraint(equalTo: contentTopAnchor),
             searchBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.sm),
-            searchBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.sm),
+            infoPill.centerYAnchor.constraint(equalTo: searchBar.centerYAnchor),
         ])
+    }
+
+    private func setSearchActive(_ active: Bool) {
+        searchBar.setShowsCancelButton(active, animated: true)
+        searchTrailingToPill.isActive = !active
+        searchTrailingToView.isActive = active
+
+        UIView.animate(withDuration: 0.25, delay: 0, options: .curveEaseInOut) {
+            self.infoPill.alpha = active ? 0 : 1
+            self.infoPill.transform = active ? CGAffineTransform(translationX: 40, y: 0) : .identity
+            self.view.layoutIfNeeded()
+        }
+    }
+
+    // MARK: - Add Banner
+
+    private func configureAddBanner() {
+        var config = UIButton.Configuration.filled()
+        config.image = UIImage(systemName: "plus.circle.fill")
+        config.title = "Add New Directive"
+        config.imagePadding = DesignTokens.Spacing.sm
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
+        config.contentInsets = NSDirectionalEdgeInsets(
+            top: DesignTokens.Spacing.md,
+            leading: DesignTokens.Spacing.lg,
+            bottom: DesignTokens.Spacing.md,
+            trailing: DesignTokens.Spacing.lg
+        )
+        config.cornerStyle = .large
+        config.background.backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.12)
+        config.baseForegroundColor = DesignTokens.Colors.accent
+        config.titleTextAttributesTransformer = .init { container in
+            var c = container
+            c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
+            return c
+        }
+
+        addBanner.configuration = config
+        addBanner.addTarget(self, action: #selector(addBannerTapped), for: .touchUpInside)
+        addBanner.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(addBanner)
+
+        NSLayoutConstraint.activate([
+            addBanner.topAnchor.constraint(equalTo: searchBar.bottomAnchor, constant: DesignTokens.Spacing.xs),
+            addBanner.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.lg),
+            addBanner.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.lg),
+        ])
+    }
+
+    @objc private func addBannerTapped() {
+        Haptics.light()
+        addTapped()
     }
 
     // MARK: - Collection View
@@ -193,7 +256,7 @@ class DirectiveListViewController: BaseViewController {
         view.addSubview(collectionView)
 
         NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: searchBar.bottomAnchor),
+            collectionView.topAnchor.constraint(equalTo: addBanner.bottomAnchor, constant: DesignTokens.Spacing.xs),
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -310,6 +373,10 @@ class DirectiveListViewController: BaseViewController {
 // MARK: - UISearchBarDelegate
 
 extension DirectiveListViewController: UISearchBarDelegate {
+    func searchBarTextDidBeginEditing(_ searchBar: UISearchBar) {
+        setSearchActive(true)
+    }
+
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
         self.searchText = searchText
         applyFilter()
@@ -317,6 +384,14 @@ extension DirectiveListViewController: UISearchBarDelegate {
 
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
         searchBar.resignFirstResponder()
+    }
+
+    func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
+        searchBar.text = nil
+        searchText = ""
+        searchBar.resignFirstResponder()
+        setSearchActive(false)
+        applyFilter()
     }
 }
 

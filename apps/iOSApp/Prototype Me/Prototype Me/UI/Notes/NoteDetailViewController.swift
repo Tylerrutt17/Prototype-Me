@@ -568,19 +568,17 @@ private final class LinkDirectiveButtonCell: UICollectionViewCell {
     }
 
     private func setupCell() {
-        contentView.backgroundColor = DesignTokens.Colors.surfacePrimary.withAlphaComponent(0.5)
-        contentView.layer.cornerRadius = DesignTokens.Radii.md
+        contentView.backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.12)
+        contentView.layer.cornerRadius = DesignTokens.Radii.lg
         contentView.clipsToBounds = true
-        contentView.layer.borderWidth = 1
-        contentView.layer.borderColor = DesignTokens.Colors.accent.withAlphaComponent(0.3).cgColor
 
-        let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)
-        iconView.image = UIImage(systemName: "link.badge.plus", withConfiguration: config)
+        let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
+        iconView.image = UIImage(systemName: "plus.circle.fill", withConfiguration: config)
         iconView.tintColor = DesignTokens.Colors.accent
         iconView.contentMode = .scaleAspectFit
 
         label.text = "Add Directive"
-        label.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium)
+        label.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
         label.textColor = DesignTokens.Colors.accent
 
         let stack = UIStackView(arrangedSubviews: [iconView, label])

@@ -61,11 +61,11 @@ nonisolated struct ScheduleInstanceRow: Hashable, Sendable {
 
 // MARK: - DayEntrySummary
 
-/// Composed view data for diary list rows.
+/// Composed view data for journal list rows.
 nonisolated struct DayEntrySummary: Hashable, Sendable {
     let entry: DayEntry
     let tagNames: [String]
-    let diaryPreview: String
+    let journalPreview: String
 
     func hash(into hasher: inout Hasher) { hasher.combine(entry.id) }
     static func == (lhs: DayEntrySummary, rhs: DayEntrySummary) -> Bool {
@@ -84,7 +84,7 @@ nonisolated struct ModeDetailData: Sendable {
 
 // MARK: - HistoryMonthSummary
 
-/// Aggregated diary data for a single month.
+/// Aggregated journal data for a single month.
 nonisolated struct HistoryMonthSummary: Hashable, Sendable {
     let month: String             // yyyy-MM
     let entryCount: Int
@@ -197,7 +197,7 @@ nonisolated struct CoachMark: Hashable, Sendable {
     let title: String
     let body: String
     let pointingDirection: CoachMarkDirection
-    let tabIndex: Int  // 0=Focus, 1=Notes, 2=Playbooks, 3=Diary, 4=Settings
+    let tabIndex: Int  // 0=Focus, 1=Notes, 2=Playbooks, 3=Journal, 4=Settings
 }
 
 nonisolated enum CoachMarkDirection: String, Hashable, Sendable {
@@ -211,7 +211,7 @@ nonisolated struct AiChip: Hashable, Codable, Sendable {
     let id: UUID
     let action: ChipAction
     let title: String           // e.g. "Add a morning walk"
-    let subtitle: String        // e.g. "Based on your low energy diary entries"
+    let subtitle: String        // e.g. "Based on your low energy journal entries"
     let destination: String     // Human-readable target: "Directives", "Notes", etc.
     var status: ChipStatus
 

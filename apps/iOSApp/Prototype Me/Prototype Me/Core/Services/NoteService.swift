@@ -27,6 +27,7 @@ final class NoteService: Sendable {
         )
         try await db.dbQueue.write { db in
             try note.insert(db)
+            try OutboxOp.enqueue(entityType: "notePage", entityId: note.id.uuidString, op: "create", patch: note.syncPatch(), in: db)
         }
         return note
     }
@@ -37,13 +38,14 @@ final class NoteService: Sendable {
         updated.version += 1
         try await db.dbQueue.write { db in
             try updated.update(db)
+            try OutboxOp.enqueue(entityType: "notePage", entityId: updated.id.uuidString, op: "update", patch: updated.syncPatch(), baseUpdatedAt: updated.updatedAt, in: db)
         }
     }
 
     func delete(id: UUID) async throws {
         _ = try await db.dbQueue.write { db in
-            // Cascade delete handles noteDirective + activeMode cleanup
             try NotePage.deleteOne(db, key: id)
+            try OutboxOp.enqueueDelete(entityType: "notePage", entityId: id.uuidString, in: db)
         }
     }
 
@@ -57,12 +59,12 @@ final class NoteService: Sendable {
 
     func linkDirective(noteId: UUID, directiveId: UUID) async throws {
         try await db.dbQueue.write { db in
-            // Bump all existing links down by 1 so the new one goes to the top
             try db.execute(sql: """
                 UPDATE noteDirective SET sortIndex = sortIndex + 1 WHERE noteId = ?
                 """, arguments: [noteId])
             let link = NoteDirective(noteId: noteId, directiveId: directiveId, sortIndex: 0, createdAt: Date())
             try link.insert(db)
+            try OutboxOp.enqueue(entityType: "noteDirective", entityId: "\(noteId.uuidString)|\(directiveId.uuidString)", op: "create", patch: link.syncPatch(), in: db)
         }
     }
 
@@ -71,6 +73,7 @@ final class NoteService: Sendable {
             try db.execute(sql: """
                 DELETE FROM noteDirective WHERE noteId = ? AND directiveId = ?
                 """, arguments: [noteId, directiveId])
+            try OutboxOp.enqueueDelete(entityType: "noteDirective", entityId: "\(noteId.uuidString)|\(directiveId.uuidString)", in: db)
         }
     }
 
@@ -80,6 +83,12 @@ final class NoteService: Sendable {
                 try db.execute(sql: """
                     UPDATE noteDirective SET sortIndex = ? WHERE noteId = ? AND directiveId = ?
                     """, arguments: [index, noteId, dirId])
+            }
+            // Enqueue updates for each reordered link
+            for dirId in directiveIds {
+                if let link = try NoteDirective.filter(Column("noteId") == noteId && Column("directiveId") == dirId).fetchOne(db) {
+                    try OutboxOp.enqueue(entityType: "noteDirective", entityId: "\(noteId.uuidString)|\(dirId.uuidString)", op: "update", patch: link.syncPatch(), in: db)
+                }
             }
         }
     }
@@ -91,6 +100,9 @@ final class NoteService: Sendable {
             for (index, id) in ids.enumerated() {
                 try db.execute(sql: "UPDATE notePage SET sortIndex = ? WHERE id = ?",
                                arguments: [index, id])
+                if let note = try NotePage.fetchOne(db, key: id) {
+                    try OutboxOp.enqueue(entityType: "notePage", entityId: id.uuidString, op: "update", patch: note.syncPatch(), baseUpdatedAt: note.updatedAt, in: db)
+                }
             }
         }
     }
@@ -104,6 +116,7 @@ final class NoteService: Sendable {
             note.updatedAt = Date()
             note.version += 1
             try note.update(db)
+            try OutboxOp.enqueue(entityType: "notePage", entityId: noteId.uuidString, op: "update", patch: note.syncPatch(), baseUpdatedAt: note.updatedAt, in: db)
         }
     }
 }

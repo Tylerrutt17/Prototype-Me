@@ -1,17 +1,17 @@
 import UIKit
 import GRDB
 
-nonisolated private enum DiarySection: Int, Hashable, Sendable {
+nonisolated private enum JournalSection: Int, Hashable, Sendable {
     case createToday
     case entries
 }
 
-nonisolated private enum DiaryItem: Hashable, Sendable {
+nonisolated private enum JournalItem: Hashable, Sendable {
     case createTodayPrompt
     case entry(DayEntrySummary)
 }
 
-class DiaryViewController: BaseViewController {
+class JournalViewController: BaseViewController {
 
     var dayEntryService: DayEntryService?
     var onAddTapped: (() -> Void)?
@@ -30,14 +30,14 @@ class DiaryViewController: BaseViewController {
     // MARK: - List UI
 
     private var collectionView: UICollectionView!
-    private var dataSource: UICollectionViewDiffableDataSource<DiarySection, DiaryItem>!
+    private var dataSource: UICollectionViewDiffableDataSource<JournalSection, JournalItem>!
 
     private let infoPill = UIButton(type: .system)
     private static let hasSeenStoryKey = "hasSeenJournalStory"
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        navBar.setTitle("Diary", animated: false)
+        navBar.setTitle("Journal", animated: false)
         navBar.setRightButtons([
             NavBarButton(systemImage: "plus", action: { [weak self] in self?.addTapped() }),
             NavBarButton(systemImage: "chart.bar.fill", action: { [weak self] in self?.historyTapped() }),
@@ -69,7 +69,7 @@ class DiaryViewController: BaseViewController {
         let hasSeen = UserDefaults.standard.bool(forKey: Self.hasSeenStoryKey)
 
         var config = UIButton.Configuration.filled()
-        config.title = "How does the Diary work?"
+        config.title = "How does the Journal work?"
         config.image = UIImage(systemName: "questionmark.circle.fill")
         config.imagePadding = DesignTokens.Spacing.xs
         config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
@@ -270,7 +270,7 @@ class DiaryViewController: BaseViewController {
     }
 
     private func confirmDelete(entryId: UUID) {
-        let alert = UIAlertController(title: "Delete Entry", message: "Are you sure you want to delete this diary entry?", preferredStyle: .alert)
+        let alert = UIAlertController(title: "Delete Entry", message: "Are you sure you want to delete this journal entry?", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
             Task {
@@ -284,7 +284,7 @@ class DiaryViewController: BaseViewController {
     // MARK: - Data Source
 
     private func configureDataSource() {
-        let createTodayReg = UICollectionView.CellRegistration<CreateTodayCell, DiaryItem> { cell, _, _ in
+        let createTodayReg = UICollectionView.CellRegistration<CreateTodayCell, JournalItem> { cell, _, _ in
             cell.configure()
         }
 
@@ -293,7 +293,7 @@ class DiaryViewController: BaseViewController {
             cell.backgroundConfiguration = .clear()
         }
 
-        dataSource = UICollectionViewDiffableDataSource<DiarySection, DiaryItem>(collectionView: collectionView) { collectionView, indexPath, item in
+        dataSource = UICollectionViewDiffableDataSource<JournalSection, JournalItem>(collectionView: collectionView) { collectionView, indexPath, item in
             switch item {
             case .createTodayPrompt:
                 return collectionView.dequeueConfiguredReusableCell(using: createTodayReg, for: indexPath, item: item)
@@ -318,7 +318,7 @@ class DiaryViewController: BaseViewController {
                 DayEntrySummary(
                     entry: entry,
                     tagNames: entry.tags,
-                    diaryPreview: String(entry.diary.prefix(100))
+                    journalPreview: String(entry.diary.prefix(100))
                 )
             }
         }
@@ -327,7 +327,7 @@ class DiaryViewController: BaseViewController {
             let today = Self.todayDateString
             let hasTodayEntry = items.contains { $0.entry.date == today }
 
-            var snapshot = NSDiffableDataSourceSnapshot<DiarySection, DiaryItem>()
+            var snapshot = NSDiffableDataSourceSnapshot<JournalSection, JournalItem>()
 
             if !hasTodayEntry {
                 snapshot.appendSections([.createToday])
@@ -339,7 +339,7 @@ class DiaryViewController: BaseViewController {
             self?.dataSource.apply(snapshot, animatingDifferences: true)
 
             // Force cell reconfiguration — equality is id-only so content changes
-            // (edited diary text, rating, tags) need an explicit reconfigure pass.
+            // (edited journal text, rating, tags) need an explicit reconfigure pass.
             if let ds = self?.dataSource {
                 var reconfig = ds.snapshot()
                 reconfig.reconfigureItems(reconfig.itemIdentifiers)
@@ -354,7 +354,7 @@ class DiaryViewController: BaseViewController {
 
 // MARK: - UICollectionViewDelegate
 
-extension DiaryViewController: UICollectionViewDelegate {
+extension JournalViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         collectionView.deselectItem(at: indexPath, animated: true)
         guard let item = dataSource.itemIdentifier(for: indexPath) else { return }

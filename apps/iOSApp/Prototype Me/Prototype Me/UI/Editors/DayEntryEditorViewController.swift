@@ -84,7 +84,7 @@ final class DayEntryEditorViewController: BaseViewController {
         return outer
     }()
 
-    private let diaryField = FormTextView(title: "DIARY", minHeight: 160)
+    private let journalField = FormTextView(title: "JOURNAL", minHeight: 160)
     private let tagsField = FormTextField(title: "TAGS (COMMA SEPARATED)", placeholder: "focus, health, work")
 
     // MARK: - State
@@ -134,7 +134,7 @@ final class DayEntryEditorViewController: BaseViewController {
 
         stackView.addArrangedSubview(dateRow)
         stackView.addArrangedSubview(ratingRow)
-        stackView.addArrangedSubview(diaryField)
+        stackView.addArrangedSubview(journalField)
 
         let padding = DesignTokens.Spacing.lg
 
@@ -166,7 +166,7 @@ final class DayEntryEditorViewController: BaseViewController {
             }
             selectedRating = entry.rating ?? 0
             updateRatingButtons(animated: false)
-            diaryField.textView.text = entry.diary
+            journalField.textView.text = entry.diary
             tagsField.textField.text = entry.tags.joined(separator: ", ")
         } catch {}
     }
@@ -240,7 +240,7 @@ final class DayEntryEditorViewController: BaseViewController {
 
     private func saveTapped() {
         let dateString = Self.dateFormatter.string(from: datePicker.date)
-        let diary = diaryField.textView.text ?? ""
+        let diary = journalField.textView.text ?? ""
         let tagsText = tagsField.textField.text ?? ""
         let tags = tagsText
             .split(separator: ",")

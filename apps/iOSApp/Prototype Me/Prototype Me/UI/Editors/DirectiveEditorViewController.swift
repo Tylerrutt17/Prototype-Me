@@ -18,6 +18,7 @@ final class DirectiveEditorViewController: BaseViewController {
 
     // MARK: - Wizard Controls
 
+    var apiClient: APIClient?
     private let problemField = UITextField()
     private let suggestButton = AppButton(title: "Suggest Directives")
     private let suggestionsStack = UIStackView()
@@ -45,6 +46,10 @@ final class DirectiveEditorViewController: BaseViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        // Ensure apiClient is set — fall back to a fresh default instance
+        if apiClient == nil {
+            apiClient = APIClient()
+        }
         let isCreate = directiveId == nil
         navBar.setTitle(isCreate ? "New Directive" : "Edit Directive", animated: false)
         navBar.setLeftButton(title: "Cancel", systemImage: nil, action: { [weak self] in self?.cancelTapped() })
@@ -229,11 +234,79 @@ final class DirectiveEditorViewController: BaseViewController {
         // Clear old suggestions
         for v in suggestionsStack.arrangedSubviews { v.removeFromSuperview() }
 
-        // Get dummy suggestions
-        currentSuggestions = DirectiveWizard.suggest(for: text)
+        // Disable button while loading
+        suggestButton.isEnabled = false
+        suggestButton.setTitle("Thinking...", for: .normal)
 
-        // Build suggestion cards with staggered animation
-        for (i, suggestion) in currentSuggestions.enumerated() {
+        Task {
+            do {
+                guard let apiClient else {
+                    throw APIClient.APIError.networkError(NSError(domain: "DirectiveWizard", code: 0, userInfo: [NSLocalizedDescriptionKey: "API client not configured"]))
+                }
+
+                print("[DirectiveWizard] Calling API...")
+
+                // Debug: make the request manually to see raw response
+                let debugURL = URL(string: "https://prototype-me-production.up.railway.app/v1/ai/directive-wizard")!
+                var debugReq = URLRequest(url: debugURL, timeoutInterval: 60)
+                debugReq.httpMethod = "POST"
+                debugReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                debugReq.httpBody = try JSONEncoder().encode(WizardAPIRequest(problem: text))
+                let (debugData, debugResp) = try await URLSession.shared.data(for: debugReq)
+                print("[DirectiveWizard] Raw URL: \(debugURL)")
+                print("[DirectiveWizard] Status: \((debugResp as? HTTPURLResponse)?.statusCode ?? -1)")
+                print("[DirectiveWizard] Raw response: \(String(data: debugData, encoding: .utf8) ?? "nil")")
+
+                let response: WizardAPIResponse = try await apiClient.post(
+                    "/v1/ai/directive-wizard",
+                    body: WizardAPIRequest(problem: text),
+                    timeout: APIClient.Timeout.ai
+                )
+                print("[DirectiveWizard] Got \(response.suggestions.count) suggestions")
+                let suggestions = response.suggestions.map {
+                    DirectiveWizard.Suggestion(title: $0.title, body: $0.body)
+                }
+
+                await MainActor.run {
+                    self.showSuggestions(suggestions)
+                }
+            } catch {
+                print("[DirectiveWizard] API failed: \(error)")
+                await MainActor.run {
+                    self.suggestButton.isEnabled = true
+                    self.suggestButton.setTitle("Suggest Directives", for: .normal)
+                    Haptics.error()
+
+                    let errorLabel = UILabel()
+                    errorLabel.text = "Something went wrong. Try again."
+                    errorLabel.font = DesignTokens.Typography.subheadline
+                    errorLabel.textColor = DesignTokens.Colors.destructive
+                    errorLabel.textAlignment = .center
+                    errorLabel.numberOfLines = 0
+                    self.suggestionsStack.addArrangedSubview(errorLabel)
+                }
+            }
+
+        }
+    }
+
+    private func showSuggestions(_ suggestions: [DirectiveWizard.Suggestion]) {
+        currentSuggestions = suggestions
+        suggestButton.isEnabled = true
+        suggestButton.setTitle("Suggest Directives", for: .normal)
+
+        if suggestions.isEmpty {
+            let emptyLabel = UILabel()
+            emptyLabel.text = "No suggestions for that. Try describing a specific problem — like \"I can't focus\" or \"I stay up too late.\""
+            emptyLabel.font = DesignTokens.Typography.subheadline
+            emptyLabel.textColor = DesignTokens.Colors.textTertiary
+            emptyLabel.textAlignment = .center
+            emptyLabel.numberOfLines = 0
+            suggestionsStack.addArrangedSubview(emptyLabel)
+            return
+        }
+
+        for (i, suggestion) in suggestions.enumerated() {
             let card = makeSuggestionCard(suggestion, index: i)
             card.alpha = 0
             card.transform = CGAffineTransform(translationX: 0, y: 15)
@@ -249,6 +322,22 @@ final class DirectiveEditorViewController: BaseViewController {
                 card.transform = .identity
             }
         }
+    }
+
+    // MARK: - API Types
+
+    private struct WizardAPIRequest: Encodable {
+        let problem: String
+    }
+
+    private struct WizardAPIResponse: Decodable {
+        let suggestions: [WizardSuggestion]
+    }
+
+    private struct WizardSuggestion: Decodable {
+        let id: String
+        let title: String
+        let body: String
     }
 
     private func makeSuggestionCard(_ suggestion: DirectiveWizard.Suggestion, index: Int) -> UIView {

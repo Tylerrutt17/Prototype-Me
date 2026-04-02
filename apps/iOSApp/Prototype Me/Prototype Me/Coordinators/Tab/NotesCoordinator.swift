@@ -247,6 +247,7 @@ class NotesCoordinator: Coordinator {
         let editor = DirectiveEditorViewController()
         editor.dbQueue = environment.db.dbQueue
         editor.directiveService = environment.directiveService
+        editor.apiClient = environment.apiClient
         editor.directiveId = directiveId
         editor.onSave = { [weak self] in
             self?.navigationController.dismiss(animated: true)

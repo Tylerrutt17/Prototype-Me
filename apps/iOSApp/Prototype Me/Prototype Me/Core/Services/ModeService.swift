@@ -23,23 +23,30 @@ final class ModeService: Sendable {
                 let oldest = try ActiveMode.order(Column("activatedAt").asc).fetchOne(db)
                 if let oldest {
                     try oldest.delete(db)
+                    try OutboxOp.enqueueDelete(entityType: "activeMode", entityId: oldest.noteId.uuidString, in: db)
                 }
             }
 
             let mode = ActiveMode(noteId: noteId, activatedAt: Date())
             try mode.insert(db)
+            try OutboxOp.enqueue(entityType: "activeMode", entityId: noteId.uuidString, op: "create", patch: mode.syncPatch(), in: db)
         }
     }
 
     func deactivate(noteId: UUID) async throws {
         _ = try await db.dbQueue.write { db in
             try ActiveMode.deleteOne(db, key: noteId)
+            try OutboxOp.enqueueDelete(entityType: "activeMode", entityId: noteId.uuidString, in: db)
         }
     }
 
     func deactivateAll() async throws {
         _ = try await db.dbQueue.write { db in
+            let all = try ActiveMode.fetchAll(db)
             try ActiveMode.deleteAll(db)
+            for mode in all {
+                try OutboxOp.enqueueDelete(entityType: "activeMode", entityId: mode.noteId.uuidString, in: db)
+            }
         }
     }
 

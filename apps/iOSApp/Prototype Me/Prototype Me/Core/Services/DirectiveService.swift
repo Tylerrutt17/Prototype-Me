@@ -38,6 +38,7 @@ final class DirectiveService: Sendable {
                 id: UUID(), directiveId: directive.id,
                 action: .create, payload: "{}", createdAt: now
             ).insert(db)
+            try OutboxOp.enqueue(entityType: "directive", entityId: directive.id.uuidString, op: "create", patch: directive.syncPatch(), in: db)
         }
         return directive
     }
@@ -52,13 +53,14 @@ final class DirectiveService: Sendable {
                 id: UUID(), directiveId: updated.id,
                 action: .update, payload: "{}", createdAt: Date()
             ).insert(db)
+            try OutboxOp.enqueue(entityType: "directive", entityId: updated.id.uuidString, op: "update", patch: updated.syncPatch(), baseUpdatedAt: updated.updatedAt, in: db)
         }
     }
 
     func delete(id: UUID) async throws {
         _ = try await db.dbQueue.write { db in
-            // FK cascades handle NoteDirective, ScheduleRule, DirectiveHistory cleanup
             try Directive.deleteOne(db, key: id)
+            try OutboxOp.enqueueDelete(entityType: "directive", entityId: id.uuidString, in: db)
         }
     }
 
@@ -84,6 +86,7 @@ final class DirectiveService: Sendable {
                 payload: "{\"from\":\"\(oldStatus)\",\"to\":\"archived\"}",
                 createdAt: Date()
             ).insert(db)
+            try OutboxOp.enqueue(entityType: "directive", entityId: id.uuidString, op: "update", patch: dir.syncPatch(), baseUpdatedAt: dir.updatedAt, in: db)
         }
     }
 
@@ -95,6 +98,7 @@ final class DirectiveService: Sendable {
             dir.updatedAt = Date()
             dir.version += 1
             try dir.update(db)
+            try OutboxOp.enqueue(entityType: "directive", entityId: id.uuidString, op: "update", patch: dir.syncPatch(), baseUpdatedAt: dir.updatedAt, in: db)
         }
     }
 
@@ -113,6 +117,7 @@ final class DirectiveService: Sendable {
                 payload: "{\"resetTo\":\(dir.balloonDurationSec)}",
                 createdAt: Date()
             ).insert(db)
+            try OutboxOp.enqueue(entityType: "directive", entityId: id.uuidString, op: "update", patch: dir.syncPatch(), baseUpdatedAt: dir.updatedAt, in: db)
         }
     }
 
@@ -130,6 +135,7 @@ final class DirectiveService: Sendable {
                 payload: "{\"newDuration\":\(newDurationSec)}",
                 createdAt: Date()
             ).insert(db)
+            try OutboxOp.enqueue(entityType: "directive", entityId: id.uuidString, op: "update", patch: dir.syncPatch(), baseUpdatedAt: dir.updatedAt, in: db)
         }
     }
 
@@ -148,6 +154,7 @@ final class DirectiveService: Sendable {
                 payload: "{\"until\":\"\(until.ISO8601Format())\"}",
                 createdAt: Date()
             ).insert(db)
+            try OutboxOp.enqueue(entityType: "directive", entityId: id.uuidString, op: "update", patch: dir.syncPatch(), baseUpdatedAt: dir.updatedAt, in: db)
         }
     }
 
@@ -158,6 +165,7 @@ final class DirectiveService: Sendable {
             dir.updatedAt = Date()
             dir.version += 1
             try dir.update(db)
+            try OutboxOp.enqueue(entityType: "directive", entityId: id.uuidString, op: "update", patch: dir.syncPatch(), baseUpdatedAt: dir.updatedAt, in: db)
         }
     }
 }

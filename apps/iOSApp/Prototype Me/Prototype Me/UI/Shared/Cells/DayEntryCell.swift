@@ -1,13 +1,13 @@
 import UIKit
 
-/// Collection view cell for diary / day-entry list rows.
+/// Collection view cell for journal / day-entry list rows.
 final class DayEntryCell: InteractiveCell {
 
     static let reuseID = "DayEntryCell"
 
     private let ratingCircle = RatingCircleView()
     private let dateLabel = UILabel()
-    private let diaryLabel = UILabel()
+    private let journalLabel = UILabel()
     private let tagsLabel = UILabel()
     private let chevron = UIImageView()
 
@@ -29,9 +29,9 @@ final class DayEntryCell: InteractiveCell {
         dateLabel.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
         dateLabel.textColor = DesignTokens.Colors.textPrimary
 
-        diaryLabel.font = DesignTokens.Typography.caption1
-        diaryLabel.textColor = DesignTokens.Colors.textSecondary
-        diaryLabel.numberOfLines = 2
+        journalLabel.font = DesignTokens.Typography.caption1
+        journalLabel.textColor = DesignTokens.Colors.textSecondary
+        journalLabel.numberOfLines = 2
 
         tagsLabel.font = DesignTokens.Typography.caption2
         tagsLabel.textColor = DesignTokens.Colors.accent
@@ -44,7 +44,7 @@ final class DayEntryCell: InteractiveCell {
 
         ratingCircle.setContentHuggingPriority(.required, for: .horizontal)
 
-        let textStack = UIStackView(arrangedSubviews: [dateLabel, diaryLabel, tagsLabel])
+        let textStack = UIStackView(arrangedSubviews: [dateLabel, journalLabel, tagsLabel])
         textStack.axis = .vertical
         textStack.spacing = DesignTokens.Spacing.xxs
 
@@ -67,7 +67,7 @@ final class DayEntryCell: InteractiveCell {
     func configure(with summary: DayEntrySummary) {
         ratingCircle.configure(rating: summary.entry.rating)
         dateLabel.text = formattedDate(summary.entry.date)
-        diaryLabel.text = summary.diaryPreview
+        journalLabel.text = summary.journalPreview
         tagsLabel.text = summary.tagNames.map { "#\($0)" }.joined(separator: "  ")
         tagsLabel.isHidden = summary.tagNames.isEmpty
     }

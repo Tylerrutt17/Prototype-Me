@@ -17,6 +17,7 @@ final class DirectivePickerViewController: BaseViewController {
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, Directive>!
     private let searchBar = UISearchBar()
+    private let addBanner = UIButton(type: .system)
     private var searchText = ""
 
     nonisolated private enum Section: Sendable { case main }
@@ -50,6 +51,8 @@ final class DirectivePickerViewController: BaseViewController {
         searchBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(searchBar)
 
+        configureAddBanner()
+
         let layout = createLayout()
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collectionView.backgroundColor = .clear
@@ -63,11 +66,47 @@ final class DirectivePickerViewController: BaseViewController {
             searchBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.sm),
             searchBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.sm),
 
-            collectionView.topAnchor.constraint(equalTo: searchBar.bottomAnchor),
+            addBanner.topAnchor.constraint(equalTo: searchBar.bottomAnchor, constant: DesignTokens.Spacing.xs),
+            addBanner.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.lg),
+            addBanner.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.lg),
+
+            collectionView.topAnchor.constraint(equalTo: addBanner.bottomAnchor, constant: DesignTokens.Spacing.xs),
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+    }
+
+    private func configureAddBanner() {
+        var config = UIButton.Configuration.filled()
+        config.image = UIImage(systemName: "plus.circle.fill")
+        config.title = "Add New Directive"
+        config.imagePadding = DesignTokens.Spacing.sm
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
+        config.contentInsets = NSDirectionalEdgeInsets(
+            top: DesignTokens.Spacing.md,
+            leading: DesignTokens.Spacing.lg,
+            bottom: DesignTokens.Spacing.md,
+            trailing: DesignTokens.Spacing.lg
+        )
+        config.cornerStyle = .large
+        config.background.backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.12)
+        config.baseForegroundColor = DesignTokens.Colors.accent
+        config.titleTextAttributesTransformer = .init { container in
+            var c = container
+            c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
+            return c
+        }
+
+        addBanner.configuration = config
+        addBanner.addTarget(self, action: #selector(addBannerTapped), for: .touchUpInside)
+        addBanner.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(addBanner)
+    }
+
+    @objc private func addBannerTapped() {
+        Haptics.light()
+        showCreateDirective()
     }
 
     private func createLayout() -> UICollectionViewCompositionalLayout {
@@ -208,7 +247,6 @@ extension DirectivePickerViewController: UISearchBarDelegate {
 private final class PickerCell: UICollectionViewCell {
 
     private let titleLabel = UILabel()
-    private let statusBadge = StatusBadgeView()
     private let linkIcon = UIImageView()
 
     override init(frame: CGRect) {
@@ -236,7 +274,7 @@ private final class PickerCell: UICollectionViewCell {
         linkIcon.contentMode = .scaleAspectFit
         linkIcon.setContentHuggingPriority(.required, for: .horizontal)
 
-        let row = UIStackView(arrangedSubviews: [statusBadge, titleLabel, UIView(), linkIcon])
+        let row = UIStackView(arrangedSubviews: [titleLabel, UIView(), linkIcon])
         row.axis = .horizontal
         row.spacing = DesignTokens.Spacing.sm
         row.alignment = .center
@@ -253,6 +291,5 @@ private final class PickerCell: UICollectionViewCell {
 
     func configure(with directive: Directive) {
         titleLabel.text = directive.title
-        statusBadge.configure(status: directive.status)
     }
 }

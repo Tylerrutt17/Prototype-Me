@@ -123,7 +123,7 @@ enum DesignTokens {
 
     // MARK: - Rating Color
 
-    /// Smooth gradient color for diary rating 1–10 (red → yellow → green).
+    /// Smooth gradient color for journal rating 1–10 (red → yellow → green).
     static func ratingColor(for rating: Int) -> UIColor {
         let t = CGFloat(max(1, min(rating, 10)) - 1) / 9.0
         if t < 0.5 {

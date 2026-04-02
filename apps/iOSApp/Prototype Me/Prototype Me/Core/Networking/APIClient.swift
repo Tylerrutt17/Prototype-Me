@@ -16,13 +16,8 @@ final class APIClient: Sendable {
         )
 
         private static var resolvedBaseURL: String {
-            #if DEBUG
-            // Local dev: use your Mac's IP so the iOS simulator/device can reach it.
-            // Change this IP to your machine's local IP if needed.
-            return "http://localhost:3000"
-            #else
-            return "https://api.prototypeme.app"
-            #endif
+            // Railway staging — swap to localhost:3000 for local dev
+            return "https://prototype-me-production.up.railway.app"
         }
     }
 
@@ -165,7 +160,10 @@ final class APIClient: Sendable {
     // MARK: - Request Building
 
     private func buildRequest(method: String, path: String, timeout: TimeInterval) throws -> URLRequest {
-        let url = config.baseURL.appendingPathComponent(path)
+        // Use string concatenation instead of appendingPathComponent to preserve query strings
+        guard let url = URL(string: config.baseURL.absoluteString + path) else {
+            throw APIError.networkError(NSError(domain: "APIClient", code: 0, userInfo: [NSLocalizedDescriptionKey: "Invalid URL: \(path)"]))
+        }
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.httpMethod = method
         request.setValue(config.apiVersion, forHTTPHeaderField: "X-API-Version")

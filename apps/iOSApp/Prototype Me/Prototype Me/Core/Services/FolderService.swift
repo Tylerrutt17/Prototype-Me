@@ -30,6 +30,7 @@ final class FolderService: Sendable {
         )
         try await db.dbQueue.write { db in
             try folder.insert(db)
+            try OutboxOp.enqueue(entityType: "folder", entityId: folder.id.uuidString, op: "create", patch: folder.syncPatch(), in: db)
         }
         return folder
     }
@@ -40,6 +41,7 @@ final class FolderService: Sendable {
         updated.version += 1
         try await db.dbQueue.write { db in
             try updated.update(db)
+            try OutboxOp.enqueue(entityType: "folder", entityId: updated.id.uuidString, op: "update", patch: updated.syncPatch(), baseUpdatedAt: updated.updatedAt, in: db)
         }
     }
 
@@ -57,8 +59,7 @@ final class FolderService: Sendable {
                 }
             }
 
-            // Update notes whose folderId points to any of these folders (SET NULL happens via FK,
-            // but we need version bumps + outbox ops for sync)
+            // Update notes whose folderId points to any of these folders
             for fid in folderIdsToDelete {
                 let notes = try NotePage.filter(Column("folderId") == fid).fetchAll(db)
                 for var note in notes {
@@ -66,7 +67,13 @@ final class FolderService: Sendable {
                     note.version += 1
                     note.updatedAt = Date()
                     try note.update(db)
+                    try OutboxOp.enqueue(entityType: "notePage", entityId: note.id.uuidString, op: "update", patch: note.syncPatch(), baseUpdatedAt: note.updatedAt, in: db)
                 }
+            }
+
+            // Enqueue deletes for all folders (children first)
+            for fid in folderIdsToDelete.reversed() {
+                try OutboxOp.enqueueDelete(entityType: "folder", entityId: fid.uuidString, in: db)
             }
 
             // Cascade delete handles subfolders
@@ -87,6 +94,9 @@ final class FolderService: Sendable {
             for (index, id) in ids.enumerated() {
                 try db.execute(sql: "UPDATE folder SET sortIndex = ? WHERE id = ?",
                                arguments: [index, id])
+                if let folder = try Folder.fetchOne(db, key: id) {
+                    try OutboxOp.enqueue(entityType: "folder", entityId: id.uuidString, op: "update", patch: folder.syncPatch(), baseUpdatedAt: folder.updatedAt, in: db)
+                }
             }
         }
     }
@@ -99,6 +109,7 @@ final class FolderService: Sendable {
             folder.updatedAt = Date()
             folder.version += 1
             try folder.update(db)
+            try OutboxOp.enqueue(entityType: "folder", entityId: folderId.uuidString, op: "update", patch: folder.syncPatch(), baseUpdatedAt: folder.updatedAt, in: db)
         }
     }
 
@@ -110,6 +121,7 @@ final class FolderService: Sendable {
             note.updatedAt = Date()
             note.version += 1
             try note.update(db)
+            try OutboxOp.enqueue(entityType: "notePage", entityId: noteId.uuidString, op: "update", patch: note.syncPatch(), baseUpdatedAt: note.updatedAt, in: db)
         }
     }
 }

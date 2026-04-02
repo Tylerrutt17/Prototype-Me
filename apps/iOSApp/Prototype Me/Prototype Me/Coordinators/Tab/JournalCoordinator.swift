@@ -1,6 +1,6 @@
 import UIKit
 
-class DiaryCoordinator: Coordinator {
+class JournalCoordinator: Coordinator {
 
     var childCoordinators: [Coordinator] = []
     let navigationController: UINavigationController
@@ -10,14 +10,14 @@ class DiaryCoordinator: Coordinator {
         self.environment = environment
         self.navigationController = UINavigationController()
         navigationController.tabBarItem = UITabBarItem(
-            title: "Diary",
+            title: "Journal",
             image: UIImage(systemName: "calendar"),
             selectedImage: UIImage(systemName: "calendar")
         )
     }
 
     func start() {
-        let vc = DiaryViewController()
+        let vc = JournalViewController()
         vc.dbQueue = environment.db.dbQueue
         vc.dayEntryService = environment.dayEntryService
         vc.onAddTapped = { [weak self] in

@@ -131,7 +131,9 @@ final class SyncEngine: @unchecked Sendable {
         )
 
         do {
-            let response: PushResponse = try await api.post("/sync/push", body: request, timeout: APIClient.Timeout.sync)
+            print("[Sync] Pushing \(request.ops.count) ops to /v1/sync/push")
+            let response: PushResponse = try await api.post("/v1/sync/push", body: request, timeout: APIClient.Timeout.sync)
+            print("[Sync] Push succeeded: \(response.applied.count) applied")
 
             // Remove successfully applied ops from outbox
             try await db.dbQueue.write { db in
@@ -148,6 +150,7 @@ final class SyncEngine: @unchecked Sendable {
                 }
             }
         } catch let error as APIClient.APIError {
+            print("[Sync] Push failed: \(error)")
             // Mark failed ops with error + exponential backoff delay
             try await db.dbQueue.write { db in
                 for var op in ops {
@@ -170,7 +173,7 @@ final class SyncEngine: @unchecked Sendable {
                 try SyncState.current(in: db)?.lastSyncToken
             }
 
-            var path = "/sync/pull?limit=\(Self.pullPageSize)"
+            var path = "/v1/sync/pull?limit=\(Self.pullPageSize)"
             if let cursor {
                 path += "&cursor=\(cursor)"
             }

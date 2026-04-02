@@ -45,7 +45,7 @@ class CalendarViewController: BaseViewController {
     private let ratingBar = UIView()
     private let ratingFill = UIView()
     private let tagsStack = UIStackView()
-    private let diaryLabel = UILabel()
+    private let journalLabel = UILabel()
     private let emptyStateLabel = UILabel()
     private let editButton = UIButton(type: .system)
     private let createButton = UIButton(type: .system)
@@ -180,11 +180,11 @@ class CalendarViewController: BaseViewController {
         tagsStack.distribution = .fill
         detailStack.addArrangedSubview(tagsStack)
 
-        // Diary text
-        diaryLabel.font = DesignTokens.Typography.body
-        diaryLabel.textColor = DesignTokens.Colors.textSecondary
-        diaryLabel.numberOfLines = 0
-        detailStack.addArrangedSubview(diaryLabel)
+        // Journal text
+        journalLabel.font = DesignTokens.Typography.body
+        journalLabel.textColor = DesignTokens.Colors.textSecondary
+        journalLabel.numberOfLines = 0
+        detailStack.addArrangedSubview(journalLabel)
 
         // Edit button
         var editConfig = UIButton.Configuration.filled()
@@ -431,8 +431,8 @@ class CalendarViewController: BaseViewController {
             // Flexible spacer so chips don't stretch
             tagsStack.addArrangedSubview(UIView())
 
-            diaryLabel.text = entry.diary.isEmpty ? "No diary text." : entry.diary
-            diaryLabel.isHidden = false
+            journalLabel.text = entry.diary.isEmpty ? "No journal text." : entry.diary
+            journalLabel.isHidden = false
             editButton.isHidden = false
             createButton.isHidden = true
             emptyStateLabel.isHidden = true
@@ -440,7 +440,7 @@ class CalendarViewController: BaseViewController {
             // No entry
             ratingContainer.isHidden = true
             tagsStack.isHidden = true
-            diaryLabel.isHidden = true
+            journalLabel.isHidden = true
             editButton.isHidden = true
             createButton.isHidden = false
             emptyStateLabel.isHidden = false
