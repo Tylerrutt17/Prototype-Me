@@ -19,6 +19,9 @@ struct AppEnvironment {
     let syncEngine: SyncEngine
     let reachability: ReachabilityMonitor
 
+    // Auth
+    let authService: AuthService
+
     // Notifications
     let balloonNotificationService: BalloonNotificationService
 
@@ -50,6 +53,9 @@ struct AppEnvironment {
         self.apiClient = APIClient()
         self.reachability = ReachabilityMonitor()
         self.syncEngine = SyncEngine(db: db, api: apiClient, reachability: reachability)
+
+        // Auth
+        self.authService = AuthService(apiClient: apiClient)
 
         // Notifications
         self.balloonNotificationService = BalloonNotificationService()

@@ -19,6 +19,7 @@ import { subscriptionRoutes } from "./routes/subscription.js";
 import { usageRoutes } from "./routes/usage.js";
 import { aiRoutes } from "./routes/ai.js";
 import { deviceRoutes } from "./routes/devices.js";
+import { authRoutes } from "./routes/auth.js";
 
 const app = Fastify({ logger: true });
 
@@ -28,7 +29,7 @@ await app.register(cors, { origin: true });
 // ── Global auth hook ────────────────────────
 app.addHook("onRequest", async (request, reply) => {
   // Skip auth for health check and public endpoints
-  const publicPaths = ["/health", "/v1/ai/onboard"];
+  const publicPaths = ["/health", "/v1/ai/onboard", "/v1/auth/"];
   if (publicPaths.some((p) => request.url.startsWith(p))) return;
 
   // Dev bypass: skip auth and use a test user ID
@@ -93,6 +94,7 @@ await app.register(subscriptionRoutes, { prefix: "/v1/subscription" });
 await app.register(usageRoutes, { prefix: "/v1/usage" });
 await app.register(aiRoutes, { prefix: "/v1/ai" });
 await app.register(deviceRoutes, { prefix: "/v1/devices" });
+await app.register(authRoutes, { prefix: "/v1/auth" });
 
 // ── Start ───────────────────────────────────
 try {

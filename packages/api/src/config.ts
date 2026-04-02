@@ -18,6 +18,7 @@ export const config = {
     clientId: skipAuth ? (process.env.COGNITO_CLIENT_ID ?? "") : required("COGNITO_CLIENT_ID"),
     region: skipAuth ? (process.env.COGNITO_REGION ?? "us-east-1") : required("COGNITO_REGION"),
   },
+  jwtSecret: process.env.JWT_SECRET || "dev-secret-change-in-production",
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
 } as const;

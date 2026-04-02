@@ -95,6 +95,69 @@ final class SyncEngine: @unchecked Sendable {
         }
     }
 
+    /// Enqueue all existing local data as create ops for a first-time full sync.
+    /// Call once after first login or when connecting to the backend for the first time.
+    func seedFullPush() async throws {
+        let count = try await db.dbQueue.write { db -> Int in
+            var total = 0
+
+            // Directives
+            for entity in try Directive.fetchAll(db) {
+                try OutboxOp.enqueue(entityType: "directive", entityId: entity.id.uuidString, op: "create", patch: entity.syncPatch(), in: db)
+                total += 1
+            }
+
+            // Notes
+            for entity in try NotePage.fetchAll(db) {
+                try OutboxOp.enqueue(entityType: "notePage", entityId: entity.id.uuidString, op: "create", patch: entity.syncPatch(), in: db)
+                total += 1
+            }
+
+            // Folders
+            for entity in try Folder.fetchAll(db) {
+                try OutboxOp.enqueue(entityType: "folder", entityId: entity.id.uuidString, op: "create", patch: entity.syncPatch(), in: db)
+                total += 1
+            }
+
+            // Day Entries
+            for entity in try DayEntry.fetchAll(db) {
+                try OutboxOp.enqueue(entityType: "dayEntry", entityId: entity.id.uuidString, op: "create", patch: entity.syncPatch(), in: db)
+                total += 1
+            }
+
+            // Schedule Rules
+            for entity in try ScheduleRule.fetchAll(db) {
+                try OutboxOp.enqueue(entityType: "scheduleRule", entityId: entity.id.uuidString, op: "create", patch: entity.syncPatch(), in: db)
+                total += 1
+            }
+
+            // Tags
+            for entity in try Tag.fetchAll(db) {
+                try OutboxOp.enqueue(entityType: "tag", entityId: entity.id.uuidString, op: "create", patch: entity.syncPatch(), in: db)
+                total += 1
+            }
+
+            // Note-Directive links
+            for entity in try NoteDirective.fetchAll(db) {
+                let entityId = "\(entity.noteId.uuidString)|\(entity.directiveId.uuidString)"
+                try OutboxOp.enqueue(entityType: "noteDirective", entityId: entityId, op: "create", patch: entity.syncPatch(), in: db)
+                total += 1
+            }
+
+            // Active Modes
+            for entity in try ActiveMode.fetchAll(db) {
+                try OutboxOp.enqueue(entityType: "activeMode", entityId: entity.noteId.uuidString, op: "create", patch: entity.syncPatch(), in: db)
+                total += 1
+            }
+
+            return total
+        }
+
+        print("[Sync] Seed push: enqueued \(count) entities")
+        // Trigger sync to push everything
+        try await sync()
+    }
+
     /// Push only (e.g., after a local write).
     func push() async throws {
         guard reachability.isConnected else { return }

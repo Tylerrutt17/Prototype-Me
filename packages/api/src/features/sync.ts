@@ -45,10 +45,21 @@ interface PullResponse {
 
 // ── Push: idempotent, server-authoritative versioning ──
 
+// Junction/link tables that depend on parent entities existing first.
+const JUNCTION_TYPES = new Set(["noteDirective", "activeMode"]);
+
 export async function push(userId: string, deviceId: string, operations: OutboxOp[]): Promise<PushResponse> {
   const applied: AppliedEntity[] = [];
 
-  for (const op of operations) {
+  // Sort so parent entity creates are processed before junction table ops.
+  // This prevents FK violations when both arrive in the same batch.
+  const sorted = [...operations].sort((a, b) => {
+    const aIsJunction = JUNCTION_TYPES.has(a.entityType) ? 1 : 0;
+    const bIsJunction = JUNCTION_TYPES.has(b.entityType) ? 1 : 0;
+    return aIsJunction - bIsJunction;
+  });
+
+  for (const op of sorted) {
     try {
       // 1. Idempotency check
       if (await syncQueries.isOpProcessed(op.id)) {

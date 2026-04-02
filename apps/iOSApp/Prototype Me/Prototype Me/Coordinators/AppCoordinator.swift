@@ -32,10 +32,43 @@ class AppCoordinator: Coordinator {
         onboardingCoordinator.onComplete = { [weak self] in
             guard let self else { return }
             self.removeChild(onboardingCoordinator)
-            self.showMainApp(animated: true)
+            // After onboarding, show login
+            self.showLogin(animated: true)
         }
         addChild(onboardingCoordinator)
         onboardingCoordinator.start()
+    }
+
+    // MARK: - Login
+
+    private func showLogin(animated: Bool) {
+        // If already signed in, skip straight to main app
+        if environment.authService.isSignedIn {
+            showMainApp(animated: animated)
+            return
+        }
+
+        let loginVC = LoginViewController()
+        loginVC.authService = environment.authService
+        loginVC.onLoginSuccess = { [weak self] in
+            guard let self else { return }
+            // Seed push all local data after first login
+            Task {
+                try? await self.environment.syncEngine.seedFullPush()
+            }
+            self.showMainApp(animated: true)
+        }
+        loginVC.onSkip = { [weak self] in
+            self?.showMainApp(animated: true)
+        }
+
+        if animated {
+            UIView.transition(with: window, duration: 0.5, options: .transitionCrossDissolve) {
+                self.window.rootViewController = loginVC
+            }
+        } else {
+            window.rootViewController = loginVC
+        }
     }
 
     // MARK: - Main App

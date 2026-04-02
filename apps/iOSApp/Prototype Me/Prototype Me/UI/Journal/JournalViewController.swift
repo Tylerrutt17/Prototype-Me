@@ -182,7 +182,7 @@ class JournalViewController: BaseViewController {
         view.addSubview(segmentedControl)
 
         NSLayoutConstraint.activate([
-            segmentedControl.topAnchor.constraint(equalTo: contentTopAnchor, constant: DesignTokens.Spacing.xs),
+            segmentedControl.topAnchor.constraint(equalTo: contentTopAnchor, constant: DesignTokens.Spacing.lg),
             segmentedControl.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.lg),
             segmentedControl.heightAnchor.constraint(equalToConstant: 32),
         ])

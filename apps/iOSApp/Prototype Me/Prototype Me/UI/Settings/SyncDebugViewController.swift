@@ -94,6 +94,7 @@ class SyncDebugViewController: BaseViewController {
                 .stat("Last Error", info?.lastError ?? "None"),
                 .stat("Schema Version", "v6"),
                 .action("Force Sync Now"),
+                .action("Seed Full Push (all local data)"),
             ])
             await dataSource.apply(snapshot, animatingDifferences: false)
         }
@@ -106,10 +107,14 @@ extension SyncDebugViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         collectionView.deselectItem(at: indexPath, animated: true)
         guard let item = dataSource.itemIdentifier(for: indexPath) else { return }
-        if case .action = item {
+        if case .action(let title) = item {
             Task {
                 do {
-                    try await syncEngine?.sync()
+                    if title.contains("Seed") {
+                        try await syncEngine?.seedFullPush()
+                    } else {
+                        try await syncEngine?.sync()
+                    }
                     loadData()  // Refresh after sync
                 } catch {
                     let alert = UIAlertController(title: "Sync Failed", message: "\(error)", preferredStyle: .alert)
