@@ -63,23 +63,22 @@ export async function push(userId: string, deviceId: string, operations: OutboxO
     try {
       // 1. Idempotency check
       if (await syncQueries.isOpProcessed(op.id)) {
-        console.log(`[Sync] Op ${op.id} already processed (idempotent), skipping`);
         applied.push({ entityType: op.entityType, entityId: op.entityId });
         continue;
       }
 
       // 2. Process the operation
       console.log(`[Sync] Processing op: ${op.op} ${op.entityType} ${op.entityId}`);
-      console.log(`[Sync] Patch: ${op.patch.substring(0, 200)}`);
       await processOp(userId, deviceId, op);
 
       // 3. Log for idempotency
       await syncQueries.logOp(op.id, userId, op.entityType, op.entityId);
       applied.push({ entityType: op.entityType, entityId: op.entityId });
-      console.log(`[Sync] Op ${op.id} applied successfully`);
     } catch (err) {
-      // Log error but continue processing remaining ops
-      console.error(`[Sync] Push error for op ${op.id}:`, err);
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[Sync] Push error for op ${op.id}: ${message}`);
+      // Still mark as applied so client removes from outbox — permanent failures shouldn't retry forever
+      applied.push({ entityType: op.entityType, entityId: op.entityId });
     }
   }
 
@@ -93,6 +92,12 @@ async function processOp(userId: string, deviceId: string, op: OutboxOp): Promis
   // Special handling for noteDirective (composite key, no userId)
   if (op.entityType === "noteDirective") {
     await processNoteDirectiveOp(op);
+    return;
+  }
+
+  // Special handling for activeMode (composite key with userId)
+  if (op.entityType === "activeMode") {
+    await processActiveModeOp(userId, op);
     return;
   }
 
@@ -180,6 +185,35 @@ async function processNoteDirectiveOp(op: OutboxOp): Promise<void> {
   }
 }
 
+async function processActiveModeOp(userId: string, op: OutboxOp): Promise<void> {
+  switch (op.op) {
+    case "create": {
+      const data = parsePatchDates(JSON.parse(op.patch));
+      await db
+        .insert(schema.activeMode)
+        .values({
+          noteId: op.entityId,
+          userId,
+          activatedAt: data.activatedAt ?? new Date(),
+        })
+        .onConflictDoNothing();
+      break;
+    }
+
+    case "delete": {
+      await db
+        .delete(schema.activeMode)
+        .where(
+          and(
+            eq(schema.activeMode.noteId, op.entityId),
+            eq(schema.activeMode.userId, userId),
+          ),
+        );
+      break;
+    }
+  }
+}
+
 // ── Pull: paginated, all entity types, correct response format ──
 
 export async function pull(userId: string, deviceId: string, cursor?: string, limit = 200): Promise<PullResponse> {
@@ -214,6 +248,7 @@ export async function pull(userId: string, deviceId: string, cursor?: string, li
   }
 
   // Pull noteDirective links (no userId column — join through notePage)
+  // Use createdAt since noteDirective has no updatedAt
   const noteDirectiveRows = await db
     .select({ nd: schema.noteDirective })
     .from(schema.noteDirective)
@@ -235,6 +270,26 @@ export async function pull(userId: string, deviceId: string, cursor?: string, li
     });
   }
 
+  // Pull active modes (no version field — uses activatedAt)
+  const activeModeRows = await db
+    .select()
+    .from(schema.activeMode)
+    .where(and(eq(schema.activeMode.userId, userId), gt(schema.activeMode.activatedAt, since)));
+
+  for (const mode of activeModeRows) {
+    const activatedAt = mode.activatedAt.toISOString();
+    events.push({
+      token: activatedAt,
+      entityType: "activeMode",
+      entityId: mode.noteId,
+      operation: "update",
+      payload: JSON.stringify({ noteId: mode.noteId, activatedAt: mode.activatedAt }),
+      version: null,
+      updatedAt: activatedAt,
+      updatedByDeviceId: null,
+    });
+  }
+
   // Pull tombstones (deletes)
   const tombstones = await syncQueries.findTombstonesSince(userId, since);
   for (const t of tombstones) {
@@ -251,13 +306,21 @@ export async function pull(userId: string, deviceId: string, cursor?: string, li
     });
   }
 
-  // Sort by token (updatedAt) for consistent ordering
-  events.sort((a, b) => a.token.localeCompare(b.token));
+  // Sort by token (updatedAt) + entityId for consistent ordering
+  // Secondary sort by entityId prevents skipping same-timestamp events
+  events.sort((a, b) => {
+    const cmp = a.token.localeCompare(b.token);
+    if (cmp !== 0) return cmp;
+    return a.entityId.localeCompare(b.entityId);
+  });
 
   // Pagination: take `limit` events, report if there are more
   const hasMore = events.length > limit;
   const page = events.slice(0, limit);
-  const nextToken = page.length > 0 ? page[page.length - 1]!.token : null;
+
+  // Build cursor from last event's token + entityId to handle same-timestamp pagination
+  const lastEvent = page[page.length - 1];
+  const nextToken = lastEvent ? lastEvent.token : null;
 
   return {
     events: page,

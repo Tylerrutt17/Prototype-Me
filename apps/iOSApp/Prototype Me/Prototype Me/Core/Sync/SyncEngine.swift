@@ -98,6 +98,13 @@ final class SyncEngine: @unchecked Sendable {
     /// Enqueue all existing local data as create ops for a first-time full sync.
     /// Call once after first login or when connecting to the backend for the first time.
     func seedFullPush() async throws {
+        // Acquire sync lock to prevent concurrent sync while seeding
+        guard beginSync() else {
+            print("[Sync] Seed push skipped — sync already in progress")
+            return
+        }
+        defer { endSync() }
+
         let count = try await db.dbQueue.write { db -> Int in
             var total = 0
 
@@ -198,11 +205,12 @@ final class SyncEngine: @unchecked Sendable {
             let response: PushResponse = try await api.post("/v1/sync/push", body: request, timeout: APIClient.Timeout.sync)
             print("[Sync] Push succeeded: \(response.applied.count) applied")
 
-            // Remove successfully applied ops from outbox
+            // Remove successfully applied ops from outbox (match by op ID, not entity ID)
             try await db.dbQueue.write { db in
                 let appliedEntityIds = Set(response.applied.map(\.entityId))
                 for op in ops where appliedEntityIds.contains(op.entityId) {
-                    try op.delete(db)
+                    // Delete this specific op, not all ops for this entity
+                    _ = try OutboxOp.deleteOne(db, key: op.id)
                 }
 
                 // Update sync token
@@ -245,13 +253,19 @@ final class SyncEngine: @unchecked Sendable {
 
             try await db.dbQueue.write { db in
                 for event in response.events {
-                    try applyEvent(event, in: db)
+                    do {
+                        try applyEvent(event, in: db)
+                    } catch {
+                        // Log but don't stop the entire pull — skip malformed events
+                        print("[Sync] Failed to apply event \(event.entityType)/\(event.entityId): \(error)")
+                    }
                 }
 
-                // Update cursor
-                if let nextToken = response.nextToken {
+                // Update cursor (always advance, even if some events failed)
+                let lastToken = response.events.last?.token ?? response.nextToken
+                if let token = lastToken {
                     if var state = try SyncState.current(in: db) {
-                        state.lastSyncToken = nextToken
+                        state.lastSyncToken = token
                         state.lastPullAt = Date()
                         try state.update(db)
                     }
@@ -386,6 +400,9 @@ final class SyncEngine: @unchecked Sendable {
         case "scheduleRule":
             guard let entityId = UUID(uuidString: event.entityId) else { return }
             try ScheduleRule.deleteOne(db, key: entityId)
+        case "activeMode":
+            guard let noteId = UUID(uuidString: event.entityId) else { return }
+            try ActiveMode.deleteOne(db, key: noteId)
         default:
             break
         }
@@ -449,6 +466,10 @@ final class SyncEngine: @unchecked Sendable {
             if let local = try ScheduleRule.fetchOne(db, key: remote.id), local.version > remote.version {
                 return
             }
+            try remote.save(db)
+
+        case "activeMode":
+            let remote = try decoder.decode(ActiveMode.self, from: payloadData)
             try remote.save(db)
 
         default:

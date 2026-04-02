@@ -36,8 +36,10 @@ export async function loginWithApple(identityToken: string, fullName?: string) {
 
   // 2. Find or create user by Apple ID
   let user = await db.select().from(users).where(eq(users.appleId, appleId)).then((r) => r[0]);
+  let isNewUser = false;
 
   if (!user) {
+    isNewUser = true;
     const displayName = fullName || email?.split("@")[0] || "User";
     const result = await db
       .insert(users)
@@ -59,6 +61,7 @@ export async function loginWithApple(identityToken: string, fullName?: string) {
   return {
     accessToken,
     refreshToken,
+    isNewUser,
     user: {
       id: user.id,
       email: user.email,

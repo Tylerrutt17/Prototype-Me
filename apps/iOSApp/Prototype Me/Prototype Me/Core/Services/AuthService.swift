@@ -85,6 +85,7 @@ struct AppleLoginRequest: Encodable {
 struct AuthResponse: Decodable {
     let accessToken: String
     let refreshToken: String
+    let isNewUser: Bool?
     let user: AuthUser
 }
 

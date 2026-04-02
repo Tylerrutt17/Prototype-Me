@@ -7,22 +7,155 @@ import AuthenticationServices
 final class WelcomeLoginViewController: UIViewController {
 
     var authService: AuthService?
-    var onSignedIn: (() -> Void)?
-    var onNewUser: (() -> Void)?
+    var onSignedIn: ((_ isNewUser: Bool) -> Void)?
+
+    // MARK: - Background
+
+    private let gradientLayer: CAGradientLayer = {
+        let layer = CAGradientLayer()
+        layer.colors = [
+            UIColor(red: 0.05, green: 0.07, blue: 0.18, alpha: 1.0).cgColor,
+            UIColor(red: 0.08, green: 0.06, blue: 0.22, alpha: 1.0).cgColor,
+            UIColor(red: 0.07, green: 0.07, blue: 0.09, alpha: 1.0).cgColor,
+        ]
+        layer.locations = [0.0, 0.45, 1.0]
+        return layer
+    }()
+
+    private var waveLayers: [CAShapeLayer] = []
+
+    // MARK: - Content
 
     private let logoView = UIImageView()
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
-    private let getStartedButton = AppButton(title: "Get Started")
-    private let existingAccountButton = UIButton(type: .system)
     private let appleButton = ASAuthorizationAppleIDButton(type: .signIn, style: .white)
-    private var showingAppleLogin = false
+
+    // MARK: - Lifecycle
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = DesignTokens.Colors.background
+
+        view.layer.addSublayer(gradientLayer)
+        setupWaves()
         buildLayout()
     }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        gradientLayer.frame = view.bounds
+        CATransaction.commit()
+        layoutWaves()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        animateEntrance()
+        animateWaves()
+    }
+
+    // MARK: - Wavy Lines
+
+    private func setupWaves() {
+        let colors: [(UIColor, CGFloat)] = [
+            (DesignTokens.Colors.accent, 0.12),
+            (DesignTokens.Colors.accentSecondary, 0.10),
+            (DesignTokens.Colors.accentTertiary, 0.08),
+            (DesignTokens.Colors.accent, 0.06),
+            (DesignTokens.Colors.accentSecondary, 0.05),
+        ]
+
+        for (color, alpha) in colors {
+            let layer = CAShapeLayer()
+            layer.strokeColor = color.withAlphaComponent(alpha).cgColor
+            layer.fillColor = UIColor.clear.cgColor
+            layer.lineWidth = 2
+            layer.lineCap = .round
+            view.layer.insertSublayer(layer, above: gradientLayer)
+            waveLayers.append(layer)
+        }
+    }
+
+    private func layoutWaves() {
+        let w = view.bounds.width
+        let h = view.bounds.height
+        guard w > 0 else { return }
+
+        let configs: [(yCenter: CGFloat, amplitude: CGFloat, frequency: CGFloat, phase: CGFloat, lineWidth: CGFloat)] = [
+            (h * 0.20, 40, 1.5, 0.0, 2.5),
+            (h * 0.30, 55, 1.0, 0.8, 2.0),
+            (h * 0.45, 35, 2.0, 1.6, 1.5),
+            (h * 0.65, 50, 1.2, 2.4, 2.0),
+            (h * 0.78, 30, 1.8, 3.2, 1.5),
+        ]
+
+        for (i, layer) in waveLayers.enumerated() {
+            guard i < configs.count else { break }
+            let c = configs[i]
+            layer.lineWidth = c.lineWidth
+            layer.path = wavePath(width: w, yCenter: c.yCenter, amplitude: c.amplitude, frequency: c.frequency, phase: c.phase).cgPath
+        }
+    }
+
+    private func wavePath(width: CGFloat, yCenter: CGFloat, amplitude: CGFloat, frequency: CGFloat, phase: CGFloat) -> UIBezierPath {
+        let path = UIBezierPath()
+        let steps = 120
+        for i in 0...steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            let x = t * width
+            let y = yCenter + sin(t * frequency * 2 * .pi + phase) * amplitude
+            if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
+            else { path.addLine(to: CGPoint(x: x, y: y)) }
+        }
+        return path
+    }
+
+    private func animateWaves() {
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
+
+        let durations: [CFTimeInterval] = [7.0, 9.0, 6.0, 8.0, 10.0]
+        let amplitudes: [CGFloat] = [40, 55, 35, 50, 30]
+        let frequencies: [CGFloat] = [1.5, 1.0, 2.0, 1.2, 1.8]
+        let phases: [CGFloat] = [0.0, 0.8, 1.6, 2.4, 3.2]
+        let yCenters: [CGFloat] = [0.20, 0.30, 0.45, 0.65, 0.78]
+
+        let w = view.bounds.width
+        let h = view.bounds.height
+
+        for (i, layer) in waveLayers.enumerated() {
+            guard i < durations.count else { break }
+
+            let fromPath = wavePath(
+                width: w,
+                yCenter: h * yCenters[i],
+                amplitude: amplitudes[i],
+                frequency: frequencies[i],
+                phase: phases[i]
+            ).cgPath
+
+            let toPath = wavePath(
+                width: w,
+                yCenter: h * yCenters[i],
+                amplitude: amplitudes[i] * 0.7,
+                frequency: frequencies[i],
+                phase: phases[i] + .pi
+            ).cgPath
+
+            let anim = CABasicAnimation(keyPath: "path")
+            anim.fromValue = fromPath
+            anim.toValue = toPath
+            anim.duration = durations[i]
+            anim.autoreverses = true
+            anim.repeatCount = .infinity
+            anim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            layer.add(anim, forKey: "waveShift")
+        }
+    }
+
+    // MARK: - Layout
 
     private func buildLayout() {
         // Logo
@@ -30,45 +163,45 @@ final class WelcomeLoginViewController: UIViewController {
         logoView.image = UIImage(systemName: "sparkles", withConfiguration: config)
         logoView.tintColor = DesignTokens.Colors.accent
         logoView.contentMode = .scaleAspectFit
+        logoView.alpha = 0
+        logoView.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
         logoView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(logoView)
+
+        // Glow behind logo
+        logoView.layer.shadowColor = DesignTokens.Colors.accent.cgColor
+        logoView.layer.shadowRadius = 30
+        logoView.layer.shadowOpacity = 0.5
+        logoView.layer.shadowOffset = .zero
 
         // Title
         titleLabel.text = "Prototype Me"
         titleLabel.font = DesignTokens.Typography.rounded(style: .largeTitle, weight: .bold)
         titleLabel.textColor = DesignTokens.Colors.textPrimary
         titleLabel.textAlignment = .center
+        titleLabel.alpha = 0
+        titleLabel.transform = CGAffineTransform(translationX: 0, y: 20)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(titleLabel)
 
         // Subtitle
         subtitleLabel.text = "Figure out what works. Build your system."
-        subtitleLabel.font = DesignTokens.Typography.body
+        subtitleLabel.font = DesignTokens.Typography.rounded(style: .body, weight: .regular)
         subtitleLabel.textColor = DesignTokens.Colors.textSecondary
         subtitleLabel.textAlignment = .center
         subtitleLabel.numberOfLines = 0
+        subtitleLabel.alpha = 0
+        subtitleLabel.transform = CGAffineTransform(translationX: 0, y: 15)
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(subtitleLabel)
 
-        // Get started button (new users)
-        getStartedButton.addTarget(self, action: #selector(getStartedTapped), for: .touchUpInside)
-        getStartedButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(getStartedButton)
-
-        // Existing account link
-        existingAccountButton.setTitle("Already have an account? Sign in", for: .normal)
-        existingAccountButton.titleLabel?.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium)
-        existingAccountButton.setTitleColor(DesignTokens.Colors.accent, for: .normal)
-        existingAccountButton.addTarget(self, action: #selector(existingAccountTapped), for: .touchUpInside)
-        existingAccountButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(existingAccountButton)
-
-        // Apple button (hidden initially, shown when "Already have an account?" is tapped)
+        // Apple sign in button
         appleButton.cornerRadius = DesignTokens.Radii.lg
         appleButton.addTarget(self, action: #selector(appleSignInTapped), for: .touchUpInside)
-        appleButton.translatesAutoresizingMaskIntoConstraints = false
         appleButton.alpha = 0
-        appleButton.isHidden = true
+        appleButton.transform = CGAffineTransform(translationX: 0, y: 20)
+        appleButton.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(logoView)
+        view.addSubview(titleLabel)
+        view.addSubview(subtitleLabel)
         view.addSubview(appleButton)
 
         NSLayoutConstraint.activate([
@@ -82,40 +215,50 @@ final class WelcomeLoginViewController: UIViewController {
             subtitleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.xxxl),
             subtitleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.xxxl),
 
-            getStartedButton.bottomAnchor.constraint(equalTo: existingAccountButton.topAnchor, constant: -DesignTokens.Spacing.lg),
-            getStartedButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.xxxl),
-            getStartedButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.xxxl),
-
-            existingAccountButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -DesignTokens.Spacing.xl),
-            existingAccountButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-
-            appleButton.bottomAnchor.constraint(equalTo: existingAccountButton.topAnchor, constant: -DesignTokens.Spacing.lg),
+            appleButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -DesignTokens.Spacing.xxxl),
             appleButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.xxxl),
             appleButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.xxxl),
-            appleButton.heightAnchor.constraint(equalToConstant: 50),
+            appleButton.heightAnchor.constraint(equalToConstant: 54),
         ])
     }
 
-    @objc private func getStartedTapped() {
-        Haptics.medium()
-        onNewUser?()
-    }
+    // MARK: - Entrance Animation
 
-    @objc private func existingAccountTapped() {
-        if showingAppleLogin {
-            // Already showing — trigger Apple sign in directly
-            appleSignInTapped()
-        } else {
-            // Show the Apple button
-            showingAppleLogin = true
-            appleButton.isHidden = false
-            UIView.animate(withDuration: 0.3) {
-                self.appleButton.alpha = 1
-                self.existingAccountButton.setTitle("Tap above to sign in with Apple", for: .normal)
-                self.existingAccountButton.setTitleColor(DesignTokens.Colors.textTertiary, for: .normal)
-            }
+    private func animateEntrance() {
+        guard !UIAccessibility.isReduceMotionEnabled else {
+            logoView.alpha = 1; logoView.transform = .identity
+            titleLabel.alpha = 1; titleLabel.transform = .identity
+            subtitleLabel.alpha = 1; subtitleLabel.transform = .identity
+            appleButton.alpha = 1; appleButton.transform = .identity
+            return
+        }
+
+        // Logo: spring scale-in
+        UIView.animate(withDuration: 0.7, delay: 0.2, usingSpringWithDamping: 0.65, initialSpringVelocity: 0.3) {
+            self.logoView.alpha = 1
+            self.logoView.transform = .identity
+        }
+
+        // Title slides up
+        UIView.animate(withDuration: 0.5, delay: 0.45, options: .curveEaseOut) {
+            self.titleLabel.alpha = 1
+            self.titleLabel.transform = .identity
+        }
+
+        // Subtitle slides up
+        UIView.animate(withDuration: 0.5, delay: 0.6, options: .curveEaseOut) {
+            self.subtitleLabel.alpha = 1
+            self.subtitleLabel.transform = .identity
+        }
+
+        // Apple button slides up
+        UIView.animate(withDuration: 0.5, delay: 0.75, options: .curveEaseOut) {
+            self.appleButton.alpha = 1
+            self.appleButton.transform = .identity
         }
     }
+
+    // MARK: - Actions
 
     @objc private func appleSignInTapped() {
         let request = ASAuthorizationAppleIDProvider().createRequest()
@@ -137,10 +280,11 @@ extension WelcomeLoginViewController: ASAuthorizationControllerDelegate {
 
         Task {
             do {
-                _ = try await authService?.handleAppleCredential(credential)
+                let response = try await authService?.handleAppleCredential(credential)
+                let isNew = response?.isNewUser ?? true
                 await MainActor.run {
                     Haptics.success()
-                    self.onSignedIn?()
+                    self.onSignedIn?(isNew)
                 }
             } catch {
                 print("[Auth] Sign in failed: \(error)")

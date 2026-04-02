@@ -35,17 +35,30 @@ class AppCoordinator: Coordinator {
     private func showWelcome() {
         let welcomeVC = WelcomeLoginViewController()
         welcomeVC.authService = environment.authService
-        welcomeVC.onSignedIn = { [weak self] in
-            guard let self else { return }
-            // Signed in with existing account — skip onboarding, go to main app
-            Task { try? await self.environment.syncEngine.sync() }
-            self.showMainApp(animated: true)
-        }
-        welcomeVC.onNewUser = { [weak self] in
-            // New user — go through onboarding
-            self?.showOnboarding()
+        welcomeVC.onSignedIn = { [weak self] isNewUser in
+            if isNewUser {
+                self?.showOnboarding()
+            } else {
+                self?.showSyncLoading()
+            }
         }
         window.rootViewController = welcomeVC
+    }
+
+    // MARK: - Sync Loading (Returning Users)
+
+    private func showSyncLoading() {
+        let syncVC = SyncLoadingViewController()
+        syncVC.syncTask = { [weak self] in
+            try? await self?.environment.syncEngine.seedFullPush()
+            try? await self?.environment.syncEngine.sync()
+        }
+        syncVC.onComplete = { [weak self] in
+            self?.showMainApp(animated: true)
+        }
+        UIView.transition(with: window, duration: 0.4, options: .transitionCrossDissolve) {
+            self.window.rootViewController = syncVC
+        }
     }
 
     // MARK: - Onboarding
@@ -74,16 +87,8 @@ class AppCoordinator: Coordinator {
         loginVC.authService = environment.authService
         loginVC.onLoginSuccess = { [weak self] in
             guard let self else { return }
-            // Seed push all local data after first login
-            Task {
-                try? await self.environment.syncEngine.seedFullPush()
-            }
-            self.showMainApp(animated: true)
+            self.showSyncLoading()
         }
-        loginVC.onSkip = { [weak self] in
-            self?.showMainApp(animated: true)
-        }
-
         if animated {
             UIView.transition(with: window, duration: 0.5, options: .transitionCrossDissolve) {
                 self.window.rootViewController = loginVC
@@ -102,6 +107,9 @@ class AppCoordinator: Coordinator {
         let journalCoordinator = JournalCoordinator(environment: environment)
         let settingsCoordinator = SettingsCoordinator(environment: environment)
 
+        focusCoordinator.onFreshStartRequested = { [weak self] in
+            self?.showWelcome()
+        }
         settingsCoordinator.onReplayTourRequested = { [weak self] in
             self?.startGuidedTour()
         }

@@ -3,6 +3,7 @@ import UIKit
 class FocusCoordinator: Coordinator {
 
     var childCoordinators: [Coordinator] = []
+    var onFreshStartRequested: (() -> Void)?
     let navigationController: UINavigationController
     private let environment: AppEnvironment
 
@@ -179,17 +180,10 @@ class FocusCoordinator: Coordinator {
     private var onboardingCoordinator: OnboardingCoordinator?
 
     private func presentOnboardingPreview() {
-        // Reset the flag so it can be replayed freely
+        // Full fresh start: clear onboarding, sign out, restart at welcome screen
         UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
-
-        let coordinator = OnboardingCoordinator(environment: environment)
-        coordinator.onComplete = { [weak self] in
-            self?.navigationController.dismiss(animated: true)
-            self?.onboardingCoordinator = nil
-        }
-        coordinator.start()
-        onboardingCoordinator = coordinator
-        navigationController.present(coordinator.navigationController, animated: true)
+        environment.authService.signOut()
+        onFreshStartRequested?()
     }
 
     private func presentActiveModePicker() {
