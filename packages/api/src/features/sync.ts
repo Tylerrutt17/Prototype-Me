@@ -3,6 +3,9 @@ import { db } from "../db/client.js";
 import * as syncQueries from "../db/queries/sync.js";
 import * as schema from "../db/schema.js";
 
+// Transaction-compatible DB type (works with both db and db.transaction callback)
+type TxDb = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 // ── Types matching iOS SyncEngine ──
 
 interface OutboxOp {
@@ -59,28 +62,30 @@ export async function push(userId: string, deviceId: string, operations: OutboxO
     return aIsJunction - bIsJunction;
   });
 
-  for (const op of sorted) {
-    try {
-      // 1. Idempotency check
-      if (await syncQueries.isOpProcessed(op.id)) {
+  // Process all ops in a single transaction to minimize DB round trips
+  await db.transaction(async (tx) => {
+    for (const op of sorted) {
+      try {
+        // 1. Idempotency check
+        const existing = await tx.select().from(schema.syncOpLog).where(eq(schema.syncOpLog.opId, op.id)).then((r) => r[0]);
+        if (existing) {
+          applied.push({ entityType: op.entityType, entityId: op.entityId });
+          continue;
+        }
+
+        // 2. Process the operation
+        await processOpTx(tx, userId, deviceId, op);
+
+        // 3. Log for idempotency
+        await tx.insert(schema.syncOpLog).values({ opId: op.id, userId, entityType: op.entityType, entityId: op.entityId }).onConflictDoNothing();
         applied.push({ entityType: op.entityType, entityId: op.entityId });
-        continue;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[Sync] Push error for op ${op.id}: ${message}`);
+        applied.push({ entityType: op.entityType, entityId: op.entityId });
       }
-
-      // 2. Process the operation
-      console.log(`[Sync] Processing op: ${op.op} ${op.entityType} ${op.entityId}`);
-      await processOp(userId, deviceId, op);
-
-      // 3. Log for idempotency
-      await syncQueries.logOp(op.id, userId, op.entityType, op.entityId);
-      applied.push({ entityType: op.entityType, entityId: op.entityId });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[Sync] Push error for op ${op.id}: ${message}`);
-      // Still mark as applied so client removes from outbox — permanent failures shouldn't retry forever
-      applied.push({ entityType: op.entityType, entityId: op.entityId });
     }
-  }
+  });
 
   return {
     applied,
@@ -88,16 +93,14 @@ export async function push(userId: string, deviceId: string, operations: OutboxO
   };
 }
 
-async function processOp(userId: string, deviceId: string, op: OutboxOp): Promise<void> {
-  // Special handling for noteDirective (composite key, no userId)
+async function processOpTx(tx: TxDb, userId: string, deviceId: string, op: OutboxOp): Promise<void> {
   if (op.entityType === "noteDirective") {
-    await processNoteDirectiveOp(op);
+    await processNoteDirectiveOpTx(tx, op);
     return;
   }
 
-  // Special handling for activeMode (composite key with userId)
   if (op.entityType === "activeMode") {
-    await processActiveModeOp(userId, op);
+    await processActiveModeOpTx(tx, userId, op);
     return;
   }
 
@@ -107,9 +110,8 @@ async function processOp(userId: string, deviceId: string, op: OutboxOp): Promis
   switch (op.op) {
     case "create": {
       const data = parsePatchDates(JSON.parse(op.patch));
-      // Strip fields that should be server-controlled
       const { updatedAt: _u, ...rest } = data;
-      await db
+      await tx
         .insert(table)
         .values({ ...rest, userId, updatedAt: new Date() })
         .onConflictDoNothing();
@@ -118,17 +120,14 @@ async function processOp(userId: string, deviceId: string, op: OutboxOp): Promis
 
     case "update": {
       const data = parsePatchDates(JSON.parse(op.patch));
-      const existing = await syncQueries.findById(op.entityType, op.entityId);
+      const existing = await tx.select().from(table).where(eq(table.id, op.entityId)).then((r: unknown[]) => r[0] ?? null);
       if (!existing) break;
 
-      // Strip immutable fields
       const { id: _id, createdAt: _ca, userId: _uid, ...updateData } = data;
-
-      // Server increments version
       const currentVersion = (existing as Record<string, unknown>).version as number | undefined;
       const newVersion = currentVersion !== undefined ? currentVersion + 1 : 1;
 
-      await db
+      await tx
         .update(table)
         .set({ ...updateData, version: newVersion, updatedAt: new Date() })
         .where(eq(table.id, op.entityId));
@@ -136,23 +135,21 @@ async function processOp(userId: string, deviceId: string, op: OutboxOp): Promis
     }
 
     case "delete": {
-      // Delete the entity
-      await db.delete(table).where(eq(table.id, op.entityId));
-      // Record tombstone
-      await syncQueries.insertTombstone(userId, op.entityType, op.entityId, deviceId);
+      await tx.delete(table).where(eq(table.id, op.entityId));
+      await tx.insert(schema.tombstone).values({ userId, entityType: op.entityType, entityId: op.entityId, deviceId }).returning();
       break;
     }
   }
 }
 
-async function processNoteDirectiveOp(op: OutboxOp): Promise<void> {
+async function processNoteDirectiveOpTx(tx: TxDb, op: OutboxOp): Promise<void> {
   const composite = syncQueries.parseCompositeId(op.entityId);
   if (!composite) throw new Error(`Invalid noteDirective entityId: ${op.entityId}`);
 
   switch (op.op) {
     case "create": {
       const data = JSON.parse(op.patch);
-      await db
+      await tx
         .insert(schema.noteDirective)
         .values({
           noteId: composite.noteId,
@@ -166,7 +163,7 @@ async function processNoteDirectiveOp(op: OutboxOp): Promise<void> {
 
     case "update": {
       const data = JSON.parse(op.patch);
-      await db
+      await tx
         .update(schema.noteDirective)
         .set({ sortIndex: data.sortIndex ?? 0 })
         .where(
@@ -179,17 +176,24 @@ async function processNoteDirectiveOp(op: OutboxOp): Promise<void> {
     }
 
     case "delete": {
-      await syncQueries.deleteNoteDirective(composite.noteId, composite.directiveId);
+      await tx
+        .delete(schema.noteDirective)
+        .where(
+          and(
+            eq(schema.noteDirective.noteId, composite.noteId),
+            eq(schema.noteDirective.directiveId, composite.directiveId),
+          ),
+        );
       break;
     }
   }
 }
 
-async function processActiveModeOp(userId: string, op: OutboxOp): Promise<void> {
+async function processActiveModeOpTx(tx: TxDb, userId: string, op: OutboxOp): Promise<void> {
   switch (op.op) {
     case "create": {
       const data = parsePatchDates(JSON.parse(op.patch));
-      await db
+      await tx
         .insert(schema.activeMode)
         .values({
           noteId: op.entityId,
@@ -201,7 +205,7 @@ async function processActiveModeOp(userId: string, op: OutboxOp): Promise<void> 
     }
 
     case "delete": {
-      await db
+      await tx
         .delete(schema.activeMode)
         .where(
           and(

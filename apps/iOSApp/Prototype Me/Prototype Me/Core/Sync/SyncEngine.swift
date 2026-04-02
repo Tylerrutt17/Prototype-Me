@@ -179,58 +179,63 @@ final class SyncEngine: @unchecked Sendable {
         guard !ops.isEmpty else { return }
 
         let deviceId = api.deviceId
-        let syncToken = try await db.dbQueue.read { db in
-            try SyncState.current(in: db)?.lastSyncToken
+        let batchSize = 20
+        let batches = stride(from: 0, to: ops.count, by: batchSize).map {
+            Array(ops[$0..<min($0 + batchSize, ops.count)])
         }
 
-        let request = PushRequest(
-            deviceId: deviceId,
-            lastSyncToken: syncToken,
-            ops: ops.map { op in
-                PushRequest.OpPayload(
-                    id: op.id.uuidString,
-                    entityType: op.entityType,
-                    entityId: op.entityId,
-                    op: op.op,
-                    patch: op.patch,
-                    baseUpdatedAt: op.baseUpdatedAt,
-                    schemaVersion: op.schemaVersion,
-                    createdAt: op.createdAt
-                )
-            }
-        )
+        print("[Sync] Pushing \(ops.count) ops in \(batches.count) batch(es)")
 
-        do {
-            print("[Sync] Pushing \(request.ops.count) ops to /v1/sync/push")
-            let response: PushResponse = try await api.post("/v1/sync/push", body: request, timeout: APIClient.Timeout.sync)
-            print("[Sync] Push succeeded: \(response.applied.count) applied")
-
-            // Remove successfully applied ops from outbox (match by op ID, not entity ID)
-            try await db.dbQueue.write { db in
-                let appliedEntityIds = Set(response.applied.map(\.entityId))
-                for op in ops where appliedEntityIds.contains(op.entityId) {
-                    // Delete this specific op, not all ops for this entity
-                    _ = try OutboxOp.deleteOne(db, key: op.id)
-                }
-
-                // Update sync token
-                if var state = try SyncState.current(in: db) {
-                    state.lastSyncToken = response.lastSyncToken
-                    state.lastPushAt = Date()
-                    try state.update(db)
-                }
+        for batch in batches {
+            let syncToken = try await db.dbQueue.read { db in
+                try SyncState.current(in: db)?.lastSyncToken
             }
-        } catch let error as APIClient.APIError {
-            print("[Sync] Push failed: \(error)")
-            // Mark failed ops with error + exponential backoff delay
-            try await db.dbQueue.write { db in
-                for var op in ops {
-                    op.attemptCount += 1
-                    op.lastError = "\(error)"
-                    try op.update(db)
+
+            let request = PushRequest(
+                deviceId: deviceId,
+                lastSyncToken: syncToken,
+                ops: batch.map { op in
+                    PushRequest.OpPayload(
+                        id: op.id.uuidString,
+                        entityType: op.entityType,
+                        entityId: op.entityId,
+                        op: op.op,
+                        patch: op.patch,
+                        baseUpdatedAt: op.baseUpdatedAt,
+                        schemaVersion: op.schemaVersion,
+                        createdAt: op.createdAt
+                    )
                 }
+            )
+
+            do {
+                print("[Sync] Pushing batch of \(batch.count) ops")
+                let response: PushResponse = try await api.post("/v1/sync/push", body: request, timeout: APIClient.Timeout.sync)
+                print("[Sync] Batch succeeded: \(response.applied.count) applied")
+
+                try await db.dbQueue.write { db in
+                    let appliedEntityIds = Set(response.applied.map(\.entityId))
+                    for op in batch where appliedEntityIds.contains(op.entityId) {
+                        _ = try OutboxOp.deleteOne(db, key: op.id)
+                    }
+
+                    if var state = try SyncState.current(in: db) {
+                        state.lastSyncToken = response.lastSyncToken
+                        state.lastPushAt = Date()
+                        try state.update(db)
+                    }
+                }
+            } catch let error as APIClient.APIError {
+                print("[Sync] Batch push failed: \(error)")
+                try await db.dbQueue.write { db in
+                    for var op in batch {
+                        op.attemptCount += 1
+                        op.lastError = "\(error)"
+                        try op.update(db)
+                    }
+                }
+                throw error
             }
-            throw error
         }
     }
 
