@@ -27,35 +27,34 @@ export async function loginWithApple(identityToken: string, fullName?: string) {
     throw { status: 401, error: "invalid_token", message: "Apple identity token is invalid or expired" };
   }
 
-  const appleUserId = payload.sub;
-  if (!appleUserId) {
+  const appleId = payload.sub;
+  if (!appleId) {
     throw { status: 401, error: "invalid_token", message: "Token missing sub claim" };
   }
 
   const email = payload.email as string | undefined;
 
-  // 2. Find or create user
-  let user = await db.select().from(users).where(eq(users.id, appleUserId)).then((r) => r[0]);
+  // 2. Find or create user by Apple ID
+  let user = await db.select().from(users).where(eq(users.appleId, appleId)).then((r) => r[0]);
 
   if (!user) {
     const displayName = fullName || email?.split("@")[0] || "User";
     const result = await db
       .insert(users)
       .values({
-        id: appleUserId,
+        appleId,
         email: email ?? "",
         displayName,
         plan: "free",
       })
-      .onConflictDoNothing()
       .returning();
 
-    user = result[0] ?? await db.select().from(users).where(eq(users.id, appleUserId)).then((r) => r[0]!);
+    user = result[0]!;
   }
 
-  // 3. Issue tokens
-  const accessToken = signAccessToken(appleUserId, email);
-  const refreshToken = signRefreshToken(appleUserId);
+  // 3. Issue tokens using the UUID primary key
+  const accessToken = signAccessToken(user.id, email);
+  const refreshToken = signRefreshToken(user.id);
 
   return {
     accessToken,

@@ -13,10 +13,11 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-// ── Users (Cognito-backed) ──────────────────
+// ── Users ───────────────────────────────────
 export const users = pgTable("users", {
-  id: uuid("id").primaryKey(), // Cognito sub
-  email: text("email").notNull().unique(),
+  id: uuid("id").primaryKey().defaultRandom(),
+  appleId: text("apple_id").unique(), // Apple Sign In sub (e.g. "001758.xxx.0031")
+  email: text("email").notNull().default(""),
   displayName: text("display_name").notNull(),
   bio: text("bio"),
   avatarSystemImage: text("avatar_system_image").notNull().default("person.circle.fill"),

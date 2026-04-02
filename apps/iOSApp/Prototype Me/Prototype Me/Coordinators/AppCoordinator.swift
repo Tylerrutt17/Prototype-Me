@@ -19,10 +19,33 @@ class AppCoordinator: Coordinator {
         let hasCompleted = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
 
         if hasCompleted {
-            showMainApp(animated: false)
+            // Already onboarded — check if signed in
+            if environment.authService.isSignedIn {
+                showMainApp(animated: false)
+            } else {
+                showLogin(animated: false)
+            }
         } else {
-            showOnboarding()
+            showWelcome()
         }
+    }
+
+    // MARK: - Welcome (pre-onboarding)
+
+    private func showWelcome() {
+        let welcomeVC = WelcomeLoginViewController()
+        welcomeVC.authService = environment.authService
+        welcomeVC.onSignedIn = { [weak self] in
+            guard let self else { return }
+            // Signed in with existing account — skip onboarding, go to main app
+            Task { try? await self.environment.syncEngine.sync() }
+            self.showMainApp(animated: true)
+        }
+        welcomeVC.onNewUser = { [weak self] in
+            // New user — go through onboarding
+            self?.showOnboarding()
+        }
+        window.rootViewController = welcomeVC
     }
 
     // MARK: - Onboarding
@@ -32,7 +55,6 @@ class AppCoordinator: Coordinator {
         onboardingCoordinator.onComplete = { [weak self] in
             guard let self else { return }
             self.removeChild(onboardingCoordinator)
-            // After onboarding, show login
             self.showLogin(animated: true)
         }
         addChild(onboardingCoordinator)
