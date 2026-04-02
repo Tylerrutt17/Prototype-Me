@@ -194,7 +194,7 @@ async function processActiveModeOp(userId: string, op: OutboxOp): Promise<void> 
         .values({
           noteId: op.entityId,
           userId,
-          activatedAt: data.activatedAt ?? new Date(),
+          activatedAt: (data.activatedAt as Date | undefined) ?? new Date(),
         })
         .onConflictDoNothing();
       break;
