@@ -142,29 +142,21 @@ final class VoiceInputButton: UIButton {
         }
         self.recognitionRequest = request
 
-        // Record as AAC m4a — small file size, Whisper supports it natively
         let tempDir = FileManager.default.temporaryDirectory
-        let fileURL = tempDir.appendingPathComponent("voice_\(UUID().uuidString).m4a")
+        let fileURL = tempDir.appendingPathComponent("voice_\(UUID().uuidString).wav")
         self.audioFileURL = fileURL
 
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
-        let audioSettings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: 16000,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,
-            AVEncoderBitRateKey: 32000,
-        ]
-        audioFile = try? AVAudioFile(forWriting: fileURL, settings: audioSettings, commonFormat: .pcmFormatFloat32, interleaved: false)
+        // Write in the input node's exact format — no conversion, writes always succeed
+        audioFile = try? AVAudioFile(forWriting: fileURL, settings: recordingFormat.settings)
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             guard let self else { return }
             // Feed to speech recognizer
             request.append(buffer)
 
-            // Write buffer — AVAudioFile converts from recording format to 16kHz mono WAV
             try? self.audioFile?.write(from: buffer)
         }
 

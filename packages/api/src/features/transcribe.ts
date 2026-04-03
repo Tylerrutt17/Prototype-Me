@@ -21,7 +21,7 @@ export async function transcribe(userId: string, audioBase64: string): Promise<{
 
   // Decode base64 audio to a temp file
   const buffer = Buffer.from(audioBase64, "base64");
-  const tmpPath = join(tmpdir(), `whisper-${randomUUID()}.m4a`);
+  const tmpPath = join(tmpdir(), `whisper-${randomUUID()}.wav`);
 
   try {
     writeFileSync(tmpPath, buffer);
