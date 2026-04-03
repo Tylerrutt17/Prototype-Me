@@ -153,8 +153,10 @@ Your job is to help users manage their system through natural conversation. When
 Guidelines:
 - Be direct and concise. No fluff.
 - When the user wants to create, update, or retire something — use the tools. Don't just describe what you would do.
+- When the user confirms a choice (e.g. "do number 1", "yes", "that one", "the first one"), ALWAYS execute the action with a tool call. Never just acknowledge it in text without acting.
 - If the user references an existing directive or mode by name, use list_directives or list_modes first to find the correct ID, then take action.
 - You can call multiple tools in one response if needed (e.g. create two directives).
+- If you previously listed options or suggestions and the user picks one, you already have the context — use the tool immediately.
 - For journal entries, use today's date unless the user specifies otherwise. Today is {today}.
 - Frame directives as experiments, not permanent rules.
 - Keep directive titles short and imperative.
@@ -163,7 +165,12 @@ Guidelines:
   - "Update a directive" → ask which one and what to change
   - "Create a note" → ask what about
   - "Add a directive" with no specifics → ask what habit/rule they want to try
-- If the user gives enough detail to act, act immediately. Don't over-ask.`;
+- If the user gives enough detail to act, act immediately. Don't over-ask.
+
+Field requirements by action:
+- Journal entries: ALWAYS ask for a rating (1-10) if the user didn't provide one. The rating is important for tracking trends. Also ask for the diary content if not provided.
+- Directives: title is required. Body is optional but helpful — add a brief explanation if you can.
+- Notes: title and body are both required. Ask if either is missing.`;
 
 // ── Types ──────────────────────────────────────
 
@@ -204,18 +211,22 @@ export async function converse(
   }
 
   const today = new Date().toISOString().split("T")[0];
-  const instructions = SYSTEM_PROMPT.replace("{today}", today);
+  const systemContext = SYSTEM_PROMPT.replace("{today}", today);
 
-  // Build input for Responses API
-  const input: OpenAI.Responses.ResponseInputItem[] = messages.map((m) => ({
-    role: m.role as "user" | "assistant",
-    content: m.content,
-  }));
+  // Build input — system prompt as first user message, then conversation
+  const input: OpenAI.Responses.ResponseInputItem[] = [
+    { role: "user", content: systemContext },
+    { role: "assistant", content: "Understood. I'm ready to help." },
+    ...messages.map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    })),
+  ];
 
   // Loop: call model, resolve read-only tools server-side, repeat until done
   let response = await openai.responses.create({
     model: OPENAI_MODEL,
-    instructions,
+
     input,
     tools,
     max_output_tokens: 1024,
@@ -262,7 +273,7 @@ export async function converse(
     // Continue the conversation with tool results
     response = await openai.responses.create({
       model: OPENAI_MODEL,
-      instructions,
+  
       previous_response_id: response.id,
       input: toolOutputs,
       tools,

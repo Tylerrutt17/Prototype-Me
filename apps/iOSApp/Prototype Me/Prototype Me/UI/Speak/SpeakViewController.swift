@@ -28,6 +28,19 @@ class SpeakViewController: BaseViewController {
     private let transcribingSpinner = UIActivityIndicatorView(style: .medium)
     private let transcribingLabel = UILabel()
 
+    // MARK: - Pro Voice UI
+
+    private let proContainerView = UIView()
+    private let proMicButton = UIButton(type: .system)
+    private let proStatusLabel = UILabel()
+    private let proResultView = UIView()
+    private let proResultLabel = UILabel()
+    private let proChipsStack = UIStackView()
+    private let proActionCardStack = UIStackView()
+    private let proRecordingGradient = CAGradientLayer()
+    private var proMicCenterY: NSLayoutConstraint!
+    private var isPro: Bool { AuthService.isPro }
+
     // MARK: - State
 
     private var messages: [ChatMessage] = []
@@ -61,18 +74,21 @@ class SpeakViewController: BaseViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        navBar.setTitle("Speak", animated: false)
 
         setupQuota()
-        setupChat()
-        setupInputBar()
-        setupTranscribingBar()
         setupVoiceInput()
-        setupEmptyState()
-        // Bring input bar and transcribing bar above the empty state
-        view.bringSubviewToFront(transcribingBar)
-        view.bringSubviewToFront(inputBar)
-        observeKeyboard()
+
+        if isPro {
+            setupProUI()
+        } else {
+            setupChat()
+            setupInputBar()
+            setupTranscribingBar()
+            setupEmptyState()
+            view.bringSubviewToFront(transcribingBar)
+            view.bringSubviewToFront(inputBar)
+            observeKeyboard()
+        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -83,6 +99,429 @@ class SpeakViewController: BaseViewController {
         recordingGradient.frame = inlineMicButton.bounds
         recordingGradient.cornerRadius = inlineMicButton.bounds.height / 2
         CATransaction.commit()
+    }
+
+    // MARK: - Pro Voice UI
+
+    private func setupProUI() {
+        proContainerView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(proContainerView)
+
+        // ── Big mic button ──
+        var micConfig = UIButton.Configuration.filled()
+        micConfig.image = UIImage(systemName: "mic.fill")
+        micConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 32, weight: .medium)
+        micConfig.baseBackgroundColor = DesignTokens.Colors.accent
+        micConfig.baseForegroundColor = .white
+        micConfig.cornerStyle = .capsule
+        micConfig.contentInsets = NSDirectionalEdgeInsets(top: 28, leading: 28, bottom: 28, trailing: 28)
+        proMicButton.configuration = micConfig
+        proMicButton.translatesAutoresizingMaskIntoConstraints = false
+        proMicButton.clipsToBounds = true
+        proMicButton.addTarget(self, action: #selector(proMicTapped), for: .touchUpInside)
+
+        // Recording gradient
+        proRecordingGradient.colors = [
+            DesignTokens.Colors.destructive.cgColor,
+            DesignTokens.Colors.destructive.withAlphaComponent(0.6).cgColor,
+            UIColor.white.withAlphaComponent(0.3).cgColor,
+            DesignTokens.Colors.destructive.withAlphaComponent(0.6).cgColor,
+            DesignTokens.Colors.destructive.cgColor,
+        ]
+        proRecordingGradient.startPoint = CGPoint(x: 0, y: 0.5)
+        proRecordingGradient.endPoint = CGPoint(x: 1, y: 0.5)
+        proRecordingGradient.locations = [0, 0.3, 0.5, 0.7, 1]
+        proRecordingGradient.opacity = 0
+        proMicButton.layer.insertSublayer(proRecordingGradient, at: 0)
+
+        proContainerView.addSubview(proMicButton)
+
+        // ── Status label (below mic) ──
+        proStatusLabel.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium)
+        proStatusLabel.textColor = DesignTokens.Colors.textTertiary
+        proStatusLabel.textAlignment = .center
+        proStatusLabel.text = "Tap to speak"
+        proStatusLabel.translatesAutoresizingMaskIntoConstraints = false
+        proContainerView.addSubview(proStatusLabel)
+
+        // ── Suggestion chips ──
+        proChipsStack.axis = .vertical
+        proChipsStack.spacing = DesignTokens.Spacing.sm
+        proChipsStack.alignment = .center
+        proChipsStack.translatesAutoresizingMaskIntoConstraints = false
+        proContainerView.addSubview(proChipsStack)
+
+        let suggestions: [(icon: String, text: String)] = [
+            ("plus.circle.fill", "\"Add a directive to meditate daily\""),
+            ("pencil.circle.fill", "\"Update my cold shower directive\""),
+            ("book.fill", "\"Log my journal — today was a great day\""),
+            ("bolt.fill", "\"Switch to my Deep Work mode\""),
+        ]
+        for suggestion in suggestions {
+            let chip = makeProChip(icon: suggestion.icon, text: suggestion.text)
+            proChipsStack.addArrangedSubview(chip)
+        }
+
+        // ── Result area (hidden until response) ──
+        proResultView.translatesAutoresizingMaskIntoConstraints = false
+        proResultView.alpha = 0
+        proContainerView.addSubview(proResultView)
+
+        proResultLabel.font = DesignTokens.Typography.body
+        proResultLabel.textColor = DesignTokens.Colors.textPrimary
+        proResultLabel.numberOfLines = 0
+        proResultLabel.textAlignment = .center
+        proResultLabel.translatesAutoresizingMaskIntoConstraints = false
+        proResultView.addSubview(proResultLabel)
+
+        proActionCardStack.axis = .vertical
+        proActionCardStack.spacing = DesignTokens.Spacing.sm
+        proActionCardStack.alignment = .fill
+        proActionCardStack.translatesAutoresizingMaskIntoConstraints = false
+        proResultView.addSubview(proActionCardStack)
+
+        // ── Layout ──
+        proMicCenterY = proMicButton.centerYAnchor.constraint(equalTo: proContainerView.centerYAnchor, constant: -20)
+
+        NSLayoutConstraint.activate([
+            proContainerView.topAnchor.constraint(equalTo: contentTopAnchor),
+            proContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            proContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            proContainerView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+
+            proMicButton.centerXAnchor.constraint(equalTo: proContainerView.centerXAnchor),
+            proMicCenterY,
+            proMicButton.widthAnchor.constraint(equalToConstant: 88),
+            proMicButton.heightAnchor.constraint(equalToConstant: 88),
+
+            proStatusLabel.topAnchor.constraint(equalTo: proMicButton.bottomAnchor, constant: DesignTokens.Spacing.lg),
+            proStatusLabel.centerXAnchor.constraint(equalTo: proContainerView.centerXAnchor),
+
+            proChipsStack.bottomAnchor.constraint(equalTo: proContainerView.bottomAnchor, constant: -DesignTokens.Spacing.xl),
+            proChipsStack.centerXAnchor.constraint(equalTo: proContainerView.centerXAnchor),
+            proChipsStack.leadingAnchor.constraint(greaterThanOrEqualTo: proContainerView.leadingAnchor, constant: DesignTokens.Spacing.xl),
+            proChipsStack.trailingAnchor.constraint(lessThanOrEqualTo: proContainerView.trailingAnchor, constant: -DesignTokens.Spacing.xl),
+
+            proResultView.topAnchor.constraint(equalTo: contentTopAnchor, constant: DesignTokens.Spacing.xl),
+            proResultView.leadingAnchor.constraint(equalTo: proContainerView.leadingAnchor, constant: DesignTokens.Spacing.xl),
+            proResultView.trailingAnchor.constraint(equalTo: proContainerView.trailingAnchor, constant: -DesignTokens.Spacing.xl),
+
+            proResultLabel.topAnchor.constraint(equalTo: proResultView.topAnchor),
+            proResultLabel.leadingAnchor.constraint(equalTo: proResultView.leadingAnchor),
+            proResultLabel.trailingAnchor.constraint(equalTo: proResultView.trailingAnchor),
+
+            proActionCardStack.topAnchor.constraint(equalTo: proResultLabel.bottomAnchor, constant: DesignTokens.Spacing.md),
+            proActionCardStack.leadingAnchor.constraint(equalTo: proResultView.leadingAnchor),
+            proActionCardStack.trailingAnchor.constraint(equalTo: proResultView.trailingAnchor),
+            proActionCardStack.bottomAnchor.constraint(equalTo: proResultView.bottomAnchor),
+        ])
+    }
+
+    private func makeProChip(icon: String, text: String) -> UIView {
+        let pill = UIView()
+        pill.backgroundColor = DesignTokens.Colors.surfaceSecondary.withAlphaComponent(0.6)
+        pill.layer.cornerRadius = DesignTokens.Radii.md
+
+        let iconConfig = UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        let iconView = UIImageView(image: UIImage(systemName: icon, withConfiguration: iconConfig))
+        iconView.tintColor = DesignTokens.Colors.accent
+        iconView.contentMode = .scaleAspectFit
+
+        let label = UILabel()
+        label.text = text
+        label.font = DesignTokens.Typography.rounded(style: .caption1, weight: .medium)
+        label.textColor = DesignTokens.Colors.textSecondary
+        label.numberOfLines = 1
+
+        let stack = UIStackView(arrangedSubviews: [iconView, label])
+        stack.axis = .horizontal
+        stack.spacing = DesignTokens.Spacing.sm
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        pill.addSubview(stack)
+
+        let inset = DesignTokens.Spacing.md
+        NSLayoutConstraint.activate([
+            iconView.widthAnchor.constraint(equalToConstant: 18),
+            stack.topAnchor.constraint(equalTo: pill.topAnchor, constant: inset),
+            stack.bottomAnchor.constraint(equalTo: pill.bottomAnchor, constant: -inset),
+            stack.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: inset),
+            stack.trailingAnchor.constraint(equalTo: pill.trailingAnchor, constant: -inset),
+        ])
+        return pill
+    }
+
+    // MARK: - Pro Actions
+
+    @objc private func proMicTapped() {
+        if micButton.isRecording {
+            // Check minimum recording duration
+            if let start = recordingStartTime, Date().timeIntervalSince(start) < 1.0 {
+                micButton.toggleStatus()
+                isRecording = false
+                proSetState(.idle)
+                micButton.cleanupAudioFile()
+                return
+            }
+            micButton.toggleStatus()
+            isRecording = false
+            proSetState(.transcribing)
+        } else {
+            // Clear previous result
+            proResultView.alpha = 0
+            proResultLabel.text = nil
+            proActionCardStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+
+            recordingStartTime = Date()
+            micButton.toggleStatus()
+            isRecording = true
+            proSetState(.recording)
+        }
+    }
+
+    private enum ProState {
+        case idle, recording, transcribing, thinking, result
+    }
+
+    private func proSetState(_ state: ProState) {
+        switch state {
+        case .idle:
+            proStatusLabel.text = "Tap to speak"
+            proStatusLabel.textColor = DesignTokens.Colors.textTertiary
+            proMicButton.isEnabled = true
+            updateProMicAppearance(recording: false)
+            // Animate mic back to center
+            UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0, options: []) {
+                self.proMicCenterY.constant = -20
+                self.proChipsStack.alpha = 1
+                self.view.layoutIfNeeded()
+            }
+
+        case .recording:
+            proStatusLabel.text = "Listening..."
+            proStatusLabel.textColor = DesignTokens.Colors.destructive
+            updateProMicAppearance(recording: true)
+            // Fade out chips
+            UIView.animate(withDuration: 0.2) {
+                self.proChipsStack.alpha = 0
+                self.proResultView.alpha = 0
+            }
+
+        case .transcribing:
+            proStatusLabel.text = "Transcribing..."
+            proStatusLabel.textColor = DesignTokens.Colors.accent
+            proMicButton.isEnabled = false
+            updateProMicAppearance(recording: false)
+
+        case .thinking:
+            proStatusLabel.text = "Thinking..."
+            proStatusLabel.textColor = DesignTokens.Colors.accent
+            proMicButton.isEnabled = false
+
+        case .result:
+            proStatusLabel.text = "Tap to speak again"
+            proStatusLabel.textColor = DesignTokens.Colors.textTertiary
+            proMicButton.isEnabled = true
+            // Move mic down, show result
+            UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0, options: []) {
+                self.proMicCenterY.constant = self.proContainerView.bounds.height * 0.3
+                self.proResultView.alpha = 1
+                self.view.layoutIfNeeded()
+            }
+        }
+    }
+
+    private func updateProMicAppearance(recording: Bool) {
+        var config = proMicButton.configuration ?? .filled()
+        proMicButton.layoutIfNeeded()
+        proRecordingGradient.frame = proMicButton.bounds
+        proRecordingGradient.cornerRadius = proMicButton.bounds.height / 2
+
+        if recording {
+            config.baseBackgroundColor = .clear
+            config.image = UIImage(systemName: "stop.fill")
+            proRecordingGradient.opacity = 1
+            let sweep = CABasicAnimation(keyPath: "locations")
+            sweep.fromValue = [-0.5, -0.2, 0.0, 0.2, 0.5]
+            sweep.toValue = [0.5, 0.8, 1.0, 1.2, 1.5]
+            sweep.duration = 1.5
+            sweep.repeatCount = .infinity
+            sweep.autoreverses = true
+            sweep.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            proRecordingGradient.add(sweep, forKey: "sweep")
+        } else {
+            config.baseBackgroundColor = DesignTokens.Colors.accent
+            config.image = UIImage(systemName: "mic.fill")
+            proRecordingGradient.removeAllAnimations()
+            proRecordingGradient.opacity = 0
+        }
+        proMicButton.configuration = config
+    }
+
+    /// Pro voice flow: transcription completes → auto-send to AI
+    private func proHandleTranscription(_ text: String) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            proSetState(.idle)
+            return
+        }
+        proSetState(.thinking)
+        proSendMessage(text)
+    }
+
+    private func proSendMessage(_ text: String) {
+        // Keep a minimal history for context
+        messages.append(ChatMessage(role: .user, text: text))
+
+        Task {
+            do {
+                guard let apiClient else { throw NSError(domain: "Speak", code: 0) }
+
+                let conversationMessages: [[String: String]] = self.messages.compactMap { msg in
+                    switch msg.role {
+                    case .user:
+                        return ["role": "user", "content": msg.text]
+                    case .assistant:
+                        return ["role": "assistant", "content": msg.text]
+                    case .system where msg.text.contains("✓"):
+                        return ["role": "assistant", "content": msg.text]
+                    case .system, .pendingActions:
+                        return nil
+                    }
+                }
+
+                let response: ConverseResponse = try await apiClient.post(
+                    "/v1/ai/converse",
+                    body: ["messages": conversationMessages],
+                    timeout: APIClient.Timeout.ai
+                )
+
+                await MainActor.run {
+                    self.quotaLabel.text = "\(response.remainingQuota) AI left"
+
+                    if !response.toolCalls.isEmpty {
+                        let pending = response.toolCalls.map {
+                            PendingToolCall(id: $0.id, function: $0.function, arguments: $0.arguments)
+                        }
+
+                        if self.autoApprove {
+                            // Auto-execute
+                            Task {
+                                var results: [String] = []
+                                for tc in pending {
+                                    let result = await self.executeToolCall(tc)
+                                    results.append(result)
+                                }
+                                await MainActor.run {
+                                    let actionsText = results.map { "✓ \($0)" }.joined(separator: "\n")
+                                    self.messages.append(ChatMessage(role: .system, text: actionsText))
+                                    self.proShowResult(
+                                        message: response.message,
+                                        actions: results.map { "✓ \($0)" }
+                                    )
+                                }
+                            }
+                        } else {
+                            // Show for approval
+                            self.proShowPendingActions(
+                                pending: pending,
+                                message: response.message
+                            )
+                        }
+                    } else if !response.message.isEmpty {
+                        self.messages.append(ChatMessage(role: .assistant, text: response.message))
+                        self.proShowResult(message: response.message, actions: [])
+                    } else {
+                        self.proSetState(.idle)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.proShowResult(message: "Something went wrong. Try again.", actions: [])
+                }
+            }
+        }
+    }
+
+    private func proShowResult(message: String, actions: [String]) {
+        proResultLabel.text = message.isEmpty ? nil : message
+        proActionCardStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+
+        for action in actions {
+            let label = UILabel()
+            label.text = action
+            label.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium)
+            label.textColor = action.hasPrefix("✓") ? DesignTokens.Colors.accent : DesignTokens.Colors.textPrimary
+            label.numberOfLines = 0
+            proActionCardStack.addArrangedSubview(label)
+        }
+
+        proSetState(.result)
+    }
+
+    private func proShowPendingActions(pending: [PendingToolCall], message: String) {
+        proResultLabel.text = message.isEmpty ? nil : message
+        proActionCardStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+
+        // Action descriptions
+        for tc in pending {
+            let label = UILabel()
+            label.text = "• \(describeToolCall(tc))"
+            label.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium)
+            label.textColor = DesignTokens.Colors.textPrimary
+            label.numberOfLines = 0
+            proActionCardStack.addArrangedSubview(label)
+        }
+
+        // Approve / Dismiss buttons
+        let approveBtn = UIButton(type: .system)
+        var approveConfig = UIButton.Configuration.filled()
+        approveConfig.title = "Approve"
+        approveConfig.baseBackgroundColor = DesignTokens.Colors.accent
+        approveConfig.baseForegroundColor = .white
+        approveConfig.cornerStyle = .capsule
+        approveConfig.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 24, bottom: 10, trailing: 24)
+        approveConfig.titleTextAttributesTransformer = .init { c in
+            var c = c; c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold); return c
+        }
+        approveBtn.configuration = approveConfig
+
+        let dismissBtn = UIButton(type: .system)
+        var dismissConfig = UIButton.Configuration.plain()
+        dismissConfig.title = "Dismiss"
+        dismissConfig.baseForegroundColor = DesignTokens.Colors.textTertiary
+        dismissConfig.titleTextAttributesTransformer = .init { c in
+            var c = c; c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium); return c
+        }
+        dismissBtn.configuration = dismissConfig
+
+        let buttonStack = UIStackView(arrangedSubviews: [approveBtn, dismissBtn])
+        buttonStack.axis = .horizontal
+        buttonStack.spacing = DesignTokens.Spacing.sm
+
+        let capturedPending = pending
+        approveBtn.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            buttonStack.removeFromSuperview()
+            Task {
+                var results: [String] = []
+                for tc in capturedPending {
+                    let result = await self.executeToolCall(tc)
+                    results.append(result)
+                }
+                await MainActor.run {
+                    let actionsText = results.map { "✓ \($0)" }.joined(separator: "\n")
+                    self.messages.append(ChatMessage(role: .system, text: actionsText))
+                    self.proShowResult(message: message, actions: results.map { "✓ \($0)" })
+                }
+            }
+        }, for: .touchUpInside)
+
+        dismissBtn.addAction(UIAction { [weak self] _ in
+            self?.proSetState(.idle)
+        }, for: .touchUpInside)
+
+        proActionCardStack.addArrangedSubview(buttonStack)
+        proSetState(.result)
     }
 
     // MARK: - Header
@@ -442,13 +881,13 @@ class SpeakViewController: BaseViewController {
             separator.trailingAnchor.constraint(equalTo: inputBar.trailingAnchor),
             separator.heightAnchor.constraint(equalToConstant: 0.5),
 
-            // Toolbar row
+            // Toolbar row (pro only)
             toolbarRow.topAnchor.constraint(equalTo: inputBar.topAnchor, constant: DesignTokens.Spacing.sm),
             toolbarRow.leadingAnchor.constraint(equalTo: inputBar.leadingAnchor, constant: DesignTokens.Spacing.md),
             toolbarRow.trailingAnchor.constraint(equalTo: inputBar.trailingAnchor, constant: -DesignTokens.Spacing.md),
 
             // Text field row
-            fieldContainer.topAnchor.constraint(equalTo: toolbarRow.bottomAnchor, constant: DesignTokens.Spacing.sm),
+            fieldContainer.topAnchor.constraint(equalTo: AuthService.isPro ? toolbarRow.bottomAnchor : inputBar.topAnchor, constant: DesignTokens.Spacing.sm),
             fieldContainer.leadingAnchor.constraint(equalTo: inputBar.leadingAnchor, constant: DesignTokens.Spacing.md),
             fieldContainer.trailingAnchor.constraint(equalTo: inputBar.trailingAnchor, constant: -DesignTokens.Spacing.md),
             fieldContainer.bottomAnchor.constraint(equalTo: inputBar.safeAreaLayoutGuide.bottomAnchor, constant: -DesignTokens.Spacing.sm),
@@ -472,6 +911,11 @@ class SpeakViewController: BaseViewController {
             sendButton.widthAnchor.constraint(equalToConstant: 34),
             sendButton.heightAnchor.constraint(equalToConstant: 34),
         ])
+
+        // Non-pro: hide voice toolbar entirely
+        if !AuthService.isPro {
+            toolbarRow.isHidden = true
+        }
     }
 
     // MARK: - Transcribing Bar
@@ -529,25 +973,30 @@ class SpeakViewController: BaseViewController {
 
         micButton.onTranscription = { [weak self] text in
             guard let self else { return }
-            if !AuthService.isPro {
+            if !self.isPro {
                 self.finishVoiceInput(text: text)
             }
         }
         micButton.onPartialResult = { [weak self] text in
-            guard !AuthService.isPro else { return }
-            self?.textView.text = text
-            self?.placeholderLabel.isHidden = !text.isEmpty
-            self?.updateTextViewHeight()
+            guard let self, !self.isPro else { return }
+            self.textView.text = text
+            self.placeholderLabel.isHidden = !text.isEmpty
+            self.updateTextViewHeight()
         }
         micButton.onAudioRecorded = { [weak self] fileURL in
-            guard let self, AuthService.isPro else { return }
+            guard let self, self.isPro else { return }
             self.transcribeWithWhisper(fileURL: fileURL)
         }
         micButton.onError = { [weak self] message in
-            self?.updateMicAppearance(recording: false)
+            guard let self else { return }
+            if self.isPro {
+                self.proSetState(.idle)
+            } else {
+                self.updateMicAppearance(recording: false)
+            }
             let alert = UIAlertController(title: "Voice Input", message: message, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "OK", style: .default))
-            self?.present(alert, animated: true)
+            self.present(alert, animated: true)
         }
     }
 
@@ -859,9 +1308,13 @@ class SpeakViewController: BaseViewController {
     }
 
     private func transcribeWithWhisper(fileURL: URL) {
-        updateMicAppearance(recording: false)
-        showTranscribing()
-        updateControlsForProcessing()
+        if isPro {
+            // Pro flow — state is already set to .transcribing by proMicTapped
+        } else {
+            updateMicAppearance(recording: false)
+            showTranscribing()
+            updateControlsForProcessing()
+        }
 
         Task {
             do {
@@ -878,25 +1331,33 @@ class SpeakViewController: BaseViewController {
                 )
 
                 await MainActor.run {
-                    self.hideTranscribing()
                     self.micButton.cleanupAudioFile()
-                    if !response.text.isEmpty {
-                        self.textView.text = response.text
-                        self.placeholderLabel.isHidden = true
-                        self.updateTextViewHeight()
-                        self.updateClearButton()
-                        self.sendButton.alpha = 1.0
-                        self.updateControlsForProcessing()
+                    if self.isPro {
+                        // Pro: auto-send to AI
+                        self.proHandleTranscription(response.text)
                     } else {
+                        // Free: drop text into input field
+                        self.hideTranscribing()
+                        if !response.text.isEmpty {
+                            self.textView.text = response.text
+                            self.placeholderLabel.isHidden = true
+                            self.updateTextViewHeight()
+                            self.updateClearButton()
+                            self.sendButton.alpha = 1.0
+                        }
                         self.updateControlsForProcessing()
                     }
                 }
             } catch {
                 print("[Speak] Transcribe failed: \(error.localizedDescription)")
                 await MainActor.run {
-                    self.hideTranscribing()
                     self.micButton.cleanupAudioFile()
-                    self.updateControlsForProcessing()
+                    if self.isPro {
+                        self.proSetState(.idle)
+                    } else {
+                        self.hideTranscribing()
+                        self.updateControlsForProcessing()
+                    }
                 }
             }
         }
@@ -1112,7 +1573,10 @@ extension SpeakViewController: UITextViewDelegate {
     private func updateClearButton() {
         let hasText = !textView.text.isEmpty
         clearButton.isHidden = !hasText
-        toolbarRow.isHidden = hasText
+        // Only toggle toolbar for pro users (non-pro always has it hidden)
+        if AuthService.isPro {
+            toolbarRow.isHidden = hasText
+        }
         textViewLeadingDefault.isActive = !hasText
         textViewLeadingWithClear.isActive = hasText
         UIView.animate(withDuration: 0.15) {
