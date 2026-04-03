@@ -29,7 +29,6 @@ class FocusViewController: BaseViewController {
 
     private static let maxInlineBalloons = 4
     var onReplayOnboardingTapped: (() -> Void)?
-    var onAITapped: (() -> Void)?
 
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<FocusSection, FocusItem>!
@@ -57,7 +56,6 @@ class FocusViewController: BaseViewController {
         configureCollectionView()
         configureDataSource()
         loadData()
-        addAIButton()
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(appDidBecomeActive),
@@ -542,32 +540,6 @@ class FocusViewController: BaseViewController {
     }
 
     // MARK: - Floating AI Button (placeholder)
-
-    private func addAIButton() {
-        let button = UIButton(type: .system)
-        var config = UIButton.Configuration.filled()
-        config.image = UIImage(systemName: "sparkle")
-        config.cornerStyle = .capsule
-        config.baseBackgroundColor = DesignTokens.Colors.accent
-        config.baseForegroundColor = DesignTokens.Colors.textPrimary
-        config.contentInsets = NSDirectionalEdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16)
-        button.configuration = config
-        button.translatesAutoresizingMaskIntoConstraints = false
-        DesignTokens.Shadows.apply(to: button.layer, elevation: .high)
-        button.addTarget(self, action: #selector(aiButtonTapped), for: .touchUpInside)
-        view.addSubview(button)
-
-        NSLayoutConstraint.activate([
-            button.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.xl),
-            button.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -DesignTokens.Spacing.lg),
-            button.widthAnchor.constraint(equalToConstant: 56),
-            button.heightAnchor.constraint(equalToConstant: 56),
-        ])
-    }
-
-    @objc private func aiButtonTapped() {
-        onAITapped?()
-    }
 
     private func toggleScheduleRule(_ rule: ScheduleRule) {
         let fmt = DateFormatter()

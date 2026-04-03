@@ -22,7 +22,7 @@ import { deviceRoutes } from "./routes/devices.js";
 import { authRoutes } from "./routes/auth.js";
 import { cleanupRoutes } from "./routes/cleanup.js";
 
-const app = Fastify({ logger: true });
+const app = Fastify({ logger: true, bodyLimit: 5 * 1024 * 1024 }); // 5MB for base64 audio uploads
 
 // ── Plugins ─────────────────────────────────
 await app.register(cors, { origin: true });

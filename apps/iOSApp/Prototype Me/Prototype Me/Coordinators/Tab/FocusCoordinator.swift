@@ -37,9 +37,6 @@ class FocusCoordinator: Coordinator {
         vc.onPickModesTapped = { [weak self] in
             self?.presentActiveModePicker()
         }
-        vc.onAITapped = { [weak self] in
-            self?.presentAIPanel()
-        }
         vc.onReplayOnboardingTapped = { [weak self] in
             self?.presentOnboardingPreview()
         }
@@ -124,55 +121,6 @@ class FocusCoordinator: Coordinator {
         }
         let nav = UINavigationController(rootViewController: picker)
         navigationController.present(nav, animated: true)
-    }
-
-    // MARK: - AI Panel
-
-    private func presentAIPanel() {
-        let panel = AIPanelViewController()
-        panel.apiClient = environment.apiClient
-        panel.isPro = AuthService.isPro
-        panel.initialQuota = UsageQuota(dailyLimit: panel.isPro ? 100 : 5, dailyUsed: 0, resetAt: Date())
-        // Fetch real quota async
-        Task {
-            if let quota: UsageQuota = try? await environment.apiClient.get("/v1/usage") {
-                await MainActor.run { panel.initialQuota = quota }
-            }
-        }
-        panel.onChipSelected = { [weak self] chip in
-            self?.presentChipConfirm(chip: chip)
-        }
-        panel.onUpgradeTapped = { [weak self] in
-            self?.navigationController.dismiss(animated: true) {
-                self?.presentPaywall()
-            }
-        }
-        panel.onDismissed = { [weak self] in
-            _ = self // Dismiss tracking — will wire to service layer later
-        }
-
-        // Present as page sheet with medium detent
-        if let sheet = panel.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = false // custom grabber in VC
-            sheet.preferredCornerRadius = DesignTokens.Radii.xl
-        }
-        navigationController.present(panel, animated: true)
-    }
-
-    private func presentChipConfirm(chip: AiChip) {
-        let vc = ChipConfirmViewController()
-        vc.chip = chip
-        vc.onConfirm = { [weak self] acceptedChip in
-            // Will wire to service layer later to create/update entities
-            _ = acceptedChip
-            self?.navigationController.dismiss(animated: true)
-        }
-        vc.onCancel = { [weak self] in
-            self?.navigationController.dismiss(animated: true)
-        }
-        let nav = UINavigationController(rootViewController: vc)
-        navigationController.presentedViewController?.present(nav, animated: true)
     }
 
     private func presentPaywall() {

@@ -28,9 +28,13 @@ final class VoiceInputButton: UIButton {
     private var recognitionTask: SFSpeechRecognitionTask?
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
 
-    /// Audio file recorder (records .m4a alongside speech recognition)
+    /// Audio file recorder (records .wav alongside speech recognition)
     private var audioFileURL: URL?
     private var audioFile: AVAudioFile?
+
+    /// Max recording duration
+    private static let maxDuration: TimeInterval = 60
+    private var maxDurationTimer: Timer?
 
     private let pulseLayer = CAShapeLayer()
     private var pulseAnimation: CABasicAnimation?
@@ -138,7 +142,7 @@ final class VoiceInputButton: UIButton {
         }
         self.recognitionRequest = request
 
-        // Set up audio file for recording
+        // Record as AAC m4a — small file size, Whisper supports it natively
         let tempDir = FileManager.default.temporaryDirectory
         let fileURL = tempDir.appendingPathComponent("voice_\(UUID().uuidString).m4a")
         self.audioFileURL = fileURL
@@ -146,20 +150,22 @@ final class VoiceInputButton: UIButton {
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
-        // Create audio file for writing
         let audioSettings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: recordingFormat.sampleRate,
-            AVNumberOfChannelsKey: recordingFormat.channelCount,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+            AVSampleRateKey: 16000,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,
+            AVEncoderBitRateKey: 32000,
         ]
-        audioFile = try? AVAudioFile(forWriting: fileURL, settings: audioSettings, commonFormat: recordingFormat.commonFormat, interleaved: recordingFormat.isInterleaved)
+        audioFile = try? AVAudioFile(forWriting: fileURL, settings: audioSettings, commonFormat: .pcmFormatFloat32, interleaved: false)
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            guard let self else { return }
             // Feed to speech recognizer
             request.append(buffer)
-            // Write to file
-            try? self?.audioFile?.write(from: buffer)
+
+            // Write buffer — AVAudioFile converts from recording format to 16kHz mono WAV
+            try? self.audioFile?.write(from: buffer)
         }
 
         recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
@@ -189,11 +195,21 @@ final class VoiceInputButton: UIButton {
 
         isRecording = true
         updateAppearance()
+
+        // Max duration timer — auto-stop after 60 seconds
+        maxDurationTimer = Timer.scheduledTimer(withTimeInterval: Self.maxDuration, repeats: false) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.stopRecording()
+            }
+        }
     }
 
     private func stopRecording() {
         guard isRecording else { return }
         isRecording = false
+
+        maxDurationTimer?.invalidate()
+        maxDurationTimer = nil
 
         audioEngine?.stop()
         audioEngine?.inputNode.removeTap(onBus: 0)

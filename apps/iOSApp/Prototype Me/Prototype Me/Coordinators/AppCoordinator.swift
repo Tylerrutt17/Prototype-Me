@@ -122,6 +122,7 @@ class AppCoordinator: Coordinator {
         let focusCoordinator = FocusCoordinator(environment: environment)
         self.focusCoordinator = focusCoordinator
         let notesCoordinator = NotesCoordinator(environment: environment)
+        let speakCoordinator = SpeakCoordinator(environment: environment)
         let journalCoordinator = JournalCoordinator(environment: environment)
         let settingsCoordinator = SettingsCoordinator(environment: environment)
 
@@ -135,6 +136,7 @@ class AppCoordinator: Coordinator {
         let coordinators: [Coordinator] = [
             focusCoordinator,
             notesCoordinator,
+            speakCoordinator,
             journalCoordinator,
             settingsCoordinator
         ]
@@ -147,6 +149,7 @@ class AppCoordinator: Coordinator {
         tabBarController.viewControllers = [
             focusCoordinator.navigationController,
             notesCoordinator.navigationController,
+            speakCoordinator.navigationController,
             journalCoordinator.navigationController,
             settingsCoordinator.navigationController
         ]
