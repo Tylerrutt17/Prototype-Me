@@ -108,7 +108,7 @@ cron.schedule("0 3 * * *", async () => {
     const result = await purgeExpired();
     app.log.info(`[Cleanup] Purged ${result.syncOpLogsDeleted} op logs, ${result.tombstonesDeleted} tombstones`);
   } catch (err) {
-    app.log.error("[Cleanup] Failed:", err);
+    app.log.error("[Cleanup] Failed: %s", err);
   }
 });
 

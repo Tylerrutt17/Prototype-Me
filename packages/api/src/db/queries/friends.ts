@@ -30,7 +30,7 @@ export function insertRequest(requesterId: string, addresseeId: string) {
 }
 
 export function updateStatus(id: string, status: string) {
-  return db.update(friendship).set({ status }).where(eq(friendship.id, id)).returning().then((r) => r[0]);
+  return db.update(friendship).set({ status: status as "pending" | "accepted" | "declined" }).where(eq(friendship.id, id)).returning().then((r) => r[0]);
 }
 
 export function remove(id: string) {

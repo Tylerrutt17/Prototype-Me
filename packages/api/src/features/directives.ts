@@ -16,6 +16,7 @@ export async function createDirective(userId: string, data: {
 }) {
   const result = await directiveQueries.insert(userId, {
     ...data,
+    status: data.status as "active" | "archived",
     balloonSnapshotSec: data.balloonDurationSec ?? 0,
     snoozedUntil: data.snoozedUntil ? new Date(data.snoozedUntil) : null,
   });

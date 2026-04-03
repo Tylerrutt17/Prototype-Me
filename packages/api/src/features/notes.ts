@@ -11,7 +11,7 @@ export async function getNote(userId: string, id: string) {
 }
 
 export async function createNote(userId: string, data: { id?: string; title: string; body: string; kind: string; folderId?: string | null; sortIndex?: number }) {
-  return noteQueries.insert(userId, data);
+  return noteQueries.insert(userId, { ...data, kind: data.kind as "regular" | "mode" | "framework" | "situation" | "goal" });
 }
 
 export async function updateNote(userId: string, id: string, data: { title?: string; body?: string; kind?: string; folderId?: string | null; sortIndex?: number; version: number }) {
@@ -20,7 +20,7 @@ export async function updateNote(userId: string, id: string, data: { title?: str
   if (existing.version !== data.version) throw { status: 409, error: "version_conflict", message: "Version mismatch" };
 
   const { version: _, ...updates } = data;
-  return noteQueries.update(userId, id, { ...updates, version: existing.version + 1 });
+  return noteQueries.update(userId, id, { ...updates, kind: updates.kind as "regular" | "mode" | "framework" | "situation" | "goal" | undefined, version: existing.version + 1 });
 }
 
 export async function deleteNote(userId: string, id: string) {

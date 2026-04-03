@@ -4,7 +4,7 @@ import { notePage } from "../schema.js";
 
 export function findAll(userId: string, filters?: { kind?: string; folderId?: string }) {
   const conditions = [eq(notePage.userId, userId)];
-  if (filters?.kind) conditions.push(eq(notePage.kind, filters.kind));
+  if (filters?.kind) conditions.push(eq(notePage.kind, filters.kind as "regular" | "mode" | "framework" | "situation" | "goal"));
   if (filters?.folderId) conditions.push(eq(notePage.folderId, filters.folderId));
   return db.select().from(notePage).where(and(...conditions)).orderBy(notePage.sortIndex);
 }

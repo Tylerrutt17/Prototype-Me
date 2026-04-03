@@ -25,7 +25,7 @@ export function findInstancesByDate(userId: string, date: string) {
 export function updateInstance(userId: string, id: string, status: string) {
   return db
     .update(scheduleInstance)
-    .set({ status })
+    .set({ status: status as "pending" | "done" | "skipped" })
     .where(and(eq(scheduleInstance.id, id), eq(scheduleInstance.userId, userId)))
     .returning()
     .then((r) => r[0]);
