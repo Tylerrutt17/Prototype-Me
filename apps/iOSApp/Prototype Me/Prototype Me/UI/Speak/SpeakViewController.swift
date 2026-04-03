@@ -10,6 +10,7 @@ class SpeakViewController: BaseViewController {
     var noteService: NoteService?
     var dayEntryService: DayEntryService?
     var modeService: ModeService?
+    var folderService: FolderService?
     var onUpgradeTapped: (() -> Void)?
 
     // MARK: - UI
@@ -626,7 +627,15 @@ class SpeakViewController: BaseViewController {
     }
 
     private func proShowResult(message: String, actions: [String]) {
-        proResultLabel.text = message.isEmpty ? nil : message
+        if message.isEmpty {
+            proResultLabel.attributedText = nil
+        } else if var attributed = try? AttributedString(markdown: message, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            attributed.foregroundColor = DesignTokens.Colors.textPrimary
+            attributed.font = DesignTokens.Typography.body
+            proResultLabel.attributedText = NSAttributedString(attributed)
+        } else {
+            proResultLabel.text = message
+        }
         proActionCardStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
         for action in actions {
@@ -642,7 +651,15 @@ class SpeakViewController: BaseViewController {
     }
 
     private func proShowPendingActions(pending: [PendingToolCall], message: String) {
-        proResultLabel.text = message.isEmpty ? nil : message
+        if message.isEmpty {
+            proResultLabel.attributedText = nil
+        } else if var attributed = try? AttributedString(markdown: message, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            attributed.foregroundColor = DesignTokens.Colors.textPrimary
+            attributed.font = DesignTokens.Typography.body
+            proResultLabel.attributedText = NSAttributedString(attributed)
+        } else {
+            proResultLabel.text = message
+        }
         proActionCardStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
         // Action descriptions
@@ -1294,6 +1311,8 @@ class SpeakViewController: BaseViewController {
             return "Deactivate mode"
         case "update_note":
             return "Update note: \(args["title"] as? String ?? args["id"] as? String ?? "unknown")"
+        case "rename_folder":
+            return "Rename folder to: \(args["name"] as? String ?? "unknown")"
         default:
             return toolCall.function
         }
@@ -1405,6 +1424,17 @@ class SpeakViewController: BaseViewController {
                 if let body = toolCall.arguments["body"] as? String { note.body = body }
                 try await noteService?.update(note)
                 return "Updated note: \(note.title)"
+
+            case "rename_folder":
+                guard let idString = toolCall.arguments["id"] as? String,
+                      let id = UUID(uuidString: idString),
+                      var folder = try await folderService?.fetch(id: id) else {
+                    return "Could not find folder to rename"
+                }
+                let newName = toolCall.arguments["name"] as? String ?? folder.name
+                folder.name = newName
+                try await folderService?.update(folder)
+                return "Renamed folder to: \(newName)"
 
             default:
                 return "Unknown action: \(toolCall.function)"
@@ -1728,7 +1758,14 @@ private final class ChatBubbleCell: UITableViewCell {
             break // Handled by ActionConfirmCell
         }
 
-        messageLabel.text = message.text
+        // Render markdown (bold/italic) if possible, fall back to plain text
+        if var attributed = try? AttributedString(markdown: message.text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            attributed.foregroundColor = messageLabel.textColor
+            attributed.font = messageLabel.font
+            messageLabel.attributedText = NSAttributedString(attributed)
+        } else {
+            messageLabel.text = message.text
+        }
     }
 }
 

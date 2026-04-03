@@ -5,6 +5,7 @@ import * as directiveQueries from "../db/queries/directives.js";
 import * as noteQueries from "../db/queries/notes.js";
 import * as modeQueries from "../db/queries/modes.js";
 import * as dayEntryQueries from "../db/queries/dayEntries.js";
+import * as folderQueries from "../db/queries/folders.js";
 import type OpenAI from "openai";
 
 // ── Quota ──────────────────────────────────────
@@ -183,6 +184,30 @@ const tools: OpenAI.Responses.Tool[] = [
       required: ["id"],
     },
   },
+  {
+    type: "function",
+    strict: false,
+    name: "list_folders",
+    description: "List the user's folders. Use to look up folder IDs before renaming.",
+    parameters: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    type: "function",
+    strict: false,
+    name: "rename_folder",
+    description: "Rename an existing folder. Use list_folders first to find the ID.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The UUID of the folder to rename." },
+        name: { type: "string", description: "The new folder name." },
+      },
+      required: ["id", "name"],
+    },
+  },
 ];
 
 // ── System Prompt ──────────────────────────────
@@ -243,7 +268,7 @@ export interface ConverseResult {
 
 // ── Converse ───────────────────────────────────
 
-const READ_TOOLS = new Set(["list_directives", "list_modes", "get_journal_entry", "list_notes"]);
+const READ_TOOLS = new Set(["list_directives", "list_modes", "get_journal_entry", "list_notes", "list_folders"]);
 const MAX_TOOL_ROUNDS = 3;
 
 export async function converse(
@@ -390,6 +415,16 @@ async function executeReadCall(userId: string, name: string, argsJson: string): 
         title: n.title,
         body: n.body,
         kind: n.kind,
+      })),
+    );
+  }
+
+  if (name === "list_folders") {
+    const folders = await folderQueries.findAll(userId);
+    return JSON.stringify(
+      folders.map((f: Record<string, unknown>) => ({
+        id: f.id,
+        name: f.name,
       })),
     );
   }

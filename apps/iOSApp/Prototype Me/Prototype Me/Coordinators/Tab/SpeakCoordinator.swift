@@ -23,6 +23,7 @@ class SpeakCoordinator: Coordinator {
         vc.noteService = environment.noteService
         vc.dayEntryService = environment.dayEntryService
         vc.modeService = environment.modeService
+        vc.folderService = environment.folderService
         vc.dbQueue = environment.db.dbQueue
         vc.onUpgradeTapped = { [weak self] in
             self?.presentPaywall()
