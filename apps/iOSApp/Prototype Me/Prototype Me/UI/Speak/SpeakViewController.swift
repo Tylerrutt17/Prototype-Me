@@ -7,6 +7,9 @@ class SpeakViewController: BaseViewController {
 
     var apiClient: APIClient?
     var directiveService: DirectiveService?
+    var noteService: NoteService?
+    var dayEntryService: DayEntryService?
+    var modeService: ModeService?
     var onUpgradeTapped: (() -> Void)?
 
     // MARK: - UI
@@ -397,7 +400,7 @@ class SpeakViewController: BaseViewController {
             placeholderLabel.centerYAnchor.constraint(equalTo: fieldContainer.centerYAnchor),
 
             sendButton.trailingAnchor.constraint(equalTo: fieldContainer.trailingAnchor, constant: -DesignTokens.Spacing.sm),
-            sendButton.bottomAnchor.constraint(equalTo: fieldContainer.bottomAnchor, constant: -8),
+            sendButton.centerYAnchor.constraint(equalTo: fieldContainer.centerYAnchor),
             sendButton.widthAnchor.constraint(equalToConstant: 34),
             sendButton.heightAnchor.constraint(equalToConstant: 34),
         ])
@@ -557,39 +560,50 @@ class SpeakViewController: BaseViewController {
         chatTableView.reloadData()
         scrollToBottom()
 
-        // Call AI
         Task {
             do {
                 guard let apiClient else { throw NSError(domain: "Speak", code: 0) }
 
-                let response: AISuggestResponse = try await apiClient.post(
-                    "/v1/ai/suggest",
-                    body: ["context": text],
+                // Build conversation history for the API
+                let conversationMessages = self.messages
+                    .filter { $0.role != .system }
+                    .map { ["role": $0.role == .user ? "user" : "assistant", "content": $0.text] }
+
+                let response: ConverseResponse = try await apiClient.post(
+                    "/v1/ai/converse",
+                    body: ["messages": conversationMessages],
                     timeout: APIClient.Timeout.ai
                 )
+
+                // Execute tool calls locally
+                var actionResults: [String] = []
+                for toolCall in response.toolCalls {
+                    let result = await self.executeToolCall(toolCall)
+                    actionResults.append(result)
+                }
 
                 await MainActor.run {
                     // Remove thinking indicator
                     self.messages.removeLast()
 
-                    if response.chips.isEmpty {
-                        self.messages.append(ChatMessage(role: .assistant, text: "I'm not sure what to suggest for that. Could you be more specific?"))
-                    } else {
-                        var responseText = ""
-                        for chip in response.chips {
-                            responseText += "• \(chip.title) — \(chip.subtitle)\n"
-                        }
-                        self.messages.append(ChatMessage(role: .assistant, text: responseText.trimmingCharacters(in: .whitespacesAndNewlines)))
+                    // Show action results if any
+                    if !actionResults.isEmpty {
+                        let actionsText = actionResults.map { "✓ \($0)" }.joined(separator: "\n")
+                        self.messages.append(ChatMessage(role: .system, text: actionsText))
+                    }
+
+                    // Show AI message
+                    if !response.message.isEmpty {
+                        self.messages.append(ChatMessage(role: .assistant, text: response.message))
+                    } else if actionResults.isEmpty {
+                        self.messages.append(ChatMessage(role: .assistant, text: "Done."))
                     }
 
                     self.chatTableView.reloadData()
                     self.scrollToBottom()
                     self.isProcessing = false
                     self.updateControlsForProcessing()
-
-                    if let remaining = response.remainingQuota {
-                        self.quotaLabel.text = "\(remaining) AI left"
-                    }
+                    self.quotaLabel.text = "\(response.remainingQuota) AI left"
                 }
             } catch {
                 await MainActor.run {
@@ -601,6 +615,80 @@ class SpeakViewController: BaseViewController {
                     self.updateControlsForProcessing()
                 }
             }
+        }
+    }
+
+    // MARK: - Tool Call Execution
+
+    private func executeToolCall(_ toolCall: ConverseResponse.ToolCall) async -> String {
+        do {
+            switch toolCall.function {
+            case "create_directive":
+                let title = toolCall.arguments["title"] as? String ?? "Untitled"
+                let body = toolCall.arguments["body"] as? String
+                let directive = try await directiveService?.create(title: title, body: body)
+                return "Created directive: \(directive?.title ?? title)"
+
+            case "update_directive":
+                guard let idString = toolCall.arguments["id"] as? String,
+                      let id = UUID(uuidString: idString),
+                      var directive = try await directiveService?.fetch(id: id) else {
+                    return "Could not find directive to update"
+                }
+                if let title = toolCall.arguments["title"] as? String { directive.title = title }
+                if let body = toolCall.arguments["body"] as? String { directive.body = body }
+                try await directiveService?.update(directive)
+                return "Updated directive: \(directive.title)"
+
+            case "retire_directive":
+                guard let idString = toolCall.arguments["id"] as? String,
+                      let id = UUID(uuidString: idString) else {
+                    return "Could not find directive to retire"
+                }
+                try await directiveService?.archive(id: id)
+                return "Retired directive"
+
+            case "create_journal_entry":
+                let date = toolCall.arguments["date"] as? String ?? {
+                    let f = DateFormatter()
+                    f.dateFormat = "yyyy-MM-dd"
+                    return f.string(from: Date())
+                }()
+                let diary = toolCall.arguments["diary"] as? String ?? ""
+                let rating = toolCall.arguments["rating"] as? Int
+                let tags = toolCall.arguments["tags"] as? [String] ?? []
+                _ = try await dayEntryService?.createOrUpdate(date: date, rating: rating, diary: diary, tags: tags)
+                return "Saved journal entry for \(date)"
+
+            case "create_note":
+                let title = toolCall.arguments["title"] as? String ?? "Untitled"
+                let body = toolCall.arguments["body"] as? String ?? ""
+                let kindStr = toolCall.arguments["kind"] as? String ?? "regular"
+                let kind = NoteKind(rawValue: kindStr) ?? .regular
+                _ = try await noteService?.create(title: title, body: body, kind: kind)
+                return "Created \(kindStr) note: \(title)"
+
+            case "activate_mode":
+                guard let idString = toolCall.arguments["noteId"] as? String,
+                      let noteId = UUID(uuidString: idString) else {
+                    return "Could not find mode to activate"
+                }
+                try await modeService?.activate(noteId: noteId)
+                return "Activated mode"
+
+            case "deactivate_mode":
+                guard let idString = toolCall.arguments["noteId"] as? String,
+                      let noteId = UUID(uuidString: idString) else {
+                    return "Could not find mode to deactivate"
+                }
+                try await modeService?.deactivate(noteId: noteId)
+                return "Deactivated mode"
+
+            default:
+                return "Unknown action: \(toolCall.function)"
+            }
+        } catch {
+            return "Failed: \(toolCall.function) — \(error.localizedDescription)"
         }
     }
 
@@ -663,9 +751,38 @@ class SpeakViewController: BaseViewController {
         let text: String
     }
 
-    private struct AISuggestResponse: Decodable {
-        let chips: [AiChip]
-        let remainingQuota: Int?
+    private struct ConverseResponse: Decodable {
+        let message: String
+        let toolCalls: [ToolCall]
+        let remainingQuota: Int
+
+        struct ToolCall: Decodable {
+            let id: String
+            let function: String
+            private let _arguments: [String: AnyCodable]
+            var arguments: [String: Any] { _arguments.mapValues(\.value) }
+
+            enum CodingKeys: String, CodingKey {
+                case id, function
+                case _arguments = "arguments"
+            }
+        }
+    }
+
+    /// Lightweight type-erased Decodable for mixed JSON values in tool call arguments.
+    private struct AnyCodable: Decodable {
+        let value: Any
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if let s = try? container.decode(String.self) { value = s }
+            else if let i = try? container.decode(Int.self) { value = i }
+            else if let d = try? container.decode(Double.self) { value = d }
+            else if let b = try? container.decode(Bool.self) { value = b }
+            else if let arr = try? container.decode([AnyCodable].self) { value = arr.map(\.value) }
+            else if let dict = try? container.decode([String: AnyCodable].self) { value = dict.mapValues(\.value) }
+            else { value = NSNull() }
+        }
     }
 
     // MARK: - Mic Appearance
@@ -892,9 +1009,12 @@ private final class ChatBubbleCell: UITableViewCell {
             leadingConstraint?.isActive = true
 
         case .system:
-            bubbleView.backgroundColor = .clear
-            messageLabel.textColor = DesignTokens.Colors.textTertiary
-            messageLabel.font = DesignTokens.Typography.footnote
+            let isAction = message.text.contains("✓")
+            bubbleView.backgroundColor = isAction ? DesignTokens.Colors.accent.withAlphaComponent(0.1) : .clear
+            messageLabel.textColor = isAction ? DesignTokens.Colors.accent : DesignTokens.Colors.textTertiary
+            messageLabel.font = isAction
+                ? DesignTokens.Typography.rounded(style: .footnote, weight: .medium)
+                : DesignTokens.Typography.footnote
             leadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: DesignTokens.Spacing.lg)
             leadingConstraint?.isActive = true
         }

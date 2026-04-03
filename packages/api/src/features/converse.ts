@@ -1,0 +1,326 @@
+import { openai, OPENAI_MODEL } from "../lib/llm.js";
+import * as usageQueries from "../db/queries/usage.js";
+import * as profileQueries from "../db/queries/profiles.js";
+import * as directiveQueries from "../db/queries/directives.js";
+import * as noteQueries from "../db/queries/notes.js";
+import * as modeQueries from "../db/queries/modes.js";
+import type OpenAI from "openai";
+
+// ── Quota ──────────────────────────────────────
+
+const FREE_DAILY_LIMIT = 5;
+const PRO_DAILY_LIMIT = 100;
+
+async function getQuota(userId: string) {
+  const user = await profileQueries.findById(userId);
+  const dailyLimit = user?.plan === "pro" ? PRO_DAILY_LIMIT : FREE_DAILY_LIMIT;
+  const usage = await usageQueries.getToday(userId);
+  return { dailyLimit, dailyUsed: usage?.count ?? 0 };
+}
+
+// ── Tool Definitions (Responses API format) ────
+
+const tools: OpenAI.Responses.Tool[] = [
+  {
+    type: "function",
+    strict: false,
+    name: "create_directive",
+    description: "Create a new directive (habit, rule, or experiment) for the user to follow.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short, imperative title. e.g. 'No caffeine after 12pm'" },
+        body: { type: "string", description: "Optional explanation of why this works or how to do it." },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    type: "function",
+    strict: false,
+    name: "update_directive",
+    description: "Update an existing directive's title or body. Use list_directives first to find the directive ID.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The UUID of the directive to update." },
+        title: { type: "string", description: "New title (omit to keep current)." },
+        body: { type: "string", description: "New body (omit to keep current)." },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    type: "function",
+    strict: false,
+    name: "retire_directive",
+    description: "Archive/retire a directive the user no longer wants to follow.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The UUID of the directive to retire." },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    type: "function",
+    strict: false,
+    name: "create_journal_entry",
+    description: "Create or update a journal/diary entry for a given date.",
+    parameters: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "ISO date string yyyy-MM-dd. Use today if not specified." },
+        diary: { type: "string", description: "The journal entry text." },
+        rating: { type: "integer", description: "Day rating 1-10. Omit if user didn't mention.", minimum: 1, maximum: 10 },
+        tags: { type: "array", items: { type: "string" }, description: "Optional tags for the entry." },
+      },
+      required: ["date", "diary"],
+    },
+  },
+  {
+    type: "function",
+    strict: false,
+    name: "create_note",
+    description: "Create a note (regular note, mode, framework, situation, or goal).",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Note title." },
+        body: { type: "string", description: "Note content." },
+        kind: { type: "string", enum: ["regular", "mode", "framework", "situation", "goal"], description: "Type of note. Default 'regular'." },
+      },
+      required: ["title", "body"],
+    },
+  },
+  {
+    type: "function",
+    strict: false,
+    name: "activate_mode",
+    description: "Activate a mode. Use list_modes first to find the note ID.",
+    parameters: {
+      type: "object",
+      properties: {
+        noteId: { type: "string", description: "The UUID of the mode note to activate." },
+      },
+      required: ["noteId"],
+    },
+  },
+  {
+    type: "function",
+    strict: false,
+    name: "deactivate_mode",
+    description: "Deactivate a currently active mode.",
+    parameters: {
+      type: "object",
+      properties: {
+        noteId: { type: "string", description: "The UUID of the mode note to deactivate." },
+      },
+      required: ["noteId"],
+    },
+  },
+  {
+    type: "function",
+    strict: false,
+    name: "list_directives",
+    description: "List the user's current directives. Use this to look up directive IDs before updating or retiring.",
+    parameters: {
+      type: "object",
+      properties: {
+        status: { type: "string", enum: ["active", "archived"], description: "Filter by status. Default 'active'." },
+      },
+    },
+  },
+  {
+    type: "function",
+    strict: false,
+    name: "list_modes",
+    description: "List available modes (notes with kind='mode') and which are currently active. Use this before activating/deactivating.",
+    parameters: {
+      type: "object",
+      properties: {},
+    },
+  },
+];
+
+// ── System Prompt ──────────────────────────────
+
+const SYSTEM_PROMPT = `You are the AI assistant for Prototype Me — a personal optimization app based on trial and error. Users track directives (habits/rules they're experimenting with), journal entries, notes, and modes.
+
+Your job is to help users manage their system through natural conversation. When they ask you to do something, use the available tools to take action. When they ask questions or want advice, respond conversationally.
+
+Guidelines:
+- Be direct and concise. No fluff.
+- When the user wants to create, update, or retire something — use the tools. Don't just describe what you would do.
+- If the user references an existing directive or mode by name, use list_directives or list_modes first to find the correct ID, then take action.
+- You can call multiple tools in one response if needed (e.g. create two directives).
+- For journal entries, use today's date unless the user specifies otherwise. Today is {today}.
+- Frame directives as experiments, not permanent rules.
+- Keep directive titles short and imperative.
+- If the user's request is unclear, ask for clarification rather than guessing.`;
+
+// ── Types ──────────────────────────────────────
+
+export interface ConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ToolCall {
+  id: string;
+  function: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface ConverseResult {
+  message: string;
+  toolCalls: ToolCall[];
+  remainingQuota: number;
+  resetAt: string;
+}
+
+// ── Converse ───────────────────────────────────
+
+const READ_TOOLS = new Set(["list_directives", "list_modes"]);
+const MAX_TOOL_ROUNDS = 3;
+
+export async function converse(
+  userId: string,
+  messages: ConversationMessage[],
+): Promise<ConverseResult> {
+  const quota = await getQuota(userId);
+  if (quota.dailyUsed >= quota.dailyLimit) {
+    throw { status: 429, error: "quota_exceeded", message: "Daily AI quota exceeded" };
+  }
+
+  if (!openai) {
+    throw { status: 500, error: "not_configured", message: "OpenAI API key not configured" };
+  }
+
+  const today = new Date().toISOString().split("T")[0];
+  const instructions = SYSTEM_PROMPT.replace("{today}", today);
+
+  // Build input for Responses API
+  const input: OpenAI.Responses.ResponseInputItem[] = messages.map((m) => ({
+    role: m.role as "user" | "assistant",
+    content: m.content,
+  }));
+
+  // Loop: call model, resolve read-only tools server-side, repeat until done
+  let response = await openai.responses.create({
+    model: OPENAI_MODEL,
+    instructions,
+    input,
+    tools,
+    max_output_tokens: 1024,
+  });
+
+  let actionCalls: ToolCall[] = [];
+  let rounds = 0;
+
+  while (rounds < MAX_TOOL_ROUNDS) {
+    rounds++;
+    const functionCalls = response.output.filter(
+      (item): item is OpenAI.Responses.ResponseFunctionToolCall => item.type === "function_call",
+    );
+
+    if (functionCalls.length === 0) break;
+
+    const readCalls = functionCalls.filter((fc) => READ_TOOLS.has(fc.name));
+    const writes = functionCalls.filter((fc) => !READ_TOOLS.has(fc.name));
+
+    // Collect action calls for iOS
+    for (const fc of writes) {
+      actionCalls.push({
+        id: fc.call_id,
+        function: fc.name,
+        arguments: JSON.parse(fc.arguments),
+      });
+    }
+
+    // If no read calls, we're done
+    if (readCalls.length === 0) break;
+
+    // Execute read calls server-side and feed results back
+    const toolOutputs: OpenAI.Responses.ResponseInputItem[] = [];
+    for (const fc of readCalls) {
+      const result = await executeReadCall(userId, fc.name, fc.arguments);
+      // Feed back the function call and its result
+      toolOutputs.push({
+        type: "function_call_output",
+        call_id: fc.call_id,
+        output: result,
+      } as OpenAI.Responses.ResponseInputItem);
+    }
+
+    // Continue the conversation with tool results
+    response = await openai.responses.create({
+      model: OPENAI_MODEL,
+      instructions,
+      previous_response_id: response.id,
+      input: toolOutputs,
+      tools,
+      max_output_tokens: 1024,
+    });
+  }
+
+  // Extract final text message
+  const textOutput = response.output.find(
+    (item): item is OpenAI.Responses.ResponseOutputMessage => item.type === "message",
+  );
+  const finalMessage = textOutput?.content
+    ?.filter((c): c is OpenAI.Responses.ResponseOutputText => c.type === "output_text")
+    .map((c) => c.text)
+    .join("") ?? "";
+
+  await usageQueries.increment(userId);
+  const updatedQuota = await getQuota(userId);
+
+  return {
+    message: finalMessage,
+    toolCalls: actionCalls,
+    remainingQuota: updatedQuota.dailyLimit - updatedQuota.dailyUsed,
+    resetAt: getResetTime(),
+  };
+}
+
+// ── Helpers ────────────────────────────────────
+
+async function executeReadCall(userId: string, name: string, argsJson: string): Promise<string> {
+  const args = JSON.parse(argsJson);
+
+  if (name === "list_directives") {
+    const directives = await directiveQueries.findAll(userId, { status: args.status ?? "active" });
+    return JSON.stringify(
+      directives.map((d: Record<string, unknown>) => ({
+        id: d.id,
+        title: d.title,
+        body: d.body,
+        status: d.status,
+      })),
+    );
+  }
+
+  if (name === "list_modes") {
+    const modes = await noteQueries.findAll(userId, { kind: "mode" });
+    const activeModes = await modeQueries.findAll(userId);
+    const activeNoteIds = new Set(activeModes.map((m: Record<string, unknown>) => m.noteId));
+    return JSON.stringify(
+      modes.map((n: Record<string, unknown>) => ({
+        id: n.id,
+        title: n.title,
+        active: activeNoteIds.has(n.id as string),
+      })),
+    );
+  }
+
+  return "{}";
+}
+
+function getResetTime(): string {
+  const tomorrow = new Date();
+  tomorrow.setUTCHours(0, 0, 0, 0);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  return tomorrow.toISOString();
+}

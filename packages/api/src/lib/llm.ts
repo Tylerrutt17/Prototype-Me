@@ -2,9 +2,14 @@ import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config.js";
 
+// ── Models ─────────────────────────────────────
+
+export const OPENAI_MODEL = "gpt-4.1-mini";
+export const ANTHROPIC_MODEL = "claude-3-5-haiku-latest";
+
 // ── Clients ────────────────────────────────────
 
-const openai = config.openaiApiKey ? new OpenAI({ apiKey: config.openaiApiKey }) : null;
+export const openai = config.openaiApiKey ? new OpenAI({ apiKey: config.openaiApiKey }) : null;
 const anthropic = config.anthropicApiKey ? new Anthropic({ apiKey: config.anthropicApiKey }) : null;
 
 // ── Types ──────────────────────────────────────
@@ -86,7 +91,7 @@ export async function callLLMJson<T>(request: LLMRequest, fallback: T): Promise<
 
 async function callOpenAI(system: string, prompt: string, maxTokens: number, model?: string): Promise<LLMResponse> {
   const completion = await openai!.chat.completions.create({
-    model: model ?? "gpt-4o",
+    model: model ?? OPENAI_MODEL,
     max_tokens: maxTokens,
     messages: [
       { role: "system", content: system },
@@ -100,7 +105,7 @@ async function callOpenAI(system: string, prompt: string, maxTokens: number, mod
 
 async function callAnthropic(system: string, prompt: string, maxTokens: number, model?: string): Promise<LLMResponse> {
   const message = await anthropic!.messages.create({
-    model: model ?? "claude-sonnet-4-6",
+    model: model ?? ANTHROPIC_MODEL,
     max_tokens: maxTokens,
     system,
     messages: [{ role: "user", content: prompt }],

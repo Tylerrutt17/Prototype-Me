@@ -20,6 +20,9 @@ class SpeakCoordinator: Coordinator {
         let vc = SpeakViewController()
         vc.apiClient = environment.apiClient
         vc.directiveService = environment.directiveService
+        vc.noteService = environment.noteService
+        vc.dayEntryService = environment.dayEntryService
+        vc.modeService = environment.modeService
         vc.dbQueue = environment.db.dbQueue
         vc.onUpgradeTapped = { [weak self] in
             self?.presentPaywall()
