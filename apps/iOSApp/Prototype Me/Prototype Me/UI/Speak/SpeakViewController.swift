@@ -36,16 +36,24 @@ class SpeakViewController: BaseViewController {
     private var isProcessing = false
     private var recordingStartTime: Date?
 
+    struct PendingToolCall {
+        let id: String
+        let function: String
+        let arguments: [String: Any]
+    }
+
     struct ChatMessage {
         let id = UUID()
         let role: Role
         let text: String
         let timestamp = Date()
+        var pendingToolCalls: [PendingToolCall]?
 
         enum Role {
             case user
             case assistant
             case system
+            case pendingActions
         }
     }
 
@@ -193,12 +201,43 @@ class SpeakViewController: BaseViewController {
         }
     }
 
+    // MARK: - Auto-Approve
+
+    private static let autoApproveKey = "speak_auto_approve"
+    private var autoApprove: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.autoApproveKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.autoApproveKey) }
+    }
+
     // MARK: - Header
 
     private func setupQuota() {
-        quotaLabel.font = DesignTokens.Typography.caption1
-        quotaLabel.textColor = DesignTokens.Colors.textSecondary
-        navBar.setTitleView(quotaLabel)
+        // Title stack: "Speak" + quota underneath
+        let titleStack = UIStackView()
+        titleStack.axis = .vertical
+        titleStack.alignment = .center
+        titleStack.spacing = 1
+
+        let titleLabel = UILabel()
+        titleLabel.text = "Speak"
+        titleLabel.font = DesignTokens.Typography.rounded(style: .headline, weight: .semibold)
+        titleLabel.textColor = DesignTokens.Colors.textPrimary
+
+        quotaLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .medium)
+        quotaLabel.textColor = DesignTokens.Colors.textTertiary
+
+        titleStack.addArrangedSubview(titleLabel)
+        titleStack.addArrangedSubview(quotaLabel)
+
+        navBar.setTitle(nil, animated: false)
+        navBar.setTitleView(titleStack)
+
+        // Settings gear
+        navBar.setRightButtons([
+            NavBarButton(systemImage: "gearshape") { [weak self] in
+                self?.showSpeakSettings()
+            }
+        ])
 
         Task {
             if let apiClient, let quota: UsageQuota = try? await apiClient.get("/v1/usage") {
@@ -209,6 +248,19 @@ class SpeakViewController: BaseViewController {
         }
     }
 
+    private func showSpeakSettings() {
+        let alert = UIAlertController(title: "Speak Settings", message: nil, preferredStyle: .actionSheet)
+
+        let autoTitle = autoApprove ? "✓ Auto-Approve Actions" : "Auto-Approve Actions"
+        alert.addAction(UIAlertAction(title: autoTitle, style: .default) { [weak self] _ in
+            guard let self else { return }
+            self.autoApprove.toggle()
+        })
+
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(alert, animated: true)
+    }
+
     // MARK: - Chat
 
     private func setupChat() {
@@ -217,6 +269,7 @@ class SpeakViewController: BaseViewController {
         chatTableView.dataSource = self
         chatTableView.keyboardDismissMode = .interactive
         chatTableView.register(ChatBubbleCell.self, forCellReuseIdentifier: ChatBubbleCell.reuseID)
+        chatTableView.register(ActionConfirmCell.self, forCellReuseIdentifier: ActionConfirmCell.reuseID)
         chatTableView.translatesAutoresizingMaskIntoConstraints = false
         chatTableView.allowsSelection = false
         view.addSubview(chatTableView)
@@ -236,9 +289,12 @@ class SpeakViewController: BaseViewController {
     private lazy var maxTextViewHeight: CGFloat = UIScreen.main.bounds.height * 0.4
 
     private let fieldContainer = UIView()
+    private let toolbarRow = UIStackView()
     private let clearButton = UIButton(type: .system)
     private let doneButton = UIButton(type: .system)
     private let recordingGradient = CAGradientLayer()
+    private var textViewLeadingDefault: NSLayoutConstraint!
+    private var textViewLeadingWithClear: NSLayoutConstraint!
     private var isKeyboardVisible = false
 
     private func setupInputBar() {
@@ -252,15 +308,14 @@ class SpeakViewController: BaseViewController {
         separator.translatesAutoresizingMaskIntoConstraints = false
         inputBar.addSubview(separator)
 
-        // ── Toolbar row: [X clear] [voice] [done] ──
-        let toolbarRow = UIStackView()
+        // ── Toolbar row: [voice] [done] ──
         toolbarRow.axis = .horizontal
         toolbarRow.spacing = DesignTokens.Spacing.sm
         toolbarRow.alignment = .center
         toolbarRow.translatesAutoresizingMaskIntoConstraints = false
         inputBar.addSubview(toolbarRow)
 
-        // Clear button (left of voice)
+        // Clear button (inline in text field, hidden by default)
         var clearConfig = UIButton.Configuration.plain()
         clearConfig.image = UIImage(systemName: "xmark.circle.fill")
         clearConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 20, weight: .medium)
@@ -270,7 +325,7 @@ class SpeakViewController: BaseViewController {
         clearButton.addTarget(self, action: #selector(clearTapped), for: .touchUpInside)
         clearButton.isHidden = true
         clearButton.setContentHuggingPriority(.required, for: .horizontal)
-        toolbarRow.addArrangedSubview(clearButton)
+        clearButton.translatesAutoresizingMaskIntoConstraints = false
 
         // Voice button (fills available space, prominent)
         var micConfig = UIButton.Configuration.filled()
@@ -322,7 +377,7 @@ class SpeakViewController: BaseViewController {
         doneButton.setContentHuggingPriority(.required, for: .horizontal)
         toolbarRow.addArrangedSubview(doneButton)
 
-        // ── Text field row: [text view] [send] ──
+        // ── Text field row: [X clear] [text view] [send] ──
         fieldContainer.backgroundColor = DesignTokens.Colors.surfacePrimary
         fieldContainer.layer.cornerRadius = DesignTokens.Radii.xl
         fieldContainer.layer.borderWidth = 1.5
@@ -330,6 +385,9 @@ class SpeakViewController: BaseViewController {
         fieldContainer.clipsToBounds = true
         fieldContainer.translatesAutoresizingMaskIntoConstraints = false
         inputBar.addSubview(fieldContainer)
+
+        // Add clear button inside the field container (left side)
+        fieldContainer.addSubview(clearButton)
 
         // Multi-line text view
         textView.font = DesignTokens.Typography.body
@@ -367,6 +425,11 @@ class SpeakViewController: BaseViewController {
         inputBarBottom = inputBar.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         fieldContainerHeight = fieldContainer.heightAnchor.constraint(equalToConstant: 48)
 
+        // Switchable textView leading constraint
+        textViewLeadingDefault = textView.leadingAnchor.constraint(equalTo: fieldContainer.leadingAnchor, constant: DesignTokens.Spacing.lg)
+        textViewLeadingWithClear = textView.leadingAnchor.constraint(equalTo: clearButton.trailingAnchor, constant: DesignTokens.Spacing.xs)
+        textViewLeadingDefault.isActive = true
+
         NSLayoutConstraint.activate([
             chatTableView.bottomAnchor.constraint(equalTo: inputBar.topAnchor),
 
@@ -391,7 +454,12 @@ class SpeakViewController: BaseViewController {
             fieldContainer.bottomAnchor.constraint(equalTo: inputBar.safeAreaLayoutGuide.bottomAnchor, constant: -DesignTokens.Spacing.sm),
             fieldContainerHeight,
 
-            textView.leadingAnchor.constraint(equalTo: fieldContainer.leadingAnchor, constant: DesignTokens.Spacing.lg),
+            // Clear button inside field container
+            clearButton.leadingAnchor.constraint(equalTo: fieldContainer.leadingAnchor, constant: DesignTokens.Spacing.sm),
+            clearButton.centerYAnchor.constraint(equalTo: fieldContainer.centerYAnchor),
+            clearButton.widthAnchor.constraint(equalToConstant: 28),
+            clearButton.heightAnchor.constraint(equalToConstant: 28),
+
             textView.topAnchor.constraint(equalTo: fieldContainer.topAnchor),
             textView.bottomAnchor.constraint(equalTo: fieldContainer.bottomAnchor),
             textView.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -DesignTokens.Spacing.sm),
@@ -523,6 +591,7 @@ class SpeakViewController: BaseViewController {
         textView.text = ""
         placeholderLabel.isHidden = false
         updateTextViewHeight()
+        updateClearButton()
         textView.resignFirstResponder()
         sendMessage(text)
     }
@@ -535,7 +604,7 @@ class SpeakViewController: BaseViewController {
         textView.text = ""
         placeholderLabel.isHidden = false
         updateTextViewHeight()
-        clearButton.isHidden = true
+        updateClearButton()
         sendButton.alpha = 0.3
     }
 
@@ -564,10 +633,20 @@ class SpeakViewController: BaseViewController {
             do {
                 guard let apiClient else { throw NSError(domain: "Speak", code: 0) }
 
-                // Build conversation history for the API
-                let conversationMessages = self.messages
-                    .filter { $0.role != .system }
-                    .map { ["role": $0.role == .user ? "user" : "assistant", "content": $0.text] }
+                // Build conversation history — include completed actions as assistant context
+                let conversationMessages: [[String: String]] = self.messages.compactMap { msg in
+                    switch msg.role {
+                    case .user:
+                        return ["role": "user", "content": msg.text]
+                    case .assistant:
+                        return ["role": "assistant", "content": msg.text]
+                    case .system where msg.text.contains("✓"):
+                        // Completed actions — include so the model knows what's done
+                        return ["role": "assistant", "content": msg.text]
+                    case .system, .pendingActions:
+                        return nil
+                    }
+                }
 
                 let response: ConverseResponse = try await apiClient.post(
                     "/v1/ai/converse",
@@ -575,27 +654,49 @@ class SpeakViewController: BaseViewController {
                     timeout: APIClient.Timeout.ai
                 )
 
-                // Execute tool calls locally
-                var actionResults: [String] = []
-                for toolCall in response.toolCalls {
-                    let result = await self.executeToolCall(toolCall)
-                    actionResults.append(result)
-                }
-
                 await MainActor.run {
                     // Remove thinking indicator
                     self.messages.removeLast()
 
-                    // Show action results if any
-                    if !actionResults.isEmpty {
-                        let actionsText = actionResults.map { "✓ \($0)" }.joined(separator: "\n")
-                        self.messages.append(ChatMessage(role: .system, text: actionsText))
+                    if !response.toolCalls.isEmpty {
+                        let pending = response.toolCalls.map {
+                            PendingToolCall(id: $0.id, function: $0.function, arguments: $0.arguments)
+                        }
+
+                        if self.autoApprove {
+                            // Auto-execute without confirmation
+                            self.messages.append(ChatMessage(role: .system, text: "Applying changes..."))
+                            self.chatTableView.reloadData()
+                            self.scrollToBottom()
+
+                            let execIndex = self.messages.count - 1
+                            Task {
+                                var results: [String] = []
+                                for tc in pending {
+                                    let result = await self.executeToolCall(tc)
+                                    results.append(result)
+                                }
+                                await MainActor.run {
+                                    let actionsText = results.map { "✓ \($0)" }.joined(separator: "\n")
+                                    self.messages[execIndex] = ChatMessage(role: .system, text: actionsText)
+                                    self.chatTableView.reloadData()
+                                    self.scrollToBottom()
+                                }
+                            }
+                        } else {
+                            // Show confirmation card
+                            let descriptions = pending.map { self.describeToolCall($0) }
+                            let text = descriptions.joined(separator: "\n")
+                            var msg = ChatMessage(role: .pendingActions, text: text)
+                            msg.pendingToolCalls = pending
+                            self.messages.append(msg)
+                        }
                     }
 
                     // Show AI message
                     if !response.message.isEmpty {
                         self.messages.append(ChatMessage(role: .assistant, text: response.message))
-                    } else if actionResults.isEmpty {
+                    } else if response.toolCalls.isEmpty {
                         self.messages.append(ChatMessage(role: .assistant, text: "Done."))
                     }
 
@@ -618,9 +719,65 @@ class SpeakViewController: BaseViewController {
         }
     }
 
+    // MARK: - Action Confirmation
+
+    private func describeToolCall(_ toolCall: PendingToolCall) -> String {
+        let args = toolCall.arguments
+        switch toolCall.function {
+        case "create_directive":
+            return "Create directive: \(args["title"] as? String ?? "Untitled")"
+        case "update_directive":
+            return "Update directive: \(args["title"] as? String ?? args["id"] as? String ?? "unknown")"
+        case "retire_directive":
+            return "Retire directive"
+        case "create_journal_entry":
+            let date = args["date"] as? String ?? "today"
+            return "Log journal entry for \(date)"
+        case "create_note":
+            let kind = args["kind"] as? String ?? "regular"
+            return "Create \(kind) note: \(args["title"] as? String ?? "Untitled")"
+        case "activate_mode":
+            return "Activate mode"
+        case "deactivate_mode":
+            return "Deactivate mode"
+        default:
+            return toolCall.function
+        }
+    }
+
+    func approveActions(messageId: UUID) {
+        guard let index = messages.firstIndex(where: { $0.id == messageId }),
+              let toolCalls = messages[index].pendingToolCalls else { return }
+
+        // Replace pending message with executing state
+        messages[index] = ChatMessage(role: .system, text: "Applying changes...")
+        chatTableView.reloadData()
+
+        Task {
+            var results: [String] = []
+            for toolCall in toolCalls {
+                let result = await executeToolCall(toolCall)
+                results.append(result)
+            }
+
+            await MainActor.run {
+                let actionsText = results.map { "✓ \($0)" }.joined(separator: "\n")
+                self.messages[index] = ChatMessage(role: .system, text: actionsText)
+                self.chatTableView.reloadData()
+                self.scrollToBottom()
+            }
+        }
+    }
+
+    func dismissActions(messageId: UUID) {
+        guard let index = messages.firstIndex(where: { $0.id == messageId }) else { return }
+        messages[index] = ChatMessage(role: .system, text: "Actions dismissed.")
+        chatTableView.reloadData()
+    }
+
     // MARK: - Tool Call Execution
 
-    private func executeToolCall(_ toolCall: ConverseResponse.ToolCall) async -> String {
+    private func executeToolCall(_ toolCall: PendingToolCall) async -> String {
         do {
             switch toolCall.function {
             case "create_directive":
@@ -716,10 +873,8 @@ class SpeakViewController: BaseViewController {
                 let ext = fileURL.pathExtension
                 print("[Speak] Audio file (\(ext)): \(String(format: "%.2f", fileSizeMB))MB → base64 payload: \(String(format: "%.2f", payloadSizeMB))MB")
 
-                let response: WhisperResponse = try await apiClient.post(
-                    "/v1/ai/transcribe",
-                    body: ["audio": base64Audio],
-                    timeout: APIClient.Timeout.ai
+                let response = try await self.transcribeWithRetry(
+                    apiClient: apiClient, base64Audio: base64Audio, maxRetries: 2
                 )
 
                 await MainActor.run {
@@ -737,14 +892,41 @@ class SpeakViewController: BaseViewController {
                     }
                 }
             } catch {
+                print("[Speak] Transcribe failed: \(error.localizedDescription)")
                 await MainActor.run {
                     self.hideTranscribing()
                     self.micButton.cleanupAudioFile()
-                    // Keep whatever Apple transcription was in the text field
                     self.updateControlsForProcessing()
                 }
             }
         }
+    }
+
+    private func transcribeWithRetry(
+        apiClient: APIClient, base64Audio: String, maxRetries: Int
+    ) async throws -> WhisperResponse {
+        var lastError: Error?
+        for attempt in 0...maxRetries {
+            do {
+                return try await apiClient.post(
+                    "/v1/ai/transcribe",
+                    body: ["audio": base64Audio],
+                    timeout: APIClient.Timeout.ai
+                )
+            } catch {
+                lastError = error
+                let nsError = error as NSError
+                let isRetryable = nsError.domain == NSURLErrorDomain && (
+                    nsError.code == NSURLErrorNetworkConnectionLost ||    // -1005
+                    nsError.code == NSURLErrorTimedOut ||                 // -1001
+                    nsError.code == NSURLErrorCannotConnectToHost         // -1004
+                )
+                if !isRetryable || attempt == maxRetries { break }
+                print("[Speak] Transcribe attempt \(attempt + 1) failed (\(nsError.code)), retrying...")
+                try await Task.sleep(nanoseconds: UInt64(500_000_000 * (attempt + 1)))
+            }
+        }
+        throw lastError!
     }
 
     private struct WhisperResponse: Decodable {
@@ -891,8 +1073,16 @@ extension SpeakViewController: UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let message = messages[indexPath.row]
+        if message.role == .pendingActions {
+            let cell = tableView.dequeueReusableCell(withIdentifier: ActionConfirmCell.reuseID, for: indexPath) as! ActionConfirmCell
+            cell.configure(with: message)
+            cell.onApprove = { [weak self] in self?.approveActions(messageId: message.id) }
+            cell.onDismiss = { [weak self] in self?.dismissActions(messageId: message.id) }
+            return cell
+        }
         let cell = tableView.dequeueReusableCell(withIdentifier: ChatBubbleCell.reuseID, for: indexPath) as! ChatBubbleCell
-        cell.configure(with: messages[indexPath.row])
+        cell.configure(with: message)
         return cell
     }
 }
@@ -921,9 +1111,12 @@ extension SpeakViewController: UITextViewDelegate {
 
     private func updateClearButton() {
         let hasText = !textView.text.isEmpty
-        let shouldShow = hasText && !clearButton.isHidden == false
+        clearButton.isHidden = !hasText
+        toolbarRow.isHidden = hasText
+        textViewLeadingDefault.isActive = !hasText
+        textViewLeadingWithClear.isActive = hasText
         UIView.animate(withDuration: 0.15) {
-            self.clearButton.isHidden = !hasText
+            self.view.layoutIfNeeded()
         }
     }
 
@@ -1017,8 +1210,123 @@ private final class ChatBubbleCell: UITableViewCell {
                 : DesignTokens.Typography.footnote
             leadingConstraint = bubbleView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: DesignTokens.Spacing.lg)
             leadingConstraint?.isActive = true
+
+        case .pendingActions:
+            break // Handled by ActionConfirmCell
         }
 
         messageLabel.text = message.text
     }
+}
+
+// MARK: - Action Confirm Cell
+
+private final class ActionConfirmCell: UITableViewCell {
+
+    static let reuseID = "ActionConfirmCell"
+
+    var onApprove: (() -> Void)?
+    var onDismiss: (() -> Void)?
+
+    private let cardView = UIView()
+    private let actionsLabel = UILabel()
+    private let approveButton = UIButton(type: .system)
+    private let dismissButton = UIButton(type: .system)
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        setupCell()
+    }
+
+    required init?(coder: NSCoder) { super.init(coder: coder); setupCell() }
+
+    private func setupCell() {
+        backgroundColor = .clear
+        contentView.backgroundColor = .clear
+        selectionStyle = .none
+
+        // Card
+        cardView.backgroundColor = DesignTokens.Colors.surfacePrimary
+        cardView.layer.cornerRadius = DesignTokens.Radii.lg
+        cardView.layer.borderWidth = 1.5
+        cardView.layer.borderColor = DesignTokens.Colors.accent.withAlphaComponent(0.3).cgColor
+        cardView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(cardView)
+
+        // Title
+        let titleLabel = UILabel()
+        titleLabel.text = "Pending Actions"
+        titleLabel.font = DesignTokens.Typography.rounded(style: .footnote, weight: .semibold)
+        titleLabel.textColor = DesignTokens.Colors.accent
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        cardView.addSubview(titleLabel)
+
+        // Actions list
+        actionsLabel.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium)
+        actionsLabel.textColor = DesignTokens.Colors.textPrimary
+        actionsLabel.numberOfLines = 0
+        actionsLabel.translatesAutoresizingMaskIntoConstraints = false
+        cardView.addSubview(actionsLabel)
+
+        // Buttons
+        var approveConfig = UIButton.Configuration.filled()
+        approveConfig.title = "Approve"
+        approveConfig.baseBackgroundColor = DesignTokens.Colors.accent
+        approveConfig.baseForegroundColor = .white
+        approveConfig.cornerStyle = .capsule
+        approveConfig.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20)
+        approveConfig.titleTextAttributesTransformer = .init { container in
+            var c = container
+            c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
+            return c
+        }
+        approveButton.configuration = approveConfig
+        approveButton.addTarget(self, action: #selector(approveTapped), for: .touchUpInside)
+
+        var dismissConfig = UIButton.Configuration.plain()
+        dismissConfig.title = "Dismiss"
+        dismissConfig.baseForegroundColor = DesignTokens.Colors.textTertiary
+        dismissConfig.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 20, bottom: 8, trailing: 20)
+        dismissConfig.titleTextAttributesTransformer = .init { container in
+            var c = container
+            c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium)
+            return c
+        }
+        dismissButton.configuration = dismissConfig
+        dismissButton.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
+
+        let buttonStack = UIStackView(arrangedSubviews: [approveButton, dismissButton])
+        buttonStack.axis = .horizontal
+        buttonStack.spacing = DesignTokens.Spacing.sm
+        buttonStack.translatesAutoresizingMaskIntoConstraints = false
+        cardView.addSubview(buttonStack)
+
+        let pad = DesignTokens.Spacing.md
+        NSLayoutConstraint.activate([
+            cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: DesignTokens.Spacing.sm),
+            cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -DesignTokens.Spacing.sm),
+            cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: DesignTokens.Spacing.lg),
+            cardView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -DesignTokens.Spacing.lg),
+
+            titleLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: pad),
+            titleLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: pad),
+            titleLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -pad),
+
+            actionsLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: DesignTokens.Spacing.sm),
+            actionsLabel.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: pad),
+            actionsLabel.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -pad),
+
+            buttonStack.topAnchor.constraint(equalTo: actionsLabel.bottomAnchor, constant: pad),
+            buttonStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: pad),
+            buttonStack.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -pad),
+        ])
+    }
+
+    func configure(with message: SpeakViewController.ChatMessage) {
+        let lines = message.text.components(separatedBy: "\n")
+        actionsLabel.text = lines.map { "• \($0)" }.joined(separator: "\n")
+    }
+
+    @objc private func approveTapped() { onApprove?() }
+    @objc private func dismissTapped() { onDismiss?() }
 }

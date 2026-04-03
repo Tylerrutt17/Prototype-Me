@@ -158,7 +158,12 @@ Guidelines:
 - For journal entries, use today's date unless the user specifies otherwise. Today is {today}.
 - Frame directives as experiments, not permanent rules.
 - Keep directive titles short and imperative.
-- If the user's request is unclear, ask for clarification rather than guessing.`;
+- Do NOT call a tool if essential information is missing. Ask the user first. Examples:
+  - "Add a journal entry" → ask what they want to write
+  - "Update a directive" → ask which one and what to change
+  - "Create a note" → ask what about
+  - "Add a directive" with no specifics → ask what habit/rule they want to try
+- If the user gives enough detail to act, act immediately. Don't over-ask.`;
 
 // ── Types ──────────────────────────────────────
 
