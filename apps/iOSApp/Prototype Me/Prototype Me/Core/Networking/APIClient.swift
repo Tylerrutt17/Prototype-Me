@@ -260,6 +260,8 @@ final class APIClient: Sendable {
 
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             clearTokens()
+            // Notify the app that the session expired — AppCoordinator will redirect to login
+            NotificationCenter.default.post(name: .authSessionExpired, object: nil)
             throw APIError.unauthorized
         }
 
@@ -313,4 +315,11 @@ struct APIResponse<T: Decodable>: Decodable {
 private struct EmptyResponse: Decodable {
     init() {}
     init(from decoder: Decoder) throws {}
+}
+
+// MARK: - Notifications
+
+extension Notification.Name {
+    /// Posted when the access token refresh fails — session is expired, user needs to re-authenticate.
+    static let authSessionExpired = Notification.Name("authSessionExpired")
 }

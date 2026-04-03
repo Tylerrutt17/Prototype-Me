@@ -588,6 +588,7 @@ final class DirectiveEditorViewController: BaseViewController {
             if let existing = existingScheduleRule {
                 try dbQueue.write { db in
                     _ = try ScheduleRule.deleteOne(db, key: existing.id)
+                    try OutboxOp.enqueueDelete(entityType: "scheduleRule", entityId: existing.id.uuidString, in: db)
                 }
             }
             return
@@ -602,6 +603,7 @@ final class DirectiveEditorViewController: BaseViewController {
                 existing.version += 1
                 existing.updatedAt = Date()
                 try existing.update(db)
+                try OutboxOp.enqueue(entityType: "scheduleRule", entityId: existing.id.uuidString, op: "update", patch: existing.syncPatch(), baseUpdatedAt: existing.updatedAt, in: db)
             } else {
                 let now = Date()
                 let rule = ScheduleRule(
@@ -610,6 +612,7 @@ final class DirectiveEditorViewController: BaseViewController {
                     version: 1, createdAt: now, updatedAt: now
                 )
                 try rule.insert(db)
+                try OutboxOp.enqueue(entityType: "scheduleRule", entityId: rule.id.uuidString, op: "create", patch: rule.syncPatch(), in: db)
             }
         }
     }

@@ -6,6 +6,7 @@ class AIPanelViewController: UIViewController {
 
     // MARK: - Callbacks
 
+    var apiClient: APIClient?
     var onChipSelected: ((AiChip) -> Void)?
     var onDismissed: (() -> Void)?
     var onUpgradeTapped: (() -> Void)?
@@ -23,7 +24,8 @@ class AIPanelViewController: UIViewController {
     }
 
     private var chips: [AiChip] = []
-    var initialQuota: UsageQuota = UsageQuota(dailyLimit: 10, dailyUsed: 0, resetAt: Date())
+    var initialQuota: UsageQuota = UsageQuota(dailyLimit: 5, dailyUsed: 0, resetAt: Date())
+    var isPro: Bool = false
     private lazy var quota: UsageQuota = initialQuota
 
     // MARK: - UI
@@ -56,11 +58,20 @@ class AIPanelViewController: UIViewController {
         setupEmptyQuota()
         configureDataSource()
 
+        // Hide mic for free users
+        micButton.isHidden = !isPro
+
         transition(to: .idle)
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        // Stop recording if active
+        if micButton.isRecording {
+            micButton.toggleStatus()
+            updateMicAppearance(recording: false)
+        }
+        micButton.cleanupAudioFile()
         // Mark any remaining suggested chips as dismissed
         if chips.contains(where: { $0.status == .suggested }) {
             onDismissed?()
@@ -107,7 +118,11 @@ class AIPanelViewController: UIViewController {
         ])
     }
 
+    private let bigMicButton = UIButton(type: .system)
+    private let micLabel = UILabel()
+
     private func setupInput() {
+        // Text input bar
         inputContainer.backgroundColor = DesignTokens.Colors.surfaceSecondary
         inputContainer.layer.cornerRadius = DesignTokens.Radii.xl
         inputContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -137,20 +152,58 @@ class AIPanelViewController: UIViewController {
         sendButton.translatesAutoresizingMaskIntoConstraints = false
         inputContainer.addSubview(sendButton)
 
-        // Mic button
+        // Big mic button below text field
+        let micSize: CGFloat = 64
+        bigMicButton.translatesAutoresizingMaskIntoConstraints = false
+        var micConfig = UIButton.Configuration.filled()
+        micConfig.image = UIImage(systemName: "mic.fill")
+        micConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 28, weight: .medium)
+        micConfig.baseBackgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.12)
+        micConfig.baseForegroundColor = DesignTokens.Colors.accent
+        micConfig.cornerStyle = .capsule
+        micConfig.contentInsets = .zero
+        bigMicButton.configuration = micConfig
+        bigMicButton.layer.cornerRadius = micSize / 2
+        bigMicButton.clipsToBounds = true
+        bigMicButton.addTarget(self, action: #selector(bigMicTapped), for: .touchUpInside)
+        view.addSubview(bigMicButton)
+
+        micLabel.text = "Tap to speak"
+        micLabel.font = DesignTokens.Typography.rounded(style: .caption1, weight: .medium)
+        micLabel.textColor = DesignTokens.Colors.textTertiary
+        micLabel.textAlignment = .center
+        micLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(micLabel)
+
+        // Wire up the existing VoiceInputButton for recording logic
         micButton.translatesAutoresizingMaskIntoConstraints = false
+        micButton.isHidden = true // hidden — we use bigMicButton as the visual, micButton for logic
+        view.addSubview(micButton)
         micButton.onTranscription = { [weak self] text in
-            self?.textField.text = text
+            // Apple transcription — used for free users or as fallback
+            guard let self else { return }
+            print("[AI Mic] Apple transcription received. isPro: \(self.isPro)")
+            if !self.isPro {
+                self.handleFinalText(text)
+            }
+            // Pro users wait for Whisper result from onAudioRecorded
         }
         micButton.onPartialResult = { [weak self] text in
             self?.textField.text = text
+            self?.micLabel.text = "Listening..."
+        }
+        micButton.onAudioRecorded = { [weak self] fileURL in
+            guard let self else { return }
+            print("[AI Mic] Audio recorded at \(fileURL.path). isPro: \(self.isPro)")
+            guard self.isPro else { return }
+            self.transcribeWithWhisper(fileURL: fileURL)
         }
         micButton.onError = { [weak self] message in
+            self?.updateMicAppearance(recording: false)
             let alert = UIAlertController(title: "Voice Input", message: message, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "OK", style: .default))
             self?.present(alert, animated: true)
         }
-        inputContainer.addSubview(micButton)
 
         NSLayoutConstraint.activate([
             inputContainer.topAnchor.constraint(equalTo: headerStack.bottomAnchor, constant: DesignTokens.Spacing.lg),
@@ -160,17 +213,20 @@ class AIPanelViewController: UIViewController {
 
             textField.leadingAnchor.constraint(equalTo: inputContainer.leadingAnchor, constant: DesignTokens.Spacing.lg),
             textField.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
-            textField.trailingAnchor.constraint(equalTo: micButton.leadingAnchor, constant: -DesignTokens.Spacing.xs),
-
-            micButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
-            micButton.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -DesignTokens.Spacing.xs),
-            micButton.widthAnchor.constraint(equalToConstant: 32),
-            micButton.heightAnchor.constraint(equalToConstant: 32),
+            textField.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -DesignTokens.Spacing.sm),
 
             sendButton.trailingAnchor.constraint(equalTo: inputContainer.trailingAnchor, constant: -DesignTokens.Spacing.sm),
             sendButton.centerYAnchor.constraint(equalTo: inputContainer.centerYAnchor),
             sendButton.widthAnchor.constraint(equalToConstant: 32),
             sendButton.heightAnchor.constraint(equalToConstant: 32),
+
+            bigMicButton.topAnchor.constraint(equalTo: inputContainer.bottomAnchor, constant: DesignTokens.Spacing.xl),
+            bigMicButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            bigMicButton.widthAnchor.constraint(equalToConstant: micSize),
+            bigMicButton.heightAnchor.constraint(equalToConstant: micSize),
+
+            micLabel.topAnchor.constraint(equalTo: bigMicButton.bottomAnchor, constant: DesignTokens.Spacing.sm),
+            micLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
         ])
     }
 
@@ -306,19 +362,27 @@ class AIPanelViewController: UIViewController {
 
         switch newState {
         case .idle:
+            bigMicButton.isHidden = false
+            micLabel.isHidden = false
             if isQuotaEmpty {
                 emptyQuotaView.isHidden = false
                 inputContainer.alpha = 0.5
                 textField.isEnabled = false
                 sendButton.isEnabled = false
+                bigMicButton.isEnabled = false
+                bigMicButton.alpha = 0.5
             } else {
                 textField.isEnabled = true
                 sendButton.isEnabled = true
                 inputContainer.alpha = 1
+                bigMicButton.isEnabled = true
+                bigMicButton.alpha = 1
             }
             thinkingView.stopAnimating()
 
         case .thinking:
+            bigMicButton.isHidden = true
+            micLabel.isHidden = true
             thinkingView.isHidden = false
             thinkingLabel.isHidden = false
             thinkingView.startAnimating()
@@ -327,6 +391,8 @@ class AIPanelViewController: UIViewController {
             inputContainer.alpha = 0.5
 
         case .results:
+            bigMicButton.isHidden = true
+            micLabel.isHidden = true
             collectionView.isHidden = false
             thinkingView.stopAnimating()
             textField.isEnabled = true
@@ -342,20 +408,135 @@ class AIPanelViewController: UIViewController {
         textField.resignFirstResponder()
         state = .thinking
 
-        // Simulate API call delay, then show sample chips
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
-            guard let self else { return }
-            self.chips = SampleData.aiDraft.chips
-            self.quota = UsageQuota(
-                dailyLimit: self.quota.dailyLimit,
-                dailyUsed: self.quota.dailyUsed + 1,
-                resetAt: self.quota.resetAt
-            )
-            self.updateQuotaLabel()
-            self.applyChipsSnapshot()
-            self.state = .results
-            self.animateChipsIn()
+        Task {
+            do {
+                guard let apiClient else { throw NSError(domain: "AIPanelVC", code: 0) }
+
+                let response: AISuggestResponse = try await apiClient.post(
+                    "/v1/ai/suggest",
+                    body: ["context": text],
+                    timeout: APIClient.Timeout.ai
+                )
+
+                await MainActor.run {
+                    self.chips = response.chips
+                    if let remaining = response.remainingQuota {
+                        self.quota = UsageQuota(
+                            dailyLimit: self.quota.dailyLimit,
+                            dailyUsed: self.quota.dailyLimit - remaining,
+                            resetAt: self.quota.resetAt
+                        )
+                    }
+                    self.updateQuotaLabel()
+                    self.applyChipsSnapshot()
+                    self.state = .results
+                    self.animateChipsIn()
+                }
+            } catch {
+                await MainActor.run {
+                    self.state = .idle
+                    Haptics.error()
+                    // Show error inline
+                    let alert = UIAlertController(title: "AI Error", message: "Couldn't get suggestions. Try again.", preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    self.present(alert, animated: true)
+                }
+            }
         }
+    }
+
+    // MARK: - API Response Types
+
+    private struct AISuggestResponse: Decodable {
+        let chips: [AiChip]
+        let remainingQuota: Int?
+        let resetAt: String?
+    }
+
+    @objc private func bigMicTapped() {
+        if micButton.isRecording {
+            // Stop recording
+            micButton.toggleStatus()
+            updateMicAppearance(recording: false)
+        } else {
+            // Start recording
+            micButton.toggleStatus()
+            updateMicAppearance(recording: true)
+        }
+    }
+
+    private func updateMicAppearance(recording: Bool) {
+        var config = bigMicButton.configuration ?? .filled()
+        if recording {
+            config.baseBackgroundColor = DesignTokens.Colors.destructive.withAlphaComponent(0.15)
+            config.baseForegroundColor = DesignTokens.Colors.destructive
+            config.image = UIImage(systemName: "stop.fill")
+            micLabel.text = "Listening..."
+            micLabel.textColor = DesignTokens.Colors.destructive
+
+            // Pulse animation — allowUserInteraction so taps still register
+            UIView.animate(withDuration: 0.8, delay: 0, options: [.repeat, .autoreverse, .allowUserInteraction, .curveEaseInOut]) {
+                self.bigMicButton.transform = CGAffineTransform(scaleX: 1.1, y: 1.1)
+            }
+        } else {
+            config.baseBackgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.12)
+            config.baseForegroundColor = DesignTokens.Colors.accent
+            config.image = UIImage(systemName: "mic.fill")
+            micLabel.text = "Tap to speak"
+            micLabel.textColor = DesignTokens.Colors.textTertiary
+
+            bigMicButton.layer.removeAllAnimations()
+            bigMicButton.transform = .identity
+        }
+        bigMicButton.configuration = config
+    }
+
+    private func handleFinalText(_ text: String) {
+        updateMicAppearance(recording: false)
+        guard !text.isEmpty else { return }
+        textField.text = text
+        micLabel.text = "Tap to speak"
+    }
+
+    private func transcribeWithWhisper(fileURL: URL) {
+        updateMicAppearance(recording: false)
+        micLabel.text = "Transcribing..."
+        bigMicButton.isEnabled = false
+
+        Task {
+            do {
+                guard let apiClient else { throw NSError(domain: "AI", code: 0) }
+
+                // Read audio file and encode as base64
+                let audioData = try Data(contentsOf: fileURL)
+                let base64Audio = audioData.base64EncodedString()
+
+                let response: WhisperResponse = try await apiClient.post(
+                    "/v1/ai/transcribe",
+                    body: ["audio": base64Audio],
+                    timeout: APIClient.Timeout.ai
+                )
+
+                await MainActor.run {
+                    self.textField.text = response.text
+                    self.micLabel.text = "Tap to speak"
+                    self.bigMicButton.isEnabled = true
+                    self.micButton.cleanupAudioFile()
+                }
+            } catch {
+                print("[AI] Whisper transcription failed: \(error)")
+                await MainActor.run {
+                    // Fall back to whatever Apple gave us
+                    self.micLabel.text = "Tap to speak"
+                    self.bigMicButton.isEnabled = true
+                    self.micButton.cleanupAudioFile()
+                }
+            }
+        }
+    }
+
+    private struct WhisperResponse: Decodable {
+        let text: String
     }
 
     @objc private func upgradeTapped() {

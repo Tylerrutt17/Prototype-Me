@@ -3,7 +3,7 @@ import UIKit
 /// Profile screen for self or a friend. Shows avatar, name, bio, mood chips, and plan badge.
 class ProfileViewController: BaseViewController {
 
-    var profile: UserProfile?
+    var profile: UserProfile? { didSet { if isViewLoaded { reloadProfile() } } }
     var isSelf: Bool = true
     var onEditTapped: (() -> Void)?
     var onUpgradeTapped: (() -> Void)?
@@ -11,11 +11,11 @@ class ProfileViewController: BaseViewController {
 
     private let scrollView = UIScrollView()
     private let contentStack = UIStackView()
+    private let spinner = UIActivityIndicatorView(style: .medium)
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        let displayProfile = profile ?? SampleData.currentUserProfile
-        navBar.setTitle(isSelf ? "Profile" : displayProfile.displayName, animated: false)
+        navBar.setTitle(isSelf ? "Profile" : (profile?.displayName ?? "Profile"), animated: false)
 
         if isSelf {
             navBar.setRightButtons([
@@ -24,7 +24,43 @@ class ProfileViewController: BaseViewController {
         }
 
         configureLayout()
-        buildContent(displayProfile)
+        if let profile {
+            buildContent(profile)
+        } else {
+            spinner.color = DesignTokens.Colors.textSecondary
+            spinner.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(spinner)
+            NSLayoutConstraint.activate([
+                spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+                spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            ])
+            spinner.startAnimating()
+        }
+    }
+
+    private func reloadProfile() {
+        spinner.stopAnimating()
+        spinner.removeFromSuperview()
+        contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        guard let profile else { return }
+        navBar.setTitle(isSelf ? "Profile" : profile.displayName, animated: false)
+        buildContent(profile)
+    }
+
+    func showLoadError(_ message: String) {
+        spinner.stopAnimating()
+        spinner.removeFromSuperview()
+        let label = UILabel()
+        label.text = message
+        label.font = DesignTokens.Typography.body
+        label.textColor = DesignTokens.Colors.textSecondary
+        label.textAlignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
     }
 
     // MARK: - Layout

@@ -3,19 +3,47 @@ import UIKit
 /// Settings sub-screen showing current plan details, Pro badge, manage/restore.
 class SubscriptionViewController: BaseViewController {
 
-    var subscriptionInfo: SubscriptionInfo!
-    var usageQuota: UsageQuota!
+    var subscriptionInfo: SubscriptionInfo? { didSet { if isViewLoaded { loadData() } } }
+    var usageQuota: UsageQuota? { didSet { if isViewLoaded { loadData() } } }
     var onUpgradeTapped: (() -> Void)?
 
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<SubscriptionSection, SubscriptionItem>!
+    private let spinner = UIActivityIndicatorView(style: .medium)
 
     override func viewDidLoad() {
         super.viewDidLoad()
         navBar.setTitle("Subscription", animated: false)
         configureCollectionView()
         configureDataSource()
-        loadData()
+        if subscriptionInfo != nil && usageQuota != nil {
+            loadData()
+        } else {
+            spinner.color = DesignTokens.Colors.textSecondary
+            spinner.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(spinner)
+            NSLayoutConstraint.activate([
+                spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+                spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            ])
+            spinner.startAnimating()
+        }
+    }
+
+    func showLoadError(_ message: String) {
+        spinner.stopAnimating()
+        spinner.removeFromSuperview()
+        let label = UILabel()
+        label.text = message
+        label.font = DesignTokens.Typography.body
+        label.textColor = DesignTokens.Colors.textSecondary
+        label.textAlignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
     }
 
     // MARK: - Collection View
@@ -61,6 +89,14 @@ class SubscriptionViewController: BaseViewController {
                 content.secondaryText = value
                 content.secondaryTextProperties.color = DesignTokens.Colors.textSecondary
 
+            case .feature(let title, let included):
+                content.text = title
+                let iconName = included ? "checkmark.circle.fill" : "xmark.circle"
+                let iconColor = included ? DesignTokens.Colors.success : DesignTokens.Colors.textTertiary
+                content.image = UIImage(systemName: iconName)
+                content.imageProperties.tintColor = iconColor
+                content.textProperties.color = included ? DesignTokens.Colors.textPrimary : DesignTokens.Colors.textTertiary
+
             case .action(let title):
                 content.text = title
                 content.textProperties.color = DesignTokens.Colors.accent
@@ -84,10 +120,11 @@ class SubscriptionViewController: BaseViewController {
         let headerReg = UICollectionView.SupplementaryRegistration<SectionHeaderView>(elementKind: UICollectionView.elementKindSectionHeader) { supplementaryView, _, indexPath in
             let section = SubscriptionSection(rawValue: indexPath.section)
             let title: String = switch section {
-            case .plan:    "Current Plan"
-            case .details: "Details"
-            case .actions: "Manage"
-            case .none:    ""
+            case .plan:     "Current Plan"
+            case .details:  "Details"
+            case .features: "Your Features"
+            case .actions:  "Manage"
+            case .none:     ""
             }
             supplementaryView.configure(title: title)
         }
@@ -100,7 +137,9 @@ class SubscriptionViewController: BaseViewController {
     // MARK: - Load Data
 
     private func loadData() {
-        let sub = subscriptionInfo!
+        spinner.stopAnimating()
+        spinner.removeFromSuperview()
+        guard let sub = subscriptionInfo else { return }
 
         var snapshot = NSDiffableDataSourceSnapshot<SubscriptionSection, SubscriptionItem>()
 
@@ -117,8 +156,29 @@ class SubscriptionViewController: BaseViewController {
         if sub.isTrialActive, let days = sub.trialDaysRemaining {
             details.append(.info("Trial", "\(days) days remaining"))
         }
-        details.append(.info("AI quota", "\(usageQuota.remaining) / \(usageQuota.dailyLimit) remaining today"))
+        if let usageQuota {
+            details.append(.info("AI quota", "\(usageQuota.remaining) / \(usageQuota.dailyLimit) remaining today"))
+        }
         snapshot.appendItems(details, toSection: .details)
+
+        // Pro features — only show what matters
+        let isPro = sub.plan == .pro
+        snapshot.appendSections([.features])
+        if isPro {
+            snapshot.appendItems([
+                .feature("Unlimited AI", true),
+                .feature("Cloud sync", true),
+                .feature("AI journal analysis", true),
+                .feature("Priority support", true),
+            ], toSection: .features)
+        } else {
+            snapshot.appendItems([
+                .feature("5 AI suggestions / day", true),
+                .feature("Unlimited AI", false),
+                .feature("Cloud sync", false),
+                .feature("AI journal analysis", false),
+            ], toSection: .features)
+        }
 
         snapshot.appendSections([.actions])
         var actions: [SubscriptionItem] = []
@@ -149,12 +209,14 @@ extension SubscriptionViewController: UICollectionViewDelegate {
 nonisolated private enum SubscriptionSection: Int, Hashable, Sendable {
     case plan
     case details
+    case features
     case actions
 }
 
 nonisolated private enum SubscriptionItem: Hashable, Sendable {
     case planBadge(SubscriptionPlan)
     case info(String, String)
+    case feature(String, Bool) // (title, included)
     case action(String)
     case destructiveAction(String)
 }

@@ -3,7 +3,7 @@ import * as usageQueries from "../db/queries/usage.js";
 import * as profileQueries from "../db/queries/profiles.js";
 
 const FREE_DAILY_LIMIT = 5;
-const PRO_DAILY_LIMIT = 50;
+const PRO_DAILY_LIMIT = 100;
 
 export async function suggest(userId: string, context?: string) {
   const quota = await getQuota(userId);

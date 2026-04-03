@@ -134,6 +134,7 @@ final class ScheduleInstanceRowCell: InteractiveCell {
                 r.version += 1
                 r.updatedAt = Date()
                 try r.update(db)
+                try OutboxOp.enqueue(entityType: "scheduleRule", entityId: r.id.uuidString, op: "update", patch: r.syncPatch(), baseUpdatedAt: r.updatedAt, in: db)
             }
             if newDate != nil {
                 DirectiveLogger.logChecklistComplete(

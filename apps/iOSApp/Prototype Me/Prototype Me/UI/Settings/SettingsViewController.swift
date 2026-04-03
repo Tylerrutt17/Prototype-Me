@@ -3,16 +3,28 @@ import UIKit
 nonisolated private enum SettingsSection: Int, Hashable, Sendable {
     case account
     case preferences
+    case guides
     case data
     case about
 }
 
 nonisolated private enum SettingsItem: Hashable, Sendable {
     case account(String)
-    case toggle(String, Bool)
-    case navigation(String)
-    case info(String, String)
+    case toggle(String, Bool, String, Int)   // title, isOn, iconName, colorIndex
+    case navigation(String, String, Int)     // title, iconName, colorIndex
+    case info(String, String, String, Int)   // title, value, iconName, colorIndex
 }
+
+private let settingsIconColors: [UIColor] = [
+    DesignTokens.Colors.accent,           // 0 blue
+    DesignTokens.Colors.accentSecondary,  // 1 green
+    DesignTokens.Colors.accentTertiary,   // 2 orange
+    DesignTokens.Colors.destructive,      // 3 red
+    DesignTokens.Colors.warning,          // 4 yellow
+    UIColor.systemPurple,                 // 5 purple
+    UIColor.systemPink,                   // 6 pink
+    UIColor.systemTeal,                   // 7 teal
+]
 
 class SettingsViewController: BaseViewController {
 
@@ -22,6 +34,7 @@ class SettingsViewController: BaseViewController {
     var onUsageTapped: (() -> Void)?
     var onFriendsTapped: (() -> Void)?
     var onReplayTourTapped: (() -> Void)?
+    var onReplayIntroTapped: (() -> Void)?
     var onLegalTapped: ((String) -> Void)?    // passes "Terms of Service" or "Privacy Policy"
 
     private var collectionView: UICollectionView!
@@ -66,20 +79,39 @@ class SettingsViewController: BaseViewController {
             var content = UIListContentConfiguration.cell()
             content.textProperties.color = DesignTokens.Colors.textPrimary
 
+            func badgedIcon(_ systemName: String, color: UIColor) -> UIImage? {
+                let size: CGFloat = 34
+                let iconConfig = UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
+                guard let symbol = UIImage(systemName: systemName, withConfiguration: iconConfig)?.withTintColor(.white, renderingMode: .alwaysOriginal) else { return nil }
+                let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+                return renderer.image { ctx in
+                    let rect = CGRect(origin: .zero, size: CGSize(width: size, height: size))
+                    let path = UIBezierPath(roundedRect: rect, cornerRadius: 7)
+                    color.setFill()
+                    path.fill()
+                    let symbolSize = symbol.size
+                    let x = (size - symbolSize.width) / 2
+                    let y = (size - symbolSize.height) / 2
+                    symbol.draw(in: CGRect(x: x, y: y, width: symbolSize.width, height: symbolSize.height))
+                }
+            }
+
             switch item {
             case .account(let title):
                 content.text = title
-                content.image = UIImage(systemName: "person.circle")
-                content.imageProperties.tintColor = DesignTokens.Colors.accent
-            case .toggle(let title, _):
+                content.image = badgedIcon("person.circle", color: DesignTokens.Colors.accent)
+            case .toggle(let title, _, let icon, let colorIdx):
                 content.text = title
-            case .navigation(let title):
+                content.image = badgedIcon(icon, color: settingsIconColors[colorIdx])
+            case .navigation(let title, let icon, let colorIdx):
                 content.text = title
+                content.image = badgedIcon(icon, color: settingsIconColors[colorIdx])
                 cell.accessories = [.disclosureIndicator()]
-            case .info(let title, let value):
+            case .info(let title, let value, let icon, let colorIdx):
                 content.text = title
                 content.secondaryText = value
                 content.secondaryTextProperties.color = DesignTokens.Colors.textSecondary
+                content.image = badgedIcon(icon, color: settingsIconColors[colorIdx])
             }
 
             cell.contentConfiguration = content
@@ -89,7 +121,7 @@ class SettingsViewController: BaseViewController {
             cell.backgroundConfiguration = bg
 
             // Add toggle for toggle items
-            if case .toggle(let title, let isOn) = item {
+            if case .toggle(let title, let isOn, _, _) = item {
                 let toggle = UISwitch()
                 toggle.isOn = isOn
                 toggle.onTintColor = DesignTokens.Colors.accent
@@ -114,6 +146,7 @@ class SettingsViewController: BaseViewController {
             let title: String = switch section {
             case .account:     "Account"
             case .preferences: "Preferences"
+            case .guides:      "Guides"
             case .data:        "Data"
             case .about:       "About"
             case .none:        ""
@@ -134,28 +167,33 @@ class SettingsViewController: BaseViewController {
         snapshot.appendSections([.account])
         snapshot.appendItems([
             .account("Tyler Morrow"),
-            .navigation("Subscription"),
-            .navigation("AI Usage"),
-            .navigation("Friends"),
+            .navigation("Subscription", "creditcard", 0),          // blue
+            .navigation("AI Usage", "sparkles", 0),                // blue
+            .navigation("Friends", "person.2", 0),                 // blue
         ], toSection: .account)
 
         snapshot.appendSections([.preferences])
         snapshot.appendItems([
-            .toggle("Haptic Feedback", Haptics.isEnabled),
-            .navigation("Replay Tour"),
+            .toggle("Haptic Feedback", Haptics.isEnabled, "hand.tap", 1),  // green
         ], toSection: .preferences)
+
+        snapshot.appendSections([.guides])
+        snapshot.appendItems([
+            .navigation("Replay Tour", "map", 2),                          // orange
+            .navigation("Replay Intro", "play.circle", 2),                 // orange
+        ], toSection: .guides)
 
         snapshot.appendSections([.data])
         snapshot.appendItems([
-            .navigation("Sync Debug"),
+            .navigation("Sync Debug", "arrow.triangle.2.circlepath", 1),   // green
         ], toSection: .data)
 
         snapshot.appendSections([.about])
         snapshot.appendItems([
-            .info("Version", "0.1.0"),
-            .info("Build", "1"),
-            .navigation("Terms of Service"),
-            .navigation("Privacy Policy"),
+            .info("Version", "0.1.0", "info.circle", 5),          // purple
+            .info("Build", "1", "hammer", 5),                      // purple
+            .navigation("Terms of Service", "doc.text", 5),        // purple
+            .navigation("Privacy Policy", "lock.shield", 5),       // purple
         ], toSection: .about)
 
         dataSource.apply(snapshot, animatingDifferences: false)
@@ -172,13 +210,14 @@ extension SettingsViewController: UICollectionViewDelegate {
         switch item {
         case .account:
             onProfileTapped?()
-        case .navigation(let title):
+        case .navigation(let title, _, _):
             switch title {
             case "Sync Debug":    onSyncDebugTapped?()
             case "Subscription":  onSubscriptionTapped?()
             case "AI Usage":      onUsageTapped?()
             case "Friends":       onFriendsTapped?()
             case "Replay Tour":       onReplayTourTapped?()
+            case "Replay Intro":      onReplayIntroTapped?()
             case "Terms of Service":  onLegalTapped?("Terms of Service")
             case "Privacy Policy":    onLegalTapped?("Privacy Policy")
             default: break

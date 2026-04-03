@@ -151,6 +151,7 @@ class NotesCoordinator: Coordinator {
     private func showModeDetail(noteId: UUID) {
         let vc = ModeDetailViewController()
         vc.dbQueue = environment.db.dbQueue
+        vc.modeService = environment.modeService
         vc.noteId = noteId
         vc.onDirectiveSelected = { [weak self] directiveId in
             self?.showDirectiveDetail(directiveId: directiveId)

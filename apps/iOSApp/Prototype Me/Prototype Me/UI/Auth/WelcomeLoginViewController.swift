@@ -22,14 +22,16 @@ final class WelcomeLoginViewController: UIViewController {
         return layer
     }()
 
-    private var waveLayers: [CAShapeLayer] = []
+    private let blueprintGrid = BlueprintGridView()
 
     // MARK: - Content
 
     private let logoView = UIImageView()
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
-    private let appleButton = ASAuthorizationAppleIDButton(type: .signIn, style: .white)
+    private let appleButton = ASAuthorizationAppleIDButton(type: .continue, style: .white)
+    private let arrowHint = UIImageView()
+    private let legalStack = UIStackView()
 
     // MARK: - Lifecycle
 
@@ -38,7 +40,9 @@ final class WelcomeLoginViewController: UIViewController {
         view.backgroundColor = DesignTokens.Colors.background
 
         view.layer.addSublayer(gradientLayer)
-        setupWaves()
+        blueprintGrid.frame = view.bounds
+        blueprintGrid.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(blueprintGrid)
         buildLayout()
     }
 
@@ -48,142 +52,57 @@ final class WelcomeLoginViewController: UIViewController {
         CATransaction.setDisableActions(true)
         gradientLayer.frame = view.bounds
         CATransaction.commit()
-        layoutWaves()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         animateEntrance()
-        animateWaves()
+        blueprintGrid.startAnimating()
     }
 
-    // MARK: - Wavy Lines
-
-    private func setupWaves() {
-        let colors: [(UIColor, CGFloat)] = [
-            (DesignTokens.Colors.accent, 0.12),
-            (DesignTokens.Colors.accentSecondary, 0.10),
-            (DesignTokens.Colors.accentTertiary, 0.08),
-            (DesignTokens.Colors.accent, 0.06),
-            (DesignTokens.Colors.accentSecondary, 0.05),
-        ]
-
-        for (color, alpha) in colors {
-            let layer = CAShapeLayer()
-            layer.strokeColor = color.withAlphaComponent(alpha).cgColor
-            layer.fillColor = UIColor.clear.cgColor
-            layer.lineWidth = 2
-            layer.lineCap = .round
-            view.layer.insertSublayer(layer, above: gradientLayer)
-            waveLayers.append(layer)
-        }
-    }
-
-    private func layoutWaves() {
-        let w = view.bounds.width
-        let h = view.bounds.height
-        guard w > 0 else { return }
-
-        let configs: [(yCenter: CGFloat, amplitude: CGFloat, frequency: CGFloat, phase: CGFloat, lineWidth: CGFloat)] = [
-            (h * 0.20, 40, 1.5, 0.0, 2.5),
-            (h * 0.30, 55, 1.0, 0.8, 2.0),
-            (h * 0.45, 35, 2.0, 1.6, 1.5),
-            (h * 0.65, 50, 1.2, 2.4, 2.0),
-            (h * 0.78, 30, 1.8, 3.2, 1.5),
-        ]
-
-        for (i, layer) in waveLayers.enumerated() {
-            guard i < configs.count else { break }
-            let c = configs[i]
-            layer.lineWidth = c.lineWidth
-            layer.path = wavePath(width: w, yCenter: c.yCenter, amplitude: c.amplitude, frequency: c.frequency, phase: c.phase).cgPath
-        }
-    }
-
-    private func wavePath(width: CGFloat, yCenter: CGFloat, amplitude: CGFloat, frequency: CGFloat, phase: CGFloat) -> UIBezierPath {
-        let path = UIBezierPath()
-        let steps = 120
-        for i in 0...steps {
-            let t = CGFloat(i) / CGFloat(steps)
-            let x = t * width
-            let y = yCenter + sin(t * frequency * 2 * .pi + phase) * amplitude
-            if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
-            else { path.addLine(to: CGPoint(x: x, y: y)) }
-        }
-        return path
-    }
-
-    private func animateWaves() {
-        guard !UIAccessibility.isReduceMotionEnabled else { return }
-
-        let durations: [CFTimeInterval] = [7.0, 9.0, 6.0, 8.0, 10.0]
-        let amplitudes: [CGFloat] = [40, 55, 35, 50, 30]
-        let frequencies: [CGFloat] = [1.5, 1.0, 2.0, 1.2, 1.8]
-        let phases: [CGFloat] = [0.0, 0.8, 1.6, 2.4, 3.2]
-        let yCenters: [CGFloat] = [0.20, 0.30, 0.45, 0.65, 0.78]
-
-        let w = view.bounds.width
-        let h = view.bounds.height
-
-        for (i, layer) in waveLayers.enumerated() {
-            guard i < durations.count else { break }
-
-            let fromPath = wavePath(
-                width: w,
-                yCenter: h * yCenters[i],
-                amplitude: amplitudes[i],
-                frequency: frequencies[i],
-                phase: phases[i]
-            ).cgPath
-
-            let toPath = wavePath(
-                width: w,
-                yCenter: h * yCenters[i],
-                amplitude: amplitudes[i] * 0.7,
-                frequency: frequencies[i],
-                phase: phases[i] + .pi
-            ).cgPath
-
-            let anim = CABasicAnimation(keyPath: "path")
-            anim.fromValue = fromPath
-            anim.toValue = toPath
-            anim.duration = durations[i]
-            anim.autoreverses = true
-            anim.repeatCount = .infinity
-            anim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            layer.add(anim, forKey: "waveShift")
-        }
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        blueprintGrid.stopAnimating()
     }
 
     // MARK: - Layout
 
     private func buildLayout() {
-        // Logo
-        let config = UIImage.SymbolConfiguration(pointSize: 70, weight: .ultraLight)
-        logoView.image = UIImage(systemName: "sparkles", withConfiguration: config)
-        logoView.tintColor = DesignTokens.Colors.accent
+        // App icon
+        if let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+           let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+           let files = primary["CFBundleIconFiles"] as? [String],
+           let lastIcon = files.last {
+            logoView.image = UIImage(named: lastIcon)
+        }
         logoView.contentMode = .scaleAspectFit
+        logoView.layer.cornerRadius = 22
+        logoView.clipsToBounds = true
         logoView.alpha = 0
         logoView.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
         logoView.translatesAutoresizingMaskIntoConstraints = false
 
-        // Glow behind logo
-        logoView.layer.shadowColor = DesignTokens.Colors.accent.cgColor
-        logoView.layer.shadowRadius = 30
-        logoView.layer.shadowOpacity = 0.5
-        logoView.layer.shadowOffset = .zero
-
         // Title
-        titleLabel.text = "Prototype Me"
-        titleLabel.font = DesignTokens.Typography.rounded(style: .largeTitle, weight: .bold)
-        titleLabel.textColor = DesignTokens.Colors.textPrimary
+        let titleFont = DesignTokens.Typography.rounded(style: .largeTitle, weight: .bold)
+        let welcomeAttr: [NSAttributedString.Key: Any] = [
+            .font: DesignTokens.Typography.rounded(style: .title2, weight: .medium),
+            .foregroundColor: DesignTokens.Colors.accentTertiary,
+        ]
+        let nameAttr: [NSAttributedString.Key: Any] = [
+            .font: titleFont,
+            .foregroundColor: DesignTokens.Colors.textPrimary,
+        ]
+        let attributed = NSMutableAttributedString(string: "Welcome to\n", attributes: welcomeAttr)
+        attributed.append(NSAttributedString(string: "Prototype Me", attributes: nameAttr))
+        titleLabel.attributedText = attributed
+        titleLabel.numberOfLines = 0
         titleLabel.textAlignment = .center
         titleLabel.alpha = 0
         titleLabel.transform = CGAffineTransform(translationX: 0, y: 20)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         // Subtitle
-        subtitleLabel.text = "Figure out what works. Build your system."
+        subtitleLabel.text = "Optimize Your Life through Trial & Error. See What Works Best For You!"
         subtitleLabel.font = DesignTokens.Typography.rounded(style: .body, weight: .regular)
         subtitleLabel.textColor = DesignTokens.Colors.textSecondary
         subtitleLabel.textAlignment = .center
@@ -199,14 +118,66 @@ final class WelcomeLoginViewController: UIViewController {
         appleButton.transform = CGAffineTransform(translationX: 0, y: 20)
         appleButton.translatesAutoresizingMaskIntoConstraints = false
 
+        // Bouncing arrow hint
+        let arrowConfig = UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
+        arrowHint.image = UIImage(systemName: "chevron.down", withConfiguration: arrowConfig)
+        arrowHint.tintColor = DesignTokens.Colors.textTertiary
+        arrowHint.contentMode = .scaleAspectFit
+        arrowHint.alpha = 0
+        arrowHint.translatesAutoresizingMaskIntoConstraints = false
+
+        // Legal disclaimer
+        let font = DesignTokens.Typography.rounded(style: .caption2, weight: .regular)
+        let linkFont = DesignTokens.Typography.rounded(style: .caption2, weight: .medium)
+
+        let preLabel = UILabel()
+        preLabel.text = "By continuing, you agree to our"
+        preLabel.font = font
+        preLabel.textColor = DesignTokens.Colors.textTertiary
+        preLabel.textAlignment = .center
+
+        let tosButton = UIButton(type: .system)
+        tosButton.setTitle("Terms of Service", for: .normal)
+        tosButton.titleLabel?.font = linkFont
+        tosButton.setTitleColor(DesignTokens.Colors.accent, for: .normal)
+        tosButton.addTarget(self, action: #selector(tosTapped), for: .touchUpInside)
+
+        let andLabel = UILabel()
+        andLabel.text = "and"
+        andLabel.font = font
+        andLabel.textColor = DesignTokens.Colors.textTertiary
+
+        let privacyButton = UIButton(type: .system)
+        privacyButton.setTitle("Privacy Policy", for: .normal)
+        privacyButton.titleLabel?.font = linkFont
+        privacyButton.setTitleColor(DesignTokens.Colors.accent, for: .normal)
+        privacyButton.addTarget(self, action: #selector(privacyTapped), for: .touchUpInside)
+
+        let linksRow = UIStackView(arrangedSubviews: [tosButton, andLabel, privacyButton])
+        linksRow.axis = .horizontal
+        linksRow.spacing = 4
+        linksRow.alignment = .center
+
+        legalStack.axis = .vertical
+        legalStack.spacing = 2
+        legalStack.alignment = .center
+        legalStack.addArrangedSubview(preLabel)
+        legalStack.addArrangedSubview(linksRow)
+        legalStack.alpha = 0
+        legalStack.translatesAutoresizingMaskIntoConstraints = false
+
         view.addSubview(logoView)
         view.addSubview(titleLabel)
         view.addSubview(subtitleLabel)
+        view.addSubview(arrowHint)
         view.addSubview(appleButton)
+        view.addSubview(legalStack)
 
         NSLayoutConstraint.activate([
             logoView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             logoView.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -100),
+            logoView.widthAnchor.constraint(equalToConstant: 100),
+            logoView.heightAnchor.constraint(equalToConstant: 100),
 
             titleLabel.topAnchor.constraint(equalTo: logoView.bottomAnchor, constant: DesignTokens.Spacing.xl),
             titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -215,10 +186,17 @@ final class WelcomeLoginViewController: UIViewController {
             subtitleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.xxxl),
             subtitleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.xxxl),
 
-            appleButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -DesignTokens.Spacing.xxxl),
+            arrowHint.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            arrowHint.bottomAnchor.constraint(equalTo: appleButton.topAnchor, constant: -DesignTokens.Spacing.md),
+
+            appleButton.bottomAnchor.constraint(equalTo: legalStack.topAnchor, constant: -DesignTokens.Spacing.md),
             appleButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.xxxl),
             appleButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.xxxl),
             appleButton.heightAnchor.constraint(equalToConstant: 54),
+
+            legalStack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -DesignTokens.Spacing.md),
+            legalStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.xl),
+            legalStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.xl),
         ])
     }
 
@@ -230,6 +208,8 @@ final class WelcomeLoginViewController: UIViewController {
             titleLabel.alpha = 1; titleLabel.transform = .identity
             subtitleLabel.alpha = 1; subtitleLabel.transform = .identity
             appleButton.alpha = 1; appleButton.transform = .identity
+            arrowHint.alpha = 1
+            legalStack.alpha = 1
             return
         }
 
@@ -251,10 +231,29 @@ final class WelcomeLoginViewController: UIViewController {
             self.subtitleLabel.transform = .identity
         }
 
+        // Arrow hint fades in and starts bouncing
+        UIView.animate(withDuration: 0.4, delay: 0.7, options: .curveEaseOut) {
+            self.arrowHint.alpha = 1
+        } completion: { _ in
+            self.startArrowBounce()
+        }
+
         // Apple button slides up
         UIView.animate(withDuration: 0.5, delay: 0.75, options: .curveEaseOut) {
             self.appleButton.alpha = 1
             self.appleButton.transform = .identity
+        }
+
+        // Legal text fades in
+        UIView.animate(withDuration: 0.4, delay: 0.9, options: .curveEaseOut) {
+            self.legalStack.alpha = 1
+        }
+    }
+
+    private func startArrowBounce() {
+        guard !UIAccessibility.isReduceMotionEnabled else { return }
+        UIView.animate(withDuration: 0.8, delay: 0, options: [.repeat, .autoreverse, .curveEaseInOut]) {
+            self.arrowHint.transform = CGAffineTransform(translationX: 0, y: 6)
         }
     }
 
@@ -318,5 +317,24 @@ extension WelcomeLoginViewController: ASAuthorizationControllerDelegate {
 extension WelcomeLoginViewController: ASAuthorizationControllerPresentationContextProviding {
     func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
         view.window!
+    }
+}
+
+// MARK: - Legal
+
+extension WelcomeLoginViewController {
+    @objc fileprivate func tosTapped() { presentLegal(title: "Terms of Service") }
+    @objc fileprivate func privacyTapped() { presentLegal(title: "Privacy Policy") }
+
+    private func presentLegal(title: String) {
+        let vc = LegalViewController()
+        vc.documentTitle = title
+        let nav = UINavigationController(rootViewController: vc)
+        nav.isNavigationBarHidden = true
+        if let sheet = nav.sheetPresentationController {
+            sheet.detents = [.large()]
+            sheet.prefersGrabberVisible = true
+        }
+        present(nav, animated: true)
     }
 }

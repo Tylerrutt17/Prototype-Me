@@ -32,6 +32,7 @@ nonisolated private enum ModeDetailItem: Hashable, Sendable {
 class ModeDetailViewController: BaseViewController {
 
     var noteId: UUID?
+    var modeService: ModeService?
     var onDirectiveSelected: ((UUID) -> Void)?
     var onEditTapped: ((UUID) -> Void)?
     var onLinkDirectiveTapped: ((UUID) -> Void)?
@@ -222,20 +223,18 @@ class ModeDetailViewController: BaseViewController {
     // MARK: - Active Mode Toggle
 
     private func toggleActiveMode(noteId: UUID, isCurrentlyActive: Bool) {
-        do {
-            try dbQueue.write { db in
+        Task {
+            do {
                 if isCurrentlyActive {
-                    _ = try ActiveMode.deleteOne(db, key: noteId)
+                    try await modeService?.deactivate(noteId: noteId)
                 } else {
-                    // Deactivate all other modes first (single active mode)
-                    _ = try ActiveMode.deleteAll(db)
-                    let mode = ActiveMode(noteId: noteId, activatedAt: Date())
-                    try mode.insert(db)
+                    try await modeService?.deactivateAll()
+                    try await modeService?.activate(noteId: noteId)
                 }
+                Haptics.success()
+            } catch {
+                Haptics.error()
             }
-            Haptics.success()
-        } catch {
-            Haptics.error()
         }
     }
 }
@@ -320,6 +319,9 @@ extension ModeDetailViewController: UICollectionViewDropDelegate {
                 try db.execute(sql: """
                     UPDATE noteDirective SET sortIndex = ? WHERE noteId = ? AND directiveId = ?
                     """, arguments: [index, noteId.uuidString, dirId.uuidString])
+                if let link = try NoteDirective.filter(Column("noteId") == noteId && Column("directiveId") == dirId).fetchOne(db) {
+                    try OutboxOp.enqueue(entityType: "noteDirective", entityId: "\(noteId.uuidString)|\(dirId.uuidString)", op: "update", patch: link.syncPatch(), in: db)
+                }
             }
         }
     }

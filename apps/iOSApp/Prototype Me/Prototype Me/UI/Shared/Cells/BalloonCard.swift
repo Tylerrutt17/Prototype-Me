@@ -220,6 +220,7 @@ final class BalloonCard: InteractiveCell {
                     directive.updatedAt = Date()
                     directive.version += 1
                     try directive.update(db)
+                    try OutboxOp.enqueue(entityType: "directive", entityId: directive.id.uuidString, op: "update", patch: directive.syncPatch(), baseUpdatedAt: directive.updatedAt, in: db)
                 }
                 DirectiveLogger.logPump(directiveId: dir.id, dbQueue: dbQueue)
 

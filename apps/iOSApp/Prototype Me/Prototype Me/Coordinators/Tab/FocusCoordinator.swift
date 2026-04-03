@@ -21,6 +21,7 @@ class FocusCoordinator: Coordinator {
         let vc = FocusViewController()
         vc.dbQueue = environment.db.dbQueue
         vc.balloonNotificationService = environment.balloonNotificationService
+        vc.modeService = environment.modeService
         vc.onModeSelected = { [weak self] noteId in
             self?.showModeDetail(noteId: noteId)
         }
@@ -48,6 +49,7 @@ class FocusCoordinator: Coordinator {
     private func showModeDetail(noteId: UUID) {
         let vc = ModeDetailViewController()
         vc.dbQueue = environment.db.dbQueue
+        vc.modeService = environment.modeService
         vc.noteId = noteId
         vc.onDirectiveSelected = { [weak self] directiveId in
             self?.showDirectiveDetail(directiveId: directiveId)
@@ -128,7 +130,15 @@ class FocusCoordinator: Coordinator {
 
     private func presentAIPanel() {
         let panel = AIPanelViewController()
-        panel.initialQuota = SampleData.usageQuota  // TODO: fetch from API/cache
+        panel.apiClient = environment.apiClient
+        panel.isPro = AuthService.isPro
+        panel.initialQuota = UsageQuota(dailyLimit: panel.isPro ? 100 : 5, dailyUsed: 0, resetAt: Date())
+        // Fetch real quota async
+        Task {
+            if let quota: UsageQuota = try? await environment.apiClient.get("/v1/usage") {
+                await MainActor.run { panel.initialQuota = quota }
+            }
+        }
         panel.onChipSelected = { [weak self] chip in
             self?.presentChipConfirm(chip: chip)
         }
@@ -167,10 +177,8 @@ class FocusCoordinator: Coordinator {
 
     private func presentPaywall() {
         let vc = PaywallViewController()
+        vc.purchaseService = environment.purchaseService
         vc.onDismiss = { [weak self] in
-            self?.navigationController.dismiss(animated: true)
-        }
-        vc.onRestore = { [weak self] in
             self?.navigationController.dismiss(animated: true)
         }
         vc.modalPresentationStyle = .fullScreen

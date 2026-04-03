@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import GRDB
 
 /// Orchestrates push/pull sync between the local GRDB database and the remote API.
@@ -26,6 +27,8 @@ final class SyncEngine: @unchecked Sendable {
     private var debounceWorkItem: DispatchWorkItem?
     private let debounceQueue = DispatchQueue(label: "com.prototypeme.sync.debounce")
     private var outboxObserver: AnyDatabaseCancellable?
+    private var pollTimer: Timer?
+    private static let pollInterval: TimeInterval = 60
 
     // MARK: - Init
 
@@ -52,12 +55,41 @@ final class SyncEngine: @unchecked Sendable {
                     self?.schedulePush()
                 }
             })
+
+        // Periodic pull to pick up changes from other devices
+        startPollTimer()
+        NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.startPollTimer()
+            Task { try? await self?.sync() }
+        }
+        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.stopPollTimer()
+        }
+    }
+
+    private func startPollTimer() {
+        stopPollTimer()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
+            Task { try? await self?.sync() }
+        }
+    }
+
+    private func stopPollTimer() {
+        pollTimer?.invalidate()
+        pollTimer = nil
     }
 
     // MARK: - Public
 
+    /// Whether cloud sync is enabled (requires Pro plan).
+    static var isSyncEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "syncEnabled") }
+        set { UserDefaults.standard.set(newValue, forKey: "syncEnabled") }
+    }
+
     /// Full sync cycle: push pending outbox ops, then pull remote changes.
     func sync() async throws {
+        guard Self.isSyncEnabled else { return }
         guard reachability.isConnected else { return }
         guard beginSync() else { return }
 
@@ -259,7 +291,7 @@ final class SyncEngine: @unchecked Sendable {
             try await db.dbQueue.write { db in
                 for event in response.events {
                     do {
-                        try applyEvent(event, in: db)
+                        try self.applyEvent(event, in: db)
                     } catch {
                         // Log but don't stop the entire pull — skip malformed events
                         print("[Sync] Failed to apply event \(event.entityType)/\(event.entityId): \(error)")

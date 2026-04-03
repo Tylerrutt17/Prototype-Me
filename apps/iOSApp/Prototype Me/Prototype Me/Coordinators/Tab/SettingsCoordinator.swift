@@ -27,6 +27,7 @@ class SettingsCoordinator: Coordinator {
         vc.onUsageTapped = { [weak self] in self?.showUsageLimit() }
         vc.onFriendsTapped = { [weak self] in self?.showFriends() }
         vc.onReplayTourTapped = { [weak self] in self?.showCoachMarks() }
+        vc.onReplayIntroTapped = { [weak self] in self?.showIntroStory() }
         vc.onLegalTapped = { [weak self] title in self?.showLegal(title: title) }
 
         navigationController.viewControllers = [vc]
@@ -44,39 +45,80 @@ class SettingsCoordinator: Coordinator {
     private func showProfile() {
         let vc = ProfileViewController()
         vc.dbQueue = environment.db.dbQueue
-        vc.profile = SampleData.currentUserProfile  // TODO: fetch from API/cache
         vc.isSelf = true
         vc.onFriendsTapped = { [weak self] in self?.showFriends() }
         vc.onUpgradeTapped = { [weak self] in self?.showPaywall() }
         navigationController.pushViewController(vc, animated: true)
+
+        // Load data async
+        Task {
+            do {
+                let profile: UserProfile = try await environment.apiClient.get("/v1/profile")
+                await MainActor.run { vc.profile = profile }
+            } catch {
+                await MainActor.run { vc.showLoadError("Couldn't load profile") }
+            }
+        }
     }
 
     private func showSubscription() {
         let vc = SubscriptionViewController()
         vc.dbQueue = environment.db.dbQueue
-        vc.subscriptionInfo = SampleData.subscriptionInfo  // TODO: fetch from API/cache
-        vc.usageQuota = SampleData.usageQuota              // TODO: fetch from API/cache
         vc.onUpgradeTapped = { [weak self] in self?.showPaywall() }
         navigationController.pushViewController(vc, animated: true)
+
+        Task {
+            do {
+                async let subReq: SubscriptionInfo = environment.apiClient.get("/v1/subscription")
+                async let quotaReq: UsageQuota = environment.apiClient.get("/v1/usage")
+                let (sub, quota) = try await (subReq, quotaReq)
+                await MainActor.run {
+                    vc.subscriptionInfo = sub
+                    vc.usageQuota = quota
+                }
+            } catch {
+                await MainActor.run { vc.showLoadError("Couldn't load subscription info") }
+            }
+        }
     }
 
     private func showUsageLimit() {
         let vc = UsageLimitViewController()
         vc.dbQueue = environment.db.dbQueue
-        vc.quota = SampleData.usageQuota                   // TODO: fetch from API/cache
-        vc.plan = SampleData.subscriptionInfo.plan         // TODO: fetch from API/cache
         vc.onUpgradeTapped = { [weak self] in self?.showPaywall() }
         navigationController.pushViewController(vc, animated: true)
+
+        Task {
+            do {
+                async let quotaReq: UsageQuota = environment.apiClient.get("/v1/usage")
+                async let subReq: SubscriptionInfo = environment.apiClient.get("/v1/subscription")
+                let (quota, sub) = try await (quotaReq, subReq)
+                await MainActor.run {
+                    vc.quota = quota
+                    vc.plan = sub.plan
+                }
+            } catch {
+                await MainActor.run { vc.showLoadError("Couldn't load usage info") }
+            }
+        }
     }
 
     private func showFriends() {
         let vc = FriendsListViewController()
         vc.dbQueue = environment.db.dbQueue
-        vc.friends = SampleData.friends                    // TODO: fetch from API/cache
         vc.onFriendTapped = { [weak self] friend in
             self?.showFriendProfile(friend)
         }
         navigationController.pushViewController(vc, animated: true)
+
+        Task {
+            do {
+                let friends: [FriendItem] = try await environment.apiClient.get("/v1/friends")
+                await MainActor.run { vc.friends = friends }
+            } catch {
+                await MainActor.run { vc.showLoadError("Couldn't load friends") }
+            }
+        }
     }
 
     private func showFriendProfile(_ friend: FriendItem) {
@@ -98,6 +140,7 @@ class SettingsCoordinator: Coordinator {
     private func showPaywall() {
         let vc = PaywallViewController()
         vc.dbQueue = environment.db.dbQueue
+        vc.purchaseService = environment.purchaseService
         vc.onDismiss = { [weak self] in
             self?.navigationController.dismiss(animated: true)
         }
@@ -122,5 +165,14 @@ class SettingsCoordinator: Coordinator {
 
     private func showCoachMarks() {
         onReplayTourRequested?()
+    }
+
+    private func showIntroStory() {
+        let vc = OnboardingStoryViewController()
+        vc.onFinished = { [weak self] in
+            self?.navigationController.dismiss(animated: true)
+        }
+        vc.modalPresentationStyle = .fullScreen
+        navigationController.present(vc, animated: true)
     }
 }

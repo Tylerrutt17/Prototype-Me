@@ -1,5 +1,4 @@
 import UIKit
-import SpriteKit
 import AuthenticationServices
 
 final class LoginViewController: UIViewController {
@@ -20,9 +19,7 @@ final class LoginViewController: UIViewController {
         return layer
     }()
 
-    private var skView: SKView!
-    private var particleScene: AmbientParticleScene!
-    private var waveLayers: [CAShapeLayer] = []
+    private let blueprintGrid = BlueprintGridView()
 
     // MARK: - Content
 
@@ -38,8 +35,9 @@ final class LoginViewController: UIViewController {
         view.backgroundColor = DesignTokens.Colors.background
 
         view.layer.addSublayer(gradientLayer)
-        setupParticles()
-        setupWaves()
+        blueprintGrid.frame = view.bounds
+        blueprintGrid.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(blueprintGrid)
         buildLayout()
     }
 
@@ -49,155 +47,35 @@ final class LoginViewController: UIViewController {
         CATransaction.setDisableActions(true)
         gradientLayer.frame = view.bounds
         CATransaction.commit()
-        skView.frame = view.bounds
-        layoutWaves()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         animateEntrance()
-        animateWaves()
-    }
-
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        particleScene?.isPaused = true
+        blueprintGrid.startAnimating()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        skView?.presentScene(nil)
-    }
-
-    // MARK: - Particles
-
-    private func setupParticles() {
-        skView = SKView()
-        skView.allowsTransparency = true
-        skView.backgroundColor = .clear
-        skView.isUserInteractionEnabled = false
-        view.addSubview(skView)
-
-        particleScene = AmbientParticleScene(size: view.bounds.size)
-        particleScene.intensityMultiplier = 1.2
-        skView.presentScene(particleScene)
-    }
-
-    // MARK: - Wavy Lines
-
-    private func setupWaves() {
-        let colors: [(UIColor, CGFloat)] = [
-            (DesignTokens.Colors.accent, 0.12),
-            (DesignTokens.Colors.accentSecondary, 0.10),
-            (DesignTokens.Colors.accentTertiary, 0.08),
-            (DesignTokens.Colors.accent, 0.06),
-            (DesignTokens.Colors.accentSecondary, 0.05),
-        ]
-
-        for (color, alpha) in colors {
-            let layer = CAShapeLayer()
-            layer.strokeColor = color.withAlphaComponent(alpha).cgColor
-            layer.fillColor = UIColor.clear.cgColor
-            layer.lineWidth = 2
-            layer.lineCap = .round
-            view.layer.insertSublayer(layer, above: gradientLayer)
-            waveLayers.append(layer)
-        }
-    }
-
-    private func layoutWaves() {
-        let w = view.bounds.width
-        let h = view.bounds.height
-        guard w > 0 else { return }
-
-        let configs: [(yCenter: CGFloat, amplitude: CGFloat, frequency: CGFloat, phase: CGFloat, lineWidth: CGFloat)] = [
-            (h * 0.20, 40, 1.5, 0.0, 2.5),
-            (h * 0.30, 55, 1.0, 0.8, 2.0),
-            (h * 0.45, 35, 2.0, 1.6, 1.5),
-            (h * 0.65, 50, 1.2, 2.4, 2.0),
-            (h * 0.78, 30, 1.8, 3.2, 1.5),
-        ]
-
-        for (i, layer) in waveLayers.enumerated() {
-            guard i < configs.count else { break }
-            let c = configs[i]
-            layer.lineWidth = c.lineWidth
-            layer.path = wavePath(width: w, yCenter: c.yCenter, amplitude: c.amplitude, frequency: c.frequency, phase: c.phase).cgPath
-        }
-    }
-
-    private func wavePath(width: CGFloat, yCenter: CGFloat, amplitude: CGFloat, frequency: CGFloat, phase: CGFloat) -> UIBezierPath {
-        let path = UIBezierPath()
-        let steps = 120
-        for i in 0...steps {
-            let t = CGFloat(i) / CGFloat(steps)
-            let x = t * width
-            let y = yCenter + sin(t * frequency * 2 * .pi + phase) * amplitude
-            if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
-            else { path.addLine(to: CGPoint(x: x, y: y)) }
-        }
-        return path
-    }
-
-    private func animateWaves() {
-        guard !UIAccessibility.isReduceMotionEnabled else { return }
-
-        let durations: [CFTimeInterval] = [7.0, 9.0, 6.0, 8.0, 10.0]
-        let amplitudes: [CGFloat] = [40, 55, 35, 50, 30]
-        let frequencies: [CGFloat] = [1.5, 1.0, 2.0, 1.2, 1.8]
-        let phases: [CGFloat] = [0.0, 0.8, 1.6, 2.4, 3.2]
-        let yCenters: [CGFloat] = [0.20, 0.30, 0.45, 0.65, 0.78]
-
-        let w = view.bounds.width
-        let h = view.bounds.height
-
-        for (i, layer) in waveLayers.enumerated() {
-            guard i < durations.count else { break }
-
-            let fromPath = wavePath(
-                width: w,
-                yCenter: h * yCenters[i],
-                amplitude: amplitudes[i],
-                frequency: frequencies[i],
-                phase: phases[i]
-            ).cgPath
-
-            let toPath = wavePath(
-                width: w,
-                yCenter: h * yCenters[i],
-                amplitude: amplitudes[i] * 0.7,
-                frequency: frequencies[i],
-                phase: phases[i] + .pi
-            ).cgPath
-
-            let anim = CABasicAnimation(keyPath: "path")
-            anim.fromValue = fromPath
-            anim.toValue = toPath
-            anim.duration = durations[i]
-            anim.autoreverses = true
-            anim.repeatCount = .infinity
-            anim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            layer.add(anim, forKey: "waveShift")
-        }
+        blueprintGrid.stopAnimating()
     }
 
     // MARK: - Layout
 
     private func buildLayout() {
         // App icon
-        let config = UIImage.SymbolConfiguration(pointSize: 64, weight: .light)
-        logoView.image = UIImage(systemName: "person.crop.circle.badge.checkmark", withConfiguration: config)
-        logoView.tintColor = DesignTokens.Colors.accent
+        if let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+           let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+           let files = primary["CFBundleIconFiles"] as? [String],
+           let lastIcon = files.last {
+            logoView.image = UIImage(named: lastIcon)
+        }
         logoView.contentMode = .scaleAspectFit
+        logoView.layer.cornerRadius = 22
+        logoView.clipsToBounds = true
         logoView.alpha = 0
         logoView.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
         logoView.translatesAutoresizingMaskIntoConstraints = false
-
-        // Glow behind logo
-        logoView.layer.shadowColor = DesignTokens.Colors.accent.cgColor
-        logoView.layer.shadowRadius = 24
-        logoView.layer.shadowOpacity = 0.4
-        logoView.layer.shadowOffset = .zero
 
         // Title
         titleLabel.text = "Prototype Me"
@@ -233,6 +111,8 @@ final class LoginViewController: UIViewController {
         NSLayoutConstraint.activate([
             logoView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             logoView.bottomAnchor.constraint(equalTo: titleLabel.topAnchor, constant: -DesignTokens.Spacing.xl),
+            logoView.widthAnchor.constraint(equalToConstant: 100),
+            logoView.heightAnchor.constraint(equalToConstant: 100),
 
             titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             titleLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -DesignTokens.Spacing.xxl),

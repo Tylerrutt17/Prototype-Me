@@ -2,17 +2,20 @@ import UIKit
 import Speech
 import AVFoundation
 
-/// Tap-to-record mic button with built-in speech recognition.
-/// Tap once to start, tap again to stop. Transcribed text delivered via `onTranscription`.
+/// Tap-to-record mic button with built-in speech recognition + audio file recording.
+/// Tap once to start, tap again to stop. Delivers both transcription and recorded audio file.
 final class VoiceInputButton: UIButton {
 
     // MARK: - Callbacks
 
-    /// Called with the final transcribed text when recording stops.
+    /// Called with the final transcribed text when recording stops (Apple on-device).
     var onTranscription: ((String) -> Void)?
 
     /// Called with partial results while recording.
     var onPartialResult: ((String) -> Void)?
+
+    /// Called with the recorded audio file URL when recording stops (for Whisper upload).
+    var onAudioRecorded: ((URL) -> Void)?
 
     /// Called if an error occurs (permissions denied, etc.)
     var onError: ((String) -> Void)?
@@ -24,6 +27,10 @@ final class VoiceInputButton: UIButton {
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+
+    /// Audio file recorder (records .m4a alongside speech recognition)
+    private var audioFileURL: URL?
+    private var audioFile: AVAudioFile?
 
     private let pulseLayer = CAShapeLayer()
     private var pulseAnimation: CABasicAnimation?
@@ -68,6 +75,11 @@ final class VoiceInputButton: UIButton {
     }
 
     // MARK: - Toggle
+
+    /// Public toggle for external callers (e.g., big mic button).
+    func toggleStatus() {
+        toggleRecording()
+    }
 
     @objc private func toggleRecording() {
         if isRecording {
@@ -126,10 +138,28 @@ final class VoiceInputButton: UIButton {
         }
         self.recognitionRequest = request
 
+        // Set up audio file for recording
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent("voice_\(UUID().uuidString).m4a")
+        self.audioFileURL = fileURL
+
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+
+        // Create audio file for writing
+        let audioSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: recordingFormat.sampleRate,
+            AVNumberOfChannelsKey: recordingFormat.channelCount,
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+        ]
+        audioFile = try? AVAudioFile(forWriting: fileURL, settings: audioSettings, commonFormat: recordingFormat.commonFormat, interleaved: recordingFormat.isInterleaved)
+
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            // Feed to speech recognizer
             request.append(buffer)
+            // Write to file
+            try? self?.audioFile?.write(from: buffer)
         }
 
         recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
@@ -162,6 +192,9 @@ final class VoiceInputButton: UIButton {
     }
 
     private func stopRecording() {
+        guard isRecording else { return }
+        isRecording = false
+
         audioEngine?.stop()
         audioEngine?.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
@@ -170,11 +203,24 @@ final class VoiceInputButton: UIButton {
         audioEngine = nil
         recognitionRequest = nil
         recognitionTask = nil
+        audioFile = nil
 
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 
-        isRecording = false
         updateAppearance()
+
+        // Deliver the recorded audio file
+        if let fileURL = audioFileURL, FileManager.default.fileExists(atPath: fileURL.path) {
+            onAudioRecorded?(fileURL)
+        }
+    }
+
+    /// Clean up any temporary audio files.
+    func cleanupAudioFile() {
+        if let url = audioFileURL {
+            try? FileManager.default.removeItem(at: url)
+            audioFileURL = nil
+        }
     }
 
     // MARK: - Appearance
@@ -215,5 +261,6 @@ final class VoiceInputButton: UIButton {
 
     deinit {
         if isRecording { stopRecording() }
+        cleanupAudioFile()
     }
 }

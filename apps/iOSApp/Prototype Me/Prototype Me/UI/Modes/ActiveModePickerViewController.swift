@@ -129,12 +129,9 @@ final class ActiveModePickerViewController: BaseViewController {
     private func selectMode(_ row: ModePickerRow) {
         Task {
             do {
-                try dbQueue.write { db in
-                    try ActiveMode.deleteAll(db)
-                    if case .mode(let note, _) = row {
-                        let am = ActiveMode(noteId: note.id, activatedAt: Date())
-                        try am.insert(db)
-                    }
+                try await modeService?.deactivateAll()
+                if case .mode(let note, _) = row {
+                    try await modeService?.activate(noteId: note.id)
                 }
                 Haptics.success()
                 onDone?()

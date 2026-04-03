@@ -3,12 +3,13 @@ import UIKit
 /// Friends list with accepted friends and pending requests sections.
 class FriendsListViewController: BaseViewController {
 
-    var friends: [FriendItem] = []
+    var friends: [FriendItem]? { didSet { if isViewLoaded { loadData() } } }
     var onFriendTapped: ((FriendItem) -> Void)?
 
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<FriendsSection, FriendItem>!
     private var emptyState: EmptyStateView?
+    private let spinner = UIActivityIndicatorView(style: .medium)
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -19,7 +20,34 @@ class FriendsListViewController: BaseViewController {
 
         configureCollectionView()
         configureDataSource()
-        loadData()
+        if friends != nil {
+            loadData()
+        } else {
+            spinner.color = DesignTokens.Colors.textSecondary
+            spinner.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(spinner)
+            NSLayoutConstraint.activate([
+                spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+                spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            ])
+            spinner.startAnimating()
+        }
+    }
+
+    func showLoadError(_ message: String) {
+        spinner.stopAnimating()
+        spinner.removeFromSuperview()
+        let label = UILabel()
+        label.text = message
+        label.font = DesignTokens.Typography.body
+        label.textColor = DesignTokens.Colors.textSecondary
+        label.textAlignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
     }
 
     // MARK: - Collection View
@@ -120,7 +148,9 @@ class FriendsListViewController: BaseViewController {
     // MARK: - Load Data
 
     private func loadData() {
-        let friends = self.friends
+        spinner.stopAnimating()
+        spinner.removeFromSuperview()
+        guard let friends else { return }
         let pending = friends.filter { $0.status == .pending }
         let accepted = friends.filter { $0.status == .accepted }
 

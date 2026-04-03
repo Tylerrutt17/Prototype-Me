@@ -16,17 +16,35 @@ class AppCoordinator: Coordinator {
     }
 
     func start() {
+        // Listen for session expiry — redirect to login when tokens expire
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleSessionExpired),
+            name: .authSessionExpired, object: nil
+        )
+
         let hasCompleted = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
 
         if hasCompleted {
             // Already onboarded — check if signed in
             if environment.authService.isSignedIn {
                 showMainApp(animated: false)
+                // Refresh plan from server in background
+                Task { await environment.authService.refreshPlan() }
             } else {
                 showLogin(animated: false)
             }
         } else {
             showWelcome()
+        }
+    }
+
+    @objc private func handleSessionExpired() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            // Dismiss any modals
+            self.tabBarController.presentedViewController?.dismiss(animated: false)
+            // Show login screen
+            self.showLogin(animated: true)
         }
     }
 
@@ -50,10 +68,10 @@ class AppCoordinator: Coordinator {
     private func showSyncLoading() {
         let syncVC = SyncLoadingViewController()
         syncVC.syncTask = { [weak self] in
-            try? await self?.environment.syncEngine.seedFullPush()
-            try? await self?.environment.syncEngine.sync()
+            try? await self?.environment.syncEngine.pull()
         }
         syncVC.onComplete = { [weak self] in
+            UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
             self?.showMainApp(animated: true)
         }
         UIView.transition(with: window, duration: 0.4, options: .transitionCrossDissolve) {

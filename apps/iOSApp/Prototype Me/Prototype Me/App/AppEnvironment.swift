@@ -22,6 +22,9 @@ struct AppEnvironment {
     // Auth
     let authService: AuthService
 
+    // Purchases
+    let purchaseService: PurchaseService
+
     // Notifications
     let balloonNotificationService: BalloonNotificationService
 
@@ -56,6 +59,10 @@ struct AppEnvironment {
 
         // Auth
         self.authService = AuthService(apiClient: apiClient)
+
+        // Purchases
+        self.purchaseService = PurchaseService(apiClient: apiClient)
+        self.purchaseService.configure()
 
         // Notifications
         self.balloonNotificationService = BalloonNotificationService()

@@ -3,18 +3,57 @@ import UIKit
 /// Displays AI usage quota: remaining requests, usage bar, reset time.
 class UsageLimitViewController: BaseViewController {
 
-    var quota: UsageQuota!
-    var plan: SubscriptionPlan = .free
+    var quota: UsageQuota? { didSet { if isViewLoaded { rebuildContent() } } }
+    var plan: SubscriptionPlan = .free { didSet { if isViewLoaded { rebuildContent() } } }
     var onUpgradeTapped: (() -> Void)?
 
     private let scrollView = UIScrollView()
     private let contentStack = UIStackView()
+    private let spinner = UIActivityIndicatorView(style: .medium)
 
     override func viewDidLoad() {
         super.viewDidLoad()
         navBar.setTitle("AI Usage", animated: false)
         configureLayout()
+        if quota != nil {
+            buildContent()
+        } else {
+            showSpinner()
+        }
+    }
+
+    private func showSpinner() {
+        spinner.color = DesignTokens.Colors.textSecondary
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(spinner)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
+        spinner.startAnimating()
+    }
+
+    private func rebuildContent() {
+        spinner.stopAnimating()
+        spinner.removeFromSuperview()
+        contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         buildContent()
+    }
+
+    func showLoadError(_ message: String) {
+        spinner.stopAnimating()
+        spinner.removeFromSuperview()
+        let label = UILabel()
+        label.text = message
+        label.font = DesignTokens.Typography.body
+        label.textColor = DesignTokens.Colors.textSecondary
+        label.textAlignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
     }
 
     // MARK: - Layout
@@ -47,7 +86,7 @@ class UsageLimitViewController: BaseViewController {
     // MARK: - Content
 
     private func buildContent() {
-        let quota = self.quota!
+        guard let quota else { return }
 
         // Quota card
         let card = UIView()

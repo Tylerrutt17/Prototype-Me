@@ -1,16 +1,29 @@
 import UIKit
+import RevenueCat
 
 /// Full-screen paywall with feature comparison and upgrade CTA.
 /// Presented modally from Settings, usage limit, or any upgrade prompt.
 class PaywallViewController: BaseViewController {
 
+    var purchaseService: PurchaseService?
     var onDismiss: (() -> Void)?
-    var onRestore: (() -> Void)?
 
     private let scrollView = UIScrollView()
     private let contentStack = UIStackView()
+    private let spinner = UIActivityIndicatorView(style: .medium)
 
     private let features = SampleData.paywallFeatures
+
+    // RevenueCat data
+    private var currentOffering: Offering?
+    private var monthlyPackage: Package?
+    private var yearlyPackage: Package?
+    private var selectedPackage: Package?
+
+    // CTA elements (need references for updates)
+    private var priceLabel: UILabel?
+    private var periodLabel: UILabel?
+    private var subscribeButton: UIButton?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -24,6 +37,44 @@ class PaywallViewController: BaseViewController {
         buildFeatureTable()
         buildCTA()
         buildRestoreLink()
+        fetchOfferings()
+    }
+
+    // MARK: - Fetch Offerings
+
+    private func fetchOfferings() {
+        subscribeButton?.isEnabled = false
+        subscribeButton?.alpha = 0.5
+        priceLabel?.text = "Loading..."
+
+        Task {
+            do {
+                let offerings = try await purchaseService?.fetchOfferings()
+                await MainActor.run {
+                    if let offering = offerings?.offering(identifier: "Pro Monthly") ?? offerings?.current {
+                        self.currentOffering = offering
+                        self.monthlyPackage = offering.monthly
+                        self.yearlyPackage = offering.annual
+                        self.selectedPackage = offering.monthly ?? offering.availablePackages.first
+                        self.updatePriceDisplay()
+                        self.subscribeButton?.isEnabled = true
+                        self.subscribeButton?.alpha = 1
+                    } else {
+                        self.priceLabel?.text = "No plans available"
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.priceLabel?.text = "Couldn't load prices"
+                }
+            }
+        }
+    }
+
+    private func updatePriceDisplay() {
+        guard let pkg = selectedPackage else { return }
+        priceLabel?.text = pkg.localizedPriceString + " / " + pkg.packageType.periodLabel
+        periodLabel?.text = "Cancel anytime."
     }
 
     // MARK: - Layout
@@ -96,12 +147,10 @@ class PaywallViewController: BaseViewController {
         tableStack.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(tableStack)
 
-        // Header row
         let headerRow = makeFeatureRow(title: "", freeValue: "Free", proValue: "Pro", isHeader: true)
         tableStack.addArrangedSubview(headerRow)
         tableStack.addArrangedSubview(makeSeparator())
 
-        // Feature rows
         for (index, feature) in features.enumerated() {
             let row = makeFeatureRow(
                 title: feature.title,
@@ -149,7 +198,6 @@ class PaywallViewController: BaseViewController {
             : DesignTokens.Typography.rounded(style: .subheadline, weight: .medium)
         proLabel.textColor = isHeader ? DesignTokens.Colors.textTertiary : DesignTokens.Colors.accent
 
-        // Replace "checkmark" text with SF Symbol
         if freeValue == "checkmark" {
             let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
             let attachment = NSTextAttachment()
@@ -203,23 +251,23 @@ class PaywallViewController: BaseViewController {
     // MARK: - CTA
 
     private func buildCTA() {
-        // Price label
-        let priceLabel = UILabel()
-        priceLabel.text = "$4.99 / month"
-        priceLabel.font = DesignTokens.Typography.rounded(style: .title3, weight: .bold)
-        priceLabel.textColor = DesignTokens.Colors.textPrimary
-        priceLabel.textAlignment = .center
+        let price = UILabel()
+        price.text = "Loading..."
+        price.font = DesignTokens.Typography.rounded(style: .title3, weight: .bold)
+        price.textColor = DesignTokens.Colors.textPrimary
+        price.textAlignment = .center
+        self.priceLabel = price
 
-        let periodLabel = UILabel()
-        periodLabel.text = "Cancel anytime. 7-day free trial."
-        periodLabel.font = DesignTokens.Typography.footnote
-        periodLabel.textColor = DesignTokens.Colors.textSecondary
-        periodLabel.textAlignment = .center
+        let period = UILabel()
+        period.text = "Cancel anytime."
+        period.font = DesignTokens.Typography.footnote
+        period.textColor = DesignTokens.Colors.textSecondary
+        period.textAlignment = .center
+        self.periodLabel = period
 
-        // Subscribe button
-        let subscribeButton = UIButton(type: .system)
+        let button = UIButton(type: .system)
         var config = UIButton.Configuration.filled()
-        config.title = "Start Free Trial"
+        config.title = "Subscribe"
         config.baseBackgroundColor = DesignTokens.Colors.accent
         config.baseForegroundColor = .white
         config.cornerStyle = .large
@@ -234,9 +282,11 @@ class PaywallViewController: BaseViewController {
             outgoing.font = DesignTokens.Typography.rounded(style: .headline, weight: .bold)
             return outgoing
         }
-        subscribeButton.configuration = config
+        button.configuration = config
+        button.addTarget(self, action: #selector(subscribeTapped), for: .touchUpInside)
+        self.subscribeButton = button
 
-        let ctaStack = UIStackView(arrangedSubviews: [priceLabel, periodLabel, subscribeButton])
+        let ctaStack = UIStackView(arrangedSubviews: [price, period, button])
         ctaStack.axis = .vertical
         ctaStack.spacing = DesignTokens.Spacing.md
         ctaStack.alignment = .center
@@ -275,7 +325,88 @@ class PaywallViewController: BaseViewController {
         contentStack.addArrangedSubview(bottomStack)
     }
 
+    // MARK: - Actions
+
+    @objc private func subscribeTapped() {
+        guard let package = selectedPackage else { return }
+
+        subscribeButton?.isEnabled = false
+        subscribeButton?.configuration?.title = "Processing..."
+
+        Task {
+            do {
+                let result = try await purchaseService?.purchase(package: package)
+                if result?.userCancelled == true {
+                    await MainActor.run {
+                        self.subscribeButton?.isEnabled = true
+                        self.subscribeButton?.configuration?.title = "Subscribe"
+                    }
+                    return
+                }
+
+                // Sync plan with backend
+                await purchaseService?.syncPlanWithBackend()
+
+                await MainActor.run {
+                    Haptics.success()
+                    self.onDismiss?()
+                }
+            } catch {
+                await MainActor.run {
+                    Haptics.error()
+                    self.subscribeButton?.isEnabled = true
+                    self.subscribeButton?.configuration?.title = "Subscribe"
+                    let alert = UIAlertController(title: "Purchase Failed", message: error.localizedDescription, preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    self.present(alert, animated: true)
+                }
+            }
+        }
+    }
+
     @objc private func restoreTapped() {
-        onRestore?()
+        Task {
+            do {
+                _ = try await purchaseService?.restorePurchases()
+                let isPro = try await purchaseService?.isPro() ?? false
+                await purchaseService?.syncPlanWithBackend()
+
+                await MainActor.run {
+                    if isPro {
+                        Haptics.success()
+                        let alert = UIAlertController(title: "Restored!", message: "Your Pro subscription has been restored.", preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
+                            self?.onDismiss?()
+                        })
+                        self.present(alert, animated: true)
+                    } else {
+                        let alert = UIAlertController(title: "No Subscription Found", message: "We couldn't find an active subscription for this account.", preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: "OK", style: .default))
+                        self.present(alert, animated: true)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    Haptics.error()
+                    let alert = UIAlertController(title: "Restore Failed", message: error.localizedDescription, preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    self.present(alert, animated: true)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - PackageType Period Label
+
+private extension PackageType {
+    var periodLabel: String {
+        switch self {
+        case .monthly: return "month"
+        case .annual: return "year"
+        case .weekly: return "week"
+        case .lifetime: return "lifetime"
+        default: return "period"
+        }
     }
 }

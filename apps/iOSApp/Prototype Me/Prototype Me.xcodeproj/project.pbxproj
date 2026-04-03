@@ -7,7 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		2FF00F392F625A4D0066EC8D /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 2FF00F382F625A4D0066EC8D /* GRDB */; };
+		2F3F44762F7F3833004F6908 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 2F3F44752F7F3833004F6908 /* GRDB */; };
+		2F3F44792F7F387F004F6908 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = 2F3F44782F7F387F004F6908 /* RevenueCat */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,7 +41,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				2FF00F392F625A4D0066EC8D /* GRDB in Frameworks */,
+				2F3F44792F7F387F004F6908 /* RevenueCat in Frameworks */,
+				2F3F44762F7F3833004F6908 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -83,7 +85,8 @@
 			);
 			name = "Prototype Me";
 			packageProductDependencies = (
-				2FF00F382F625A4D0066EC8D /* GRDB */,
+				2F3F44752F7F3833004F6908 /* GRDB */,
+				2F3F44782F7F387F004F6908 /* RevenueCat */,
 			);
 			productName = "Prototype Me";
 			productReference = 2FED5D7D2F621E2700C4DFF4 /* Prototype Me.app */;
@@ -114,7 +117,8 @@
 			mainGroup = 2FED5D742F621E2700C4DFF4;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				2FF00F372F625A4D0066EC8D /* XCRemoteSwiftPackageReference "GRDB" */,
+				2F3F44742F7F3833004F6908 /* XCRemoteSwiftPackageReference "GRDB" */,
+				2F3F44772F7F387F004F6908 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2FED5D7E2F621E2700C4DFF4 /* Products */;
@@ -358,21 +362,34 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		2FF00F372F625A4D0066EC8D /* XCRemoteSwiftPackageReference "GRDB" */ = {
+		2F3F44742F7F3833004F6908 /* XCRemoteSwiftPackageReference "GRDB" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/groue/GRDB.swift";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 7.0.0;
+				minimumVersion = 6.0.0;
+			};
+		};
+		2F3F44772F7F387F004F6908 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/RevenueCat/purchases-ios-spm";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.67.1;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		2FF00F382F625A4D0066EC8D /* GRDB */ = {
+		2F3F44752F7F3833004F6908 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 2FF00F372F625A4D0066EC8D /* XCRemoteSwiftPackageReference "GRDB" */;
+			package = 2F3F44742F7F3833004F6908 /* XCRemoteSwiftPackageReference "GRDB" */;
 			productName = GRDB;
+		};
+		2F3F44782F7F387F004F6908 /* RevenueCat */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2F3F44772F7F387F004F6908 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */;
+			productName = RevenueCat;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -24,6 +24,7 @@ class FocusViewController: BaseViewController {
     var onBalloonSelected: ((UUID) -> Void)?
     var onViewAllBalloonsTapped: (() -> Void)?
     var balloonNotificationService: BalloonNotificationService?
+    var modeService: ModeService?
     var onPickModesTapped: (() -> Void)?
 
     private static let maxInlineBalloons = 4
@@ -520,17 +521,12 @@ class FocusViewController: BaseViewController {
     }
 
     private func applyModeChange(_ newModeId: UUID?) {
-        // Write to DB
+        // Write to DB via service (enqueues sync ops)
         Task {
             do {
-                try dbQueue.write { db in
-                    // Clear all active modes
-                    try ActiveMode.deleteAll(db)
-                    // Insert new if not "No Mode"
-                    if let modeId = newModeId {
-                        let am = ActiveMode(noteId: modeId, activatedAt: Date())
-                        try am.insert(db)
-                    }
+                try await modeService?.deactivateAll()
+                if let modeId = newModeId {
+                    try await modeService?.activate(noteId: modeId)
                 }
                 Haptics.selection()
             } catch {
@@ -587,6 +583,7 @@ class FocusViewController: BaseViewController {
                 r.version += 1
                 r.updatedAt = Date()
                 try r.update(db)
+                try OutboxOp.enqueue(entityType: "scheduleRule", entityId: r.id.uuidString, op: "update", patch: r.syncPatch(), baseUpdatedAt: r.updatedAt, in: db)
             }
             if newDate != nil {
                 DirectiveLogger.logChecklistComplete(

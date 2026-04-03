@@ -49,9 +49,13 @@ final class AuthService: NSObject, Sendable {
         // Store tokens
         apiClient.setTokens(access: response.accessToken, refresh: response.refreshToken)
 
-        // Save user ID for reference
+        // Save user info
         UserDefaults.standard.set(response.user.id, forKey: "userId")
         UserDefaults.standard.set(response.user.displayName, forKey: "userDisplayName")
+        UserDefaults.standard.set(response.user.plan, forKey: "userPlan")
+
+        // Enable sync for pro users
+        SyncEngine.isSyncEnabled = response.user.plan == "pro"
 
         return response
     }
@@ -61,10 +65,30 @@ final class AuthService: NSObject, Sendable {
         apiClient.isAuthenticated
     }
 
+    /// Whether the current user has a Pro plan. Cached in UserDefaults, refreshed on login and via refreshPlan().
+    static var isPro: Bool {
+        UserDefaults.standard.string(forKey: "userPlan") == "pro"
+    }
+
+    /// Fetch the current plan from the server and update local cache.
+    /// Call on app launch or after purchase.
+    func refreshPlan() async {
+        do {
+            let sub: SubscriptionInfo = try await apiClient.get("/v1/subscription")
+            let plan = sub.plan.rawValue
+            UserDefaults.standard.set(plan, forKey: "userPlan")
+            SyncEngine.isSyncEnabled = sub.plan == .pro
+        } catch {
+            // Keep whatever's cached
+        }
+    }
+
     func signOut() {
         apiClient.clearTokens()
         UserDefaults.standard.removeObject(forKey: "userId")
         UserDefaults.standard.removeObject(forKey: "userDisplayName")
+        UserDefaults.standard.removeObject(forKey: "userPlan")
+        SyncEngine.isSyncEnabled = false
     }
 
     // MARK: - Types

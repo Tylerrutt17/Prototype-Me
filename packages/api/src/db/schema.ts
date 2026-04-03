@@ -1,5 +1,6 @@
 import {
   pgTable,
+  pgEnum,
   uuid,
   text,
   integer,
@@ -13,16 +14,29 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
+// ── Enums ───────────────────────────────────
+
+export const subscriptionPlanEnum = pgEnum("subscription_plan", ["free", "pro"]);
+export const noteKindEnum = pgEnum("note_kind", ["regular", "mode", "framework", "situation", "goal"]);
+export const directiveStatusEnum = pgEnum("directive_status", ["active", "archived"]);
+export const scheduleTypeEnum = pgEnum("schedule_type", ["weekly", "monthly", "oneOff"]);
+export const instanceStatusEnum = pgEnum("instance_status", ["pending", "done", "skipped"]);
+export const directiveHistoryActionEnum = pgEnum("directive_history_action", [
+  "create", "update", "graduate", "snooze", "balloon_pump", "shrink", "split", "checklist_complete",
+]);
+export const friendshipStatusEnum = pgEnum("friendship_status", ["pending", "accepted", "declined"]);
+export const syncOpEnum = pgEnum("sync_op_type", ["create", "update", "delete"]);
+
 // ── Users ───────────────────────────────────
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
-  appleId: text("apple_id").unique(), // Apple Sign In sub (e.g. "001758.xxx.0031")
+  appleId: text("apple_id").unique(),
   email: text("email").notNull().default(""),
   displayName: text("display_name").notNull(),
   bio: text("bio"),
   avatarSystemImage: text("avatar_system_image").notNull().default("person.circle.fill"),
   moodChips: jsonb("mood_chips").$type<string[]>().notNull().default([]),
-  plan: text("plan").notNull().default("free"), // free | pro
+  plan: subscriptionPlanEnum("plan").notNull().default("free"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -34,7 +48,7 @@ export const notePage = pgTable(
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     body: text("body").notNull().default(""),
-    kind: text("kind").notNull().default("regular"), // regular | mode | framework | situation | goal
+    kind: noteKindEnum("kind").notNull().default("regular"),
     folderId: uuid("folder_id").references(() => folder.id, { onDelete: "set null" }),
     sortIndex: integer("sort_index").notNull().default(0),
     version: integer("version").notNull().default(1),
@@ -52,7 +66,7 @@ export const directive = pgTable(
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     body: text("body"),
-    status: text("status").notNull().default("active"), // active | maintained | retired
+    status: directiveStatusEnum("status").notNull().default("active"),
     balloonEnabled: boolean("balloon_enabled").notNull().default(false),
     balloonDurationSec: doublePrecision("balloon_duration_sec").notNull().default(0),
     balloonSnapshotSec: doublePrecision("balloon_snapshot_sec").notNull().default(0),
@@ -71,7 +85,7 @@ export const folder = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    parentFolderId: text("parent_folder_id"), // self-referencing, nullable
+    parentFolderId: text("parent_folder_id"),
     sortIndex: integer("sort_index").notNull().default(0),
     version: integer("version").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -121,10 +135,10 @@ export const scheduleRule = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     directiveId: uuid("directive_id").notNull().references(() => directive.id, { onDelete: "cascade" }),
-    ruleType: text("rule_type").notNull(), // weekly | monthly | oneOff
+    ruleType: scheduleTypeEnum("rule_type").notNull(),
     params: jsonb("params").$type<Record<string, number[]>>().notNull(),
     version: integer("version").notNull().default(1),
-    lastCompletedDate: text("last_completed_date"), // yyyy-MM-dd, nullable
+    lastCompletedDate: text("last_completed_date"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -139,7 +153,7 @@ export const scheduleInstance = pgTable(
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     directiveId: uuid("directive_id").notNull().references(() => directive.id, { onDelete: "cascade" }),
     date: date("date").notNull(),
-    status: text("status").notNull().default("pending"), // pending | done | skipped
+    status: instanceStatusEnum("status").notNull().default("pending"),
   },
   (t) => [
     index("schedule_instance_user_date_idx").on(t.userId, t.date),
@@ -163,7 +177,7 @@ export const directiveHistory = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     directiveId: uuid("directive_id").notNull().references(() => directive.id, { onDelete: "cascade" }),
-    action: text("action").notNull(), // create | update | graduate | snooze | balloon_pump | shrink | split | checklist_complete
+    action: directiveHistoryActionEnum("action").notNull(),
     payload: text("payload").notNull().default("{}"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -203,7 +217,7 @@ export const tombstone = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     entityType: text("entity_type").notNull(),
-    entityId: text("entity_id").notNull(), // text, not UUID — supports composite keys like "noteId|directiveId"
+    entityId: text("entity_id").notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deviceId: text("device_id").notNull(),
@@ -215,7 +229,7 @@ export const tombstone = pgTable(
 export const syncOpLog = pgTable(
   "sync_op_log",
   {
-    opId: text("op_id").primaryKey(), // client-generated UUID string
+    opId: text("op_id").primaryKey(),
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     entityType: text("entity_type").notNull(),
     entityId: text("entity_id").notNull(),
@@ -231,7 +245,7 @@ export const friendship = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     requesterId: uuid("requester_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     addresseeId: uuid("addressee_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    status: text("status").notNull().default("pending"), // pending | accepted | declined
+    status: friendshipStatusEnum("status").notNull().default("pending"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
