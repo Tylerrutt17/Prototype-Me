@@ -17,6 +17,9 @@ final class VoiceInputButton: UIButton {
     /// Called with the recorded audio file URL when recording stops (for Whisper upload).
     var onAudioRecorded: ((URL) -> Void)?
 
+    /// Called with normalized audio power level (0.0–1.0) during recording.
+    var onAudioLevel: ((Float) -> Void)?
+
     /// Called if an error occurs (permissions denied, etc.)
     var onError: ((String) -> Void)?
 
@@ -158,6 +161,22 @@ final class VoiceInputButton: UIButton {
             request.append(buffer)
 
             try? self.audioFile?.write(from: buffer)
+
+            // Compute RMS power for audio visualization
+            if let onAudioLevel = self.onAudioLevel,
+               let channelData = buffer.floatChannelData?[0] {
+                let frameLength = Int(buffer.frameLength)
+                var sum: Float = 0
+                for i in 0..<frameLength {
+                    sum += channelData[i] * channelData[i]
+                }
+                let rms = sqrtf(sum / Float(max(frameLength, 1)))
+                // Normalize: typical speech RMS ~0.01-0.1, map to 0-1
+                let normalized = min(max(rms * 5, 0), 1)
+                DispatchQueue.main.async {
+                    onAudioLevel(normalized)
+                }
+            }
         }
 
         recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in

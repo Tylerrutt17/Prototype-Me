@@ -19,10 +19,7 @@ class SpeakViewController: BaseViewController {
     private let textView = UITextView()
     private let placeholderLabel = UILabel()
     private let sendButton = UIButton(type: .system)
-    private let inlineMicButton = UIButton(type: .system)
     private let micButton = VoiceInputButton() // hidden, handles recording logic
-    private let bigMicButton = UIButton(type: .system)
-    private let micLabel = UILabel()
     private let quotaLabel = UILabel()
     private let transcribingBar = UIView()
     private let transcribingSpinner = UIActivityIndicatorView(style: .medium)
@@ -38,8 +35,18 @@ class SpeakViewController: BaseViewController {
     private let proChipsStack = UIStackView()
     private let proActionCardStack = UIStackView()
     private let proRecordingGradient = CAGradientLayer()
+    private let proCancelButton = UIButton(type: .system)
     private var proMicCenterY: NSLayoutConstraint!
     private var isPro: Bool { AuthService.isPro }
+
+    // Audio visualization rings
+    private var audioRingLayers: [CAShapeLayer] = []
+    private let audioRingCount = 3
+    private var currentAudioLevel: Float = 0
+    private var displayLink: CADisplayLink?
+
+    // Thinking animation
+    private var thinkingRingLayer: CAShapeLayer?
 
     // MARK: - State
 
@@ -93,11 +100,11 @@ class SpeakViewController: BaseViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        // Keep gradient frame in sync as the button resizes
+        guard isPro else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        recordingGradient.frame = inlineMicButton.bounds
-        recordingGradient.cornerRadius = inlineMicButton.bounds.height / 2
+        proRecordingGradient.frame = proMicButton.bounds
+        proRecordingGradient.cornerRadius = proMicButton.bounds.height / 2
         CATransaction.commit()
     }
 
@@ -120,19 +127,17 @@ class SpeakViewController: BaseViewController {
         proMicButton.clipsToBounds = true
         proMicButton.addTarget(self, action: #selector(proMicTapped), for: .touchUpInside)
 
-        // Recording gradient
+        // Recording gradient (white shimmer over solid red)
         proRecordingGradient.colors = [
-            DesignTokens.Colors.destructive.cgColor,
-            DesignTokens.Colors.destructive.withAlphaComponent(0.6).cgColor,
+            UIColor.white.withAlphaComponent(0.0).cgColor,
             UIColor.white.withAlphaComponent(0.3).cgColor,
-            DesignTokens.Colors.destructive.withAlphaComponent(0.6).cgColor,
-            DesignTokens.Colors.destructive.cgColor,
+            UIColor.white.withAlphaComponent(0.0).cgColor,
         ]
         proRecordingGradient.startPoint = CGPoint(x: 0, y: 0.5)
         proRecordingGradient.endPoint = CGPoint(x: 1, y: 0.5)
-        proRecordingGradient.locations = [0, 0.3, 0.5, 0.7, 1]
+        proRecordingGradient.locations = [0, 0.5, 1]
         proRecordingGradient.opacity = 0
-        proMicButton.layer.insertSublayer(proRecordingGradient, at: 0)
+        proMicButton.layer.addSublayer(proRecordingGradient)
 
         proContainerView.addSubview(proMicButton)
 
@@ -143,6 +148,20 @@ class SpeakViewController: BaseViewController {
         proStatusLabel.text = "Tap to speak"
         proStatusLabel.translatesAutoresizingMaskIntoConstraints = false
         proContainerView.addSubview(proStatusLabel)
+
+        // ── Cancel button (visible during recording) ──
+        var cancelConfig = UIButton.Configuration.plain()
+        cancelConfig.title = "Cancel"
+        cancelConfig.baseForegroundColor = DesignTokens.Colors.textTertiary
+        cancelConfig.titleTextAttributesTransformer = .init { c in
+            var c = c; c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium); return c
+        }
+        proCancelButton.configuration = cancelConfig
+        proCancelButton.translatesAutoresizingMaskIntoConstraints = false
+        proCancelButton.alpha = 0
+        proCancelButton.isHidden = true
+        proCancelButton.addTarget(self, action: #selector(proCancelTapped), for: .touchUpInside)
+        proContainerView.addSubview(proCancelButton)
 
         // ── Suggestion chips ──
         proChipsStack.axis = .vertical
@@ -196,6 +215,9 @@ class SpeakViewController: BaseViewController {
 
             proStatusLabel.topAnchor.constraint(equalTo: proMicButton.bottomAnchor, constant: DesignTokens.Spacing.lg),
             proStatusLabel.centerXAnchor.constraint(equalTo: proContainerView.centerXAnchor),
+
+            proCancelButton.topAnchor.constraint(equalTo: proStatusLabel.bottomAnchor, constant: DesignTokens.Spacing.md),
+            proCancelButton.centerXAnchor.constraint(equalTo: proContainerView.centerXAnchor),
 
             proChipsStack.bottomAnchor.constraint(equalTo: proContainerView.bottomAnchor, constant: -DesignTokens.Spacing.xl),
             proChipsStack.centerXAnchor.constraint(equalTo: proContainerView.centerXAnchor),
@@ -265,18 +287,29 @@ class SpeakViewController: BaseViewController {
             }
             micButton.toggleStatus()
             isRecording = false
+            // Clear previous result now that we're done recording
+            UIView.animate(withDuration: 0.2) {
+                self.proResultView.alpha = 0
+            } completion: { _ in
+                self.proResultLabel.text = nil
+                self.proActionCardStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+            }
             proSetState(.transcribing)
         } else {
-            // Clear previous result
-            proResultView.alpha = 0
-            proResultLabel.text = nil
-            proActionCardStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-
             recordingStartTime = Date()
             micButton.toggleStatus()
             isRecording = true
             proSetState(.recording)
         }
+    }
+
+    @objc private func proCancelTapped() {
+        if micButton.isRecording {
+            micButton.toggleStatus()
+        }
+        isRecording = false
+        micButton.cleanupAudioFile()
+        proSetState(.idle)
     }
 
     private enum ProState {
@@ -289,6 +322,9 @@ class SpeakViewController: BaseViewController {
             proStatusLabel.text = "Tap to speak"
             proStatusLabel.textColor = DesignTokens.Colors.textTertiary
             proMicButton.isEnabled = true
+            stopAudioVisualization()
+            stopThinkingAnimation()
+            hideCancelButton()
             updateProMicAppearance(recording: false)
             // Animate mic back to center
             UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0, options: []) {
@@ -300,28 +336,37 @@ class SpeakViewController: BaseViewController {
         case .recording:
             proStatusLabel.text = "Listening..."
             proStatusLabel.textColor = DesignTokens.Colors.destructive
+            stopThinkingAnimation()
             updateProMicAppearance(recording: true)
-            // Fade out chips
+            startAudioVisualization()
+            showCancelButton()
+            // Fade out chips only (keep previous result visible)
             UIView.animate(withDuration: 0.2) {
                 self.proChipsStack.alpha = 0
-                self.proResultView.alpha = 0
             }
 
         case .transcribing:
             proStatusLabel.text = "Transcribing..."
             proStatusLabel.textColor = DesignTokens.Colors.accent
             proMicButton.isEnabled = false
+            stopAudioVisualization()
+            hideCancelButton()
             updateProMicAppearance(recording: false)
+            startThinkingAnimation()
 
         case .thinking:
             proStatusLabel.text = "Thinking..."
             proStatusLabel.textColor = DesignTokens.Colors.accent
             proMicButton.isEnabled = false
+            hideCancelButton()
+            startThinkingAnimation()
 
         case .result:
             proStatusLabel.text = "Tap to speak again"
             proStatusLabel.textColor = DesignTokens.Colors.textTertiary
             proMicButton.isEnabled = true
+            hideCancelButton()
+            stopThinkingAnimation()
             // Move mic down, show result
             UIView.animate(withDuration: 0.4, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0, options: []) {
                 self.proMicCenterY.constant = self.proContainerView.bounds.height * 0.3
@@ -333,29 +378,167 @@ class SpeakViewController: BaseViewController {
 
     private func updateProMicAppearance(recording: Bool) {
         var config = proMicButton.configuration ?? .filled()
-        proMicButton.layoutIfNeeded()
-        proRecordingGradient.frame = proMicButton.bounds
-        proRecordingGradient.cornerRadius = proMicButton.bounds.height / 2
 
         if recording {
-            config.baseBackgroundColor = .clear
+            config.baseBackgroundColor = DesignTokens.Colors.destructive
             config.image = UIImage(systemName: "stop.fill")
+            proMicButton.configuration = config
+
+            proMicButton.layoutIfNeeded()
+            proRecordingGradient.frame = proMicButton.bounds
+            proRecordingGradient.cornerRadius = proMicButton.bounds.height / 2
             proRecordingGradient.opacity = 1
+            proRecordingGradient.removeAllAnimations()
+
             let sweep = CABasicAnimation(keyPath: "locations")
-            sweep.fromValue = [-0.5, -0.2, 0.0, 0.2, 0.5]
-            sweep.toValue = [0.5, 0.8, 1.0, 1.2, 1.5]
-            sweep.duration = 1.5
+            sweep.fromValue = [-1.0, -0.5, 0.0]
+            sweep.toValue = [1.0, 1.5, 2.0]
+            sweep.duration = 2.0
             sweep.repeatCount = .infinity
-            sweep.autoreverses = true
-            sweep.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            sweep.timingFunction = CAMediaTimingFunction(name: .linear)
             proRecordingGradient.add(sweep, forKey: "sweep")
         } else {
             config.baseBackgroundColor = DesignTokens.Colors.accent
             config.image = UIImage(systemName: "mic.fill")
+            proMicButton.configuration = config
+
             proRecordingGradient.removeAllAnimations()
             proRecordingGradient.opacity = 0
         }
-        proMicButton.configuration = config
+    }
+
+    // MARK: - Audio Visualization
+
+    private func startAudioVisualization() {
+        stopAudioVisualization()
+
+        // Create concentric ring layers around the mic button
+        let baseSize = proMicButton.bounds.width
+        for i in 0..<audioRingCount {
+            let ring = CAShapeLayer()
+            let inset = CGFloat(i + 1) * -14
+            let rect = proMicButton.bounds.insetBy(dx: inset, dy: inset)
+            ring.path = UIBezierPath(ovalIn: rect).cgPath
+            ring.fillColor = UIColor.clear.cgColor
+            ring.strokeColor = DesignTokens.Colors.destructive.withAlphaComponent(0.3 - CGFloat(i) * 0.08).cgColor
+            ring.lineWidth = 3 - CGFloat(i) * 0.5
+            ring.opacity = 0
+            ring.frame = proMicButton.bounds
+            ring.position = CGPoint(x: proMicButton.bounds.midX, y: proMicButton.bounds.midY)
+            proMicButton.superview?.layer.insertSublayer(ring, below: proMicButton.layer)
+
+            // Convert position to superview coords
+            let center = proMicButton.center
+            ring.position = center
+            ring.frame = CGRect(
+                x: center.x - baseSize / 2 + inset,
+                y: center.y - baseSize / 2 + inset,
+                width: baseSize - inset * 2,
+                height: baseSize - inset * 2
+            )
+            ring.path = UIBezierPath(ovalIn: CGRect(origin: .zero, size: ring.frame.size)).cgPath
+
+            audioRingLayers.append(ring)
+        }
+
+        // Display link for smooth animation driven by audio level
+        currentAudioLevel = 0
+        displayLink = CADisplayLink(target: self, selector: #selector(updateAudioRings))
+        displayLink?.add(to: .main, forMode: .common)
+    }
+
+    private func stopAudioVisualization() {
+        displayLink?.invalidate()
+        displayLink = nil
+        currentAudioLevel = 0
+
+        for ring in audioRingLayers {
+            ring.removeAllAnimations()
+            ring.removeFromSuperlayer()
+        }
+        audioRingLayers.removeAll()
+    }
+
+    @objc private func updateAudioRings() {
+        let level = CGFloat(currentAudioLevel)
+        for (i, ring) in audioRingLayers.enumerated() {
+            let delay = CGFloat(i) * 0.15
+            // Smooth with inertia — rings further out react slightly delayed/softer
+            let dampened = max(level - delay, 0)
+            let scale = 1.0 + dampened * 0.3
+            let opacity = Float(0.2 + dampened * 0.6)
+
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            ring.opacity = opacity
+            ring.transform = CATransform3DMakeScale(scale, scale, 1)
+            CATransaction.commit()
+        }
+    }
+
+    // MARK: - Thinking Animation
+
+    private func startThinkingAnimation() {
+        stopThinkingAnimation()
+
+        let ring = CAShapeLayer()
+        // Draw ring in the button's own coordinate space
+        let size = proMicButton.bounds.size
+        let inset: CGFloat = -10
+        let rect = CGRect(x: inset, y: inset, width: size.width - inset * 2, height: size.height - inset * 2)
+        ring.path = UIBezierPath(ovalIn: rect).cgPath
+        ring.fillColor = UIColor.clear.cgColor
+        ring.strokeColor = DesignTokens.Colors.accent.cgColor
+        ring.lineWidth = 3
+        ring.lineCap = .round
+        ring.strokeEnd = 1
+        ring.opacity = 0.6
+        ring.frame = proMicButton.bounds
+        proMicButton.layer.addSublayer(ring)
+        thinkingRingLayer = ring
+
+        // Gentle pulsing scale
+        let pulse = CABasicAnimation(keyPath: "transform.scale")
+        pulse.fromValue = 1.0
+        pulse.toValue = 1.08
+        pulse.duration = 1.0
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        ring.add(pulse, forKey: "pulse")
+
+        // Fading opacity
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0.3
+        fade.toValue = 0.8
+        fade.duration = 1.0
+        fade.autoreverses = true
+        fade.repeatCount = .infinity
+        fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        ring.add(fade, forKey: "fade")
+    }
+
+    private func stopThinkingAnimation() {
+        thinkingRingLayer?.removeAllAnimations()
+        thinkingRingLayer?.removeFromSuperlayer()
+        thinkingRingLayer = nil
+    }
+
+    // MARK: - Cancel Button
+
+    private func showCancelButton() {
+        proCancelButton.isHidden = false
+        UIView.animate(withDuration: 0.2) {
+            self.proCancelButton.alpha = 1
+        }
+    }
+
+    private func hideCancelButton() {
+        UIView.animate(withDuration: 0.2) {
+            self.proCancelButton.alpha = 0
+        } completion: { _ in
+            self.proCancelButton.isHidden = true
+        }
     }
 
     /// Pro voice flow: transcription completes → auto-send to AI
@@ -728,16 +911,13 @@ class SpeakViewController: BaseViewController {
     private lazy var maxTextViewHeight: CGFloat = UIScreen.main.bounds.height * 0.4
 
     private let fieldContainer = UIView()
-    private let toolbarRow = UIStackView()
     private let clearButton = UIButton(type: .system)
     private let doneButton = UIButton(type: .system)
-    private let recordingGradient = CAGradientLayer()
     private var textViewLeadingDefault: NSLayoutConstraint!
     private var textViewLeadingWithClear: NSLayoutConstraint!
     private var isKeyboardVisible = false
 
     private func setupInputBar() {
-        // Nearly transparent background
         inputBar.backgroundColor = DesignTokens.Colors.background.withAlphaComponent(0.4)
         inputBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(inputBar)
@@ -746,13 +926,6 @@ class SpeakViewController: BaseViewController {
         separator.backgroundColor = DesignTokens.Colors.separator.withAlphaComponent(0.3)
         separator.translatesAutoresizingMaskIntoConstraints = false
         inputBar.addSubview(separator)
-
-        // ── Toolbar row: [voice] [done] ──
-        toolbarRow.axis = .horizontal
-        toolbarRow.spacing = DesignTokens.Spacing.sm
-        toolbarRow.alignment = .center
-        toolbarRow.translatesAutoresizingMaskIntoConstraints = false
-        inputBar.addSubview(toolbarRow)
 
         // Clear button (inline in text field, hidden by default)
         var clearConfig = UIButton.Configuration.plain()
@@ -766,41 +939,7 @@ class SpeakViewController: BaseViewController {
         clearButton.setContentHuggingPriority(.required, for: .horizontal)
         clearButton.translatesAutoresizingMaskIntoConstraints = false
 
-        // Voice button (fills available space, prominent)
-        var micConfig = UIButton.Configuration.filled()
-        micConfig.image = UIImage(systemName: "mic.fill")
-        micConfig.title = "  Voice"
-        micConfig.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
-        micConfig.baseBackgroundColor = DesignTokens.Colors.accent
-        micConfig.baseForegroundColor = .white
-        micConfig.cornerStyle = .capsule
-        micConfig.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 18)
-        micConfig.titleTextAttributesTransformer = .init { container in
-            var c = container
-            c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
-            return c
-        }
-        inlineMicButton.configuration = micConfig
-        inlineMicButton.addTarget(self, action: #selector(bigMicTapped), for: .touchUpInside)
-        inlineMicButton.translatesAutoresizingMaskIntoConstraints = false
-        inlineMicButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        inlineMicButton.clipsToBounds = true
-
-        // Recording gradient layer (white shimmer over solid red, hidden until recording)
-        recordingGradient.colors = [
-            UIColor.white.withAlphaComponent(0.0).cgColor,
-            UIColor.white.withAlphaComponent(0.25).cgColor,
-            UIColor.white.withAlphaComponent(0.0).cgColor,
-        ]
-        recordingGradient.startPoint = CGPoint(x: 0, y: 0.5)
-        recordingGradient.endPoint = CGPoint(x: 1, y: 0.5)
-        recordingGradient.locations = [0, 0.5, 1]
-        recordingGradient.opacity = 0
-        inlineMicButton.layer.addSublayer(recordingGradient)
-
-        toolbarRow.addArrangedSubview(inlineMicButton)
-
-        // Done button (right, keyboard only)
+        // Done button (keyboard accessory)
         var doneConfig = UIButton.Configuration.plain()
         doneConfig.title = "Done"
         doneConfig.baseForegroundColor = DesignTokens.Colors.accent
@@ -813,8 +952,7 @@ class SpeakViewController: BaseViewController {
         doneButton.configuration = doneConfig
         doneButton.addTarget(self, action: #selector(dismissKeyboard), for: .touchUpInside)
         doneButton.isHidden = true
-        doneButton.setContentHuggingPriority(.required, for: .horizontal)
-        toolbarRow.addArrangedSubview(doneButton)
+        doneButton.translatesAutoresizingMaskIntoConstraints = false
 
         // ── Text field row: [X clear] [text view] [send] ──
         fieldContainer.backgroundColor = DesignTokens.Colors.surfacePrimary
@@ -869,6 +1007,9 @@ class SpeakViewController: BaseViewController {
         textViewLeadingWithClear = textView.leadingAnchor.constraint(equalTo: clearButton.trailingAnchor, constant: DesignTokens.Spacing.xs)
         textViewLeadingDefault.isActive = true
 
+        // Done button floats at trailing edge of input bar
+        inputBar.addSubview(doneButton)
+
         NSLayoutConstraint.activate([
             chatTableView.bottomAnchor.constraint(equalTo: inputBar.topAnchor),
 
@@ -881,13 +1022,8 @@ class SpeakViewController: BaseViewController {
             separator.trailingAnchor.constraint(equalTo: inputBar.trailingAnchor),
             separator.heightAnchor.constraint(equalToConstant: 0.5),
 
-            // Toolbar row (pro only)
-            toolbarRow.topAnchor.constraint(equalTo: inputBar.topAnchor, constant: DesignTokens.Spacing.sm),
-            toolbarRow.leadingAnchor.constraint(equalTo: inputBar.leadingAnchor, constant: DesignTokens.Spacing.md),
-            toolbarRow.trailingAnchor.constraint(equalTo: inputBar.trailingAnchor, constant: -DesignTokens.Spacing.md),
-
-            // Text field row
-            fieldContainer.topAnchor.constraint(equalTo: AuthService.isPro ? toolbarRow.bottomAnchor : inputBar.topAnchor, constant: DesignTokens.Spacing.sm),
+            // Text field
+            fieldContainer.topAnchor.constraint(equalTo: inputBar.topAnchor, constant: DesignTokens.Spacing.sm),
             fieldContainer.leadingAnchor.constraint(equalTo: inputBar.leadingAnchor, constant: DesignTokens.Spacing.md),
             fieldContainer.trailingAnchor.constraint(equalTo: inputBar.trailingAnchor, constant: -DesignTokens.Spacing.md),
             fieldContainer.bottomAnchor.constraint(equalTo: inputBar.safeAreaLayoutGuide.bottomAnchor, constant: -DesignTokens.Spacing.sm),
@@ -910,12 +1046,11 @@ class SpeakViewController: BaseViewController {
             sendButton.centerYAnchor.constraint(equalTo: fieldContainer.centerYAnchor),
             sendButton.widthAnchor.constraint(equalToConstant: 34),
             sendButton.heightAnchor.constraint(equalToConstant: 34),
-        ])
 
-        // Non-pro: hide voice toolbar entirely
-        if !AuthService.isPro {
-            toolbarRow.isHidden = true
-        }
+            // Done button
+            doneButton.trailingAnchor.constraint(equalTo: inputBar.trailingAnchor, constant: -DesignTokens.Spacing.md),
+            doneButton.topAnchor.constraint(equalTo: inputBar.topAnchor, constant: DesignTokens.Spacing.sm),
+        ])
     }
 
     // MARK: - Transcribing Bar
@@ -987,13 +1122,13 @@ class SpeakViewController: BaseViewController {
             guard let self, self.isPro else { return }
             self.transcribeWithWhisper(fileURL: fileURL)
         }
+        micButton.onAudioLevel = { [weak self] level in
+            guard let self, self.isPro else { return }
+            self.currentAudioLevel = level
+        }
         micButton.onError = { [weak self] message in
             guard let self else { return }
-            if self.isPro {
-                self.proSetState(.idle)
-            } else {
-                self.updateMicAppearance(recording: false)
-            }
+            if self.isPro { self.proSetState(.idle) }
             let alert = UIAlertController(title: "Voice Input", message: message, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "OK", style: .default))
             self.present(alert, animated: true)
@@ -1001,37 +1136,6 @@ class SpeakViewController: BaseViewController {
     }
 
     // MARK: - Actions
-
-    @objc private func bigMicTapped() {
-        guard !isProcessing else { return }
-
-        if micButton.isRecording {
-            // Check minimum recording duration
-            if let start = recordingStartTime, Date().timeIntervalSince(start) < 1.0 {
-                // Too short — ignore
-                micButton.toggleStatus()
-                isRecording = false
-                updateMicAppearance(recording: false)
-                updateControlsForProcessing()
-                micButton.cleanupAudioFile()
-                textView.text = ""
-                placeholderLabel.isHidden = false
-                return
-            }
-            micButton.toggleStatus()
-            isRecording = false
-            updateMicAppearance(recording: false)
-            updateControlsForProcessing()
-            placeholderLabel.isHidden = textView.text.isEmpty == false
-        } else {
-            recordingStartTime = Date()
-            micButton.toggleStatus()
-            isRecording = true
-            updateMicAppearance(recording: true)
-            updateControlsForProcessing()
-            placeholderLabel.isHidden = true
-        }
-    }
 
     @objc private func sendTapped() {
         guard !isProcessing else { return }
@@ -1058,7 +1162,6 @@ class SpeakViewController: BaseViewController {
     }
 
     private func finishVoiceInput(text: String) {
-        updateMicAppearance(recording: false)
         guard !text.isEmpty else { return }
         sendMessage(text)
     }
@@ -1189,6 +1292,8 @@ class SpeakViewController: BaseViewController {
             return "Activate mode"
         case "deactivate_mode":
             return "Deactivate mode"
+        case "update_note":
+            return "Update note: \(args["title"] as? String ?? args["id"] as? String ?? "unknown")"
         default:
             return toolCall.function
         }
@@ -1290,6 +1395,17 @@ class SpeakViewController: BaseViewController {
                 try await modeService?.deactivate(noteId: noteId)
                 return "Deactivated mode"
 
+            case "update_note":
+                guard let idString = toolCall.arguments["id"] as? String,
+                      let id = UUID(uuidString: idString),
+                      var note = try await noteService?.fetch(id: id) else {
+                    return "Could not find note to update"
+                }
+                if let title = toolCall.arguments["title"] as? String { note.title = title }
+                if let body = toolCall.arguments["body"] as? String { note.body = body }
+                try await noteService?.update(note)
+                return "Updated note: \(note.title)"
+
             default:
                 return "Unknown action: \(toolCall.function)"
             }
@@ -1299,19 +1415,14 @@ class SpeakViewController: BaseViewController {
     }
 
     private func updateControlsForProcessing() {
-        let blocked = isProcessing || isTranscribing || isRecording
+        let blocked = isProcessing || isTranscribing
         sendButton.isEnabled = !blocked
         sendButton.alpha = blocked ? 0.4 : 1.0
-        inlineMicButton.isEnabled = !(isProcessing || isTranscribing)
-        inlineMicButton.alpha = (isProcessing || isTranscribing) ? 0.4 : 1.0
-        textView.isEditable = !(isTranscribing || isRecording)
+        textView.isEditable = !isTranscribing
     }
 
     private func transcribeWithWhisper(fileURL: URL) {
-        if isPro {
-            // Pro flow — state is already set to .transcribing by proMicTapped
-        } else {
-            updateMicAppearance(recording: false)
+        if !isPro {
             showTranscribing()
             updateControlsForProcessing()
         }
@@ -1428,65 +1539,7 @@ class SpeakViewController: BaseViewController {
         }
     }
 
-    // MARK: - Mic Appearance
 
-    private func updateMicAppearance(recording: Bool) {
-        var config = inlineMicButton.configuration ?? .filled()
-
-        if recording {
-            config.baseBackgroundColor = DesignTokens.Colors.destructive
-            config.baseForegroundColor = .white
-            config.image = UIImage(systemName: "stop.fill")
-            config.title = "  Recording..."
-            inlineMicButton.configuration = config
-
-            recordingGradient.opacity = 1
-
-            // Collapse the text field, then start shimmer after layout settles
-            fieldContainerHeight.constant = 0
-            fieldContainer.alpha = 0
-            fieldContainer.isHidden = true
-            UIView.animate(withDuration: 0.25, delay: 0, options: .curveEaseInOut) {
-                self.view.layoutIfNeeded()
-            } completion: { _ in
-                self.startShimmerAnimation()
-            }
-            return
-        } else {
-            config.baseBackgroundColor = DesignTokens.Colors.accent
-            config.baseForegroundColor = .white
-            config.image = UIImage(systemName: "mic.fill")
-            config.title = "  Voice"
-
-            recordingGradient.removeAllAnimations()
-            recordingGradient.opacity = 0
-            inlineMicButton.layer.removeAllAnimations()
-            inlineMicButton.alpha = 1.0
-
-            // Restore the text field
-            fieldContainer.isHidden = false
-            fieldContainerHeight.constant = 48
-            UIView.animate(withDuration: 0.25, delay: 0, options: .curveEaseInOut) {
-                self.fieldContainer.alpha = 1
-                self.view.layoutIfNeeded()
-            }
-        }
-        inlineMicButton.configuration = config
-    }
-
-    private func startShimmerAnimation() {
-        recordingGradient.frame = inlineMicButton.bounds
-        recordingGradient.cornerRadius = inlineMicButton.bounds.height / 2
-        recordingGradient.removeAllAnimations()
-
-        let sweep = CABasicAnimation(keyPath: "locations")
-        sweep.fromValue = [-1.0, -0.5, 0.0]
-        sweep.toValue = [1.0, 1.5, 2.0]
-        sweep.duration = 2.0
-        sweep.repeatCount = .infinity
-        sweep.timingFunction = CAMediaTimingFunction(name: .linear)
-        recordingGradient.add(sweep, forKey: "sweep")
-    }
 
     // MARK: - Scroll
 
@@ -1573,10 +1626,6 @@ extension SpeakViewController: UITextViewDelegate {
     private func updateClearButton() {
         let hasText = !textView.text.isEmpty
         clearButton.isHidden = !hasText
-        // Only toggle toolbar for pro users (non-pro always has it hidden)
-        if AuthService.isPro {
-            toolbarRow.isHidden = hasText
-        }
         textViewLeadingDefault.isActive = !hasText
         textViewLeadingWithClear.isActive = hasText
         UIView.animate(withDuration: 0.15) {

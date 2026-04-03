@@ -4,6 +4,7 @@ import * as profileQueries from "../db/queries/profiles.js";
 import * as directiveQueries from "../db/queries/directives.js";
 import * as noteQueries from "../db/queries/notes.js";
 import * as modeQueries from "../db/queries/modes.js";
+import * as dayEntryQueries from "../db/queries/dayEntries.js";
 import type OpenAI from "openai";
 
 // ── Quota ──────────────────────────────────────
@@ -39,13 +40,13 @@ const tools: OpenAI.Responses.Tool[] = [
     type: "function",
     strict: false,
     name: "update_directive",
-    description: "Update an existing directive's title or body. Use list_directives first to find the directive ID.",
+    description: "Update an existing directive's title or body. Use list_directives first to find the directive ID. IMPORTANT: The body field REPLACES the entire body. If the user wants to ADD to the existing body, you must include the original text plus the new content.",
     parameters: {
       type: "object",
       properties: {
         id: { type: "string", description: "The UUID of the directive to update." },
         title: { type: "string", description: "New title (omit to keep current)." },
-        body: { type: "string", description: "New body (omit to keep current)." },
+        body: { type: "string", description: "Full new body. This REPLACES the existing body entirely. To append, include the original body text plus the new content. Omit to keep current body unchanged." },
       },
       required: ["id"],
     },
@@ -142,6 +143,46 @@ const tools: OpenAI.Responses.Tool[] = [
       properties: {},
     },
   },
+  {
+    type: "function",
+    strict: false,
+    name: "get_journal_entry",
+    description: "Look up a journal entry for a specific date. Use this to CHECK if an entry exists before creating/updating. Returns the entry if it exists, or null.",
+    parameters: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "ISO date string yyyy-MM-dd." },
+      },
+      required: ["date"],
+    },
+  },
+  {
+    type: "function",
+    strict: false,
+    name: "list_notes",
+    description: "List the user's notes. Optionally filter by kind. Use to look up note IDs before updating.",
+    parameters: {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["regular", "mode", "framework", "situation", "goal"], description: "Filter by note type. Omit for all." },
+      },
+    },
+  },
+  {
+    type: "function",
+    strict: false,
+    name: "update_note",
+    description: "Update an existing note's title or body. Use list_notes first to find the ID. IMPORTANT: The body field REPLACES the entire body. If the user wants to ADD to the existing body, you must include the original text plus the new content.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The UUID of the note to update." },
+        title: { type: "string", description: "New title (omit to keep current)." },
+        body: { type: "string", description: "Full new body. This REPLACES the existing body entirely. To append, include the original body text plus the new content. Omit to keep current body unchanged." },
+      },
+      required: ["id"],
+    },
+  },
 ];
 
 // ── System Prompt ──────────────────────────────
@@ -166,11 +207,19 @@ Guidelines:
   - "Create a note" → ask what about
   - "Add a directive" with no specifics → ask what habit/rule they want to try
 - If the user gives enough detail to act, act immediately. Don't over-ask.
+- NEVER use a write tool (create/update) to answer a read-only question. If the user asks "do I have a journal entry for today?" or "what are my directives?", use the read tools (list_directives, list_modes, get_journal_entry) and respond with the information. Do NOT create or overwrite anything.
+- Only use create/update tools when the user explicitly wants to make a change.
 
 Field requirements by action:
 - Journal entries: ALWAYS ask for a rating (1-10) if the user didn't provide one. The rating is important for tracking trends. Also ask for the diary content if not provided.
 - Directives: title is required. Body is optional but helpful — add a brief explanation if you can.
-- Notes: title and body are both required. Ask if either is missing.`;
+- Notes: title and body are both required. Ask if either is missing.
+
+Update behavior:
+- update_directive and update_note REPLACE the body field entirely. They do NOT append.
+- If the user says "add this to the description" or "also mention X", you MUST first look up the current content (via list_directives or list_notes), then send the FULL body with the original text plus the new content combined.
+- If the user says "change the description to X", just send the new text — a full replacement is intended.
+- When in doubt about whether the user wants to replace or append, ask.`;
 
 // ── Types ──────────────────────────────────────
 
@@ -194,7 +243,7 @@ export interface ConverseResult {
 
 // ── Converse ───────────────────────────────────
 
-const READ_TOOLS = new Set(["list_directives", "list_modes"]);
+const READ_TOOLS = new Set(["list_directives", "list_modes", "get_journal_entry", "list_notes"]);
 const MAX_TOOL_ROUNDS = 3;
 
 export async function converse(
@@ -329,6 +378,34 @@ async function executeReadCall(userId: string, name: string, argsJson: string): 
         active: activeNoteIds.has(n.id as string),
       })),
     );
+  }
+
+  if (name === "list_notes") {
+    const filters: Record<string, string> = {};
+    if (args.kind) filters.kind = args.kind;
+    const notes = await noteQueries.findAll(userId, filters);
+    return JSON.stringify(
+      notes.map((n: Record<string, unknown>) => ({
+        id: n.id,
+        title: n.title,
+        body: n.body,
+        kind: n.kind,
+      })),
+    );
+  }
+
+  if (name === "get_journal_entry") {
+    const entries = await dayEntryQueries.findAll(userId, { from: args.date, to: args.date });
+    if (entries.length === 0) return JSON.stringify({ exists: false });
+    const e = entries[0] as Record<string, unknown>;
+    return JSON.stringify({
+      exists: true,
+      id: e.id,
+      date: e.date,
+      diary: e.diary,
+      rating: e.rating,
+      tags: e.tags,
+    });
   }
 
   return "{}";
