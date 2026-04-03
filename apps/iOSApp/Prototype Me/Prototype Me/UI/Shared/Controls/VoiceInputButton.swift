@@ -217,9 +217,163 @@ final class VoiceInputButton: UIButton {
 
         updateAppearance()
 
-        // Deliver the recorded audio file
+        // Analyze, compress, and deliver the recorded audio file
         if let fileURL = audioFileURL, FileManager.default.fileExists(atPath: fileURL.path) {
-            onAudioRecorded?(fileURL)
+            let result = analyzeAndTrim(fileURL: fileURL)
+            switch result {
+            case .silence:
+                cleanupAudioFile()
+                onError?("No speech detected. Try again.")
+            case .trimmed, .unchanged:
+                compressToAAC(wavURL: fileURL) { [weak self] aacURL in
+                    if let aacURL {
+                        self?.audioFileURL = aacURL
+                        try? FileManager.default.removeItem(at: fileURL)
+                        self?.onAudioRecorded?(aacURL)
+                    } else {
+                        // Compression failed — send the WAV as fallback
+                        self?.onAudioRecorded?(fileURL)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Post-Recording Analysis
+
+    private enum AnalysisResult {
+        case silence    // no meaningful audio
+        case trimmed    // trailing silence removed
+        case unchanged  // file is fine as-is
+    }
+
+    /// Analyze the WAV file: detect silence-only recordings, trim trailing dead air,
+    /// and compress internal silence gaps longer than 2s down to 2s.
+    private func analyzeAndTrim(fileURL: URL) -> AnalysisResult {
+        guard let file = try? AVAudioFile(forReading: fileURL) else { return .unchanged }
+        let format = file.processingFormat
+        let totalFrames = file.length
+        guard totalFrames > 0 else { return .silence }
+
+        let sampleRate = format.sampleRate
+        let channels = Int(format.channelCount)
+        let threshold: Float = 0.005 // amplitude threshold for "sound"
+        let maxSilenceFrames = Int(sampleRate * 2.0) // 2s max silence
+
+        // Read entire file into a buffer
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(totalFrames)) else { return .unchanged }
+        do { try file.read(into: buffer) } catch { return .unchanged }
+
+        guard let channelData = buffer.floatChannelData else { return .unchanged }
+        let frameCount = Int(buffer.frameLength)
+
+        // Classify each frame as sound or silence
+        // Then build output: copy sound frames, cap silence runs at 2s, trim trailing silence
+        var isSound = [Bool](repeating: false, count: frameCount)
+        var lastSoundFrame = -1
+        for frame in 0..<frameCount {
+            for ch in 0..<channels {
+                if abs(channelData[ch][frame]) > threshold {
+                    isSound[frame] = true
+                    lastSoundFrame = frame
+                    break
+                }
+            }
+        }
+
+        // No sound at all
+        if lastSoundFrame < 0 { return .silence }
+
+        // Trim trailing silence: only keep up to 0.3s after last sound
+        let endFrame = min(frameCount, lastSoundFrame + Int(sampleRate * 0.3))
+
+        // Build output frames, compressing silence gaps > 2s
+        // Collect ranges of (start, length) to copy from source
+        var ranges: [(start: Int, count: Int)] = []
+        var silenceRun = 0
+        var outputFrameCount = 0
+
+        for frame in 0..<endFrame {
+            if isSound[frame] {
+                silenceRun = 0
+                if let last = ranges.last, last.start + last.count == frame {
+                    ranges[ranges.count - 1] = (last.start, last.count + 1)
+                } else {
+                    ranges.append((start: frame, count: 1))
+                }
+                outputFrameCount += 1
+            } else {
+                silenceRun += 1
+                if silenceRun <= maxSilenceFrames {
+                    if let last = ranges.last, last.start + last.count == frame {
+                        ranges[ranges.count - 1] = (last.start, last.count + 1)
+                    } else {
+                        ranges.append((start: frame, count: 1))
+                    }
+                    outputFrameCount += 1
+                }
+                // else: skip — silence beyond 2s cap
+            }
+        }
+
+        // Nothing to change
+        let framesRemoved = frameCount - outputFrameCount
+        guard framesRemoved > Int(sampleRate) else { return .unchanged } // only bother if we save > 1s
+
+        // Write compressed file
+        let trimmedURL = fileURL.deletingLastPathComponent().appendingPathComponent("trimmed_\(UUID().uuidString).wav")
+        guard let outBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(outputFrameCount)) else { return .unchanged }
+
+        var writePos = 0
+        for range in ranges {
+            for ch in 0..<channels {
+                memcpy(outBuffer.floatChannelData![ch].advanced(by: writePos),
+                       channelData[ch].advanced(by: range.start),
+                       range.count * MemoryLayout<Float>.size)
+            }
+            writePos += range.count
+        }
+        outBuffer.frameLength = AVAudioFrameCount(outputFrameCount)
+
+        guard let outFile = try? AVAudioFile(forWriting: trimmedURL, settings: format.settings) else { return .unchanged }
+        do {
+            try outFile.write(from: outBuffer)
+        } catch {
+            try? FileManager.default.removeItem(at: trimmedURL)
+            return .unchanged
+        }
+
+        // Replace original
+        try? FileManager.default.removeItem(at: fileURL)
+        try? FileManager.default.moveItem(at: trimmedURL, to: fileURL)
+        return .trimmed
+    }
+
+    // MARK: - WAV → AAC Compression
+
+    /// Compress a WAV file to AAC m4a. Calls completion on main thread with the AAC URL, or nil on failure.
+    private func compressToAAC(wavURL: URL, completion: @escaping (URL?) -> Void) {
+        let asset = AVURLAsset(url: wavURL)
+        guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
+            completion(nil)
+            return
+        }
+
+        let aacURL = wavURL.deletingLastPathComponent()
+            .appendingPathComponent("voice_\(UUID().uuidString).m4a")
+        exporter.outputURL = aacURL
+        exporter.outputFileType = .m4a
+
+        exporter.exportAsynchronously {
+            DispatchQueue.main.async {
+                switch exporter.status {
+                case .completed:
+                    completion(aacURL)
+                default:
+                    try? FileManager.default.removeItem(at: aacURL)
+                    completion(nil)
+                }
+            }
         }
     }
 

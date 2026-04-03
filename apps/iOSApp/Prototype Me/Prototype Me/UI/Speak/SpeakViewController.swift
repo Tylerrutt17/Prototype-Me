@@ -64,6 +64,16 @@ class SpeakViewController: BaseViewController {
         observeKeyboard()
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // Keep gradient frame in sync as the button resizes
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        recordingGradient.frame = inlineMicButton.bounds
+        recordingGradient.cornerRadius = inlineMicButton.bounds.height / 2
+        CATransaction.commit()
+    }
+
     // MARK: - Header
 
     // MARK: - Empty State
@@ -220,8 +230,9 @@ class SpeakViewController: BaseViewController {
     private var inputBarBottom: NSLayoutConstraint!
 
     private var fieldContainerHeight: NSLayoutConstraint!
-    private let maxTextViewHeight: CGFloat = 80 // ~3 lines
+    private lazy var maxTextViewHeight: CGFloat = UIScreen.main.bounds.height * 0.4
 
+    private let fieldContainer = UIView()
     private let clearButton = UIButton(type: .system)
     private let doneButton = UIButton(type: .system)
     private let recordingGradient = CAGradientLayer()
@@ -278,17 +289,17 @@ class SpeakViewController: BaseViewController {
         inlineMicButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
         inlineMicButton.clipsToBounds = true
 
-        // Recording gradient layer (hidden until recording)
+        // Recording gradient layer (white shimmer over solid red, hidden until recording)
         recordingGradient.colors = [
-            DesignTokens.Colors.destructive.cgColor,
-            DesignTokens.Colors.destructive.withAlphaComponent(0.6).cgColor,
-            DesignTokens.Colors.destructive.cgColor,
+            UIColor.white.withAlphaComponent(0.0).cgColor,
+            UIColor.white.withAlphaComponent(0.25).cgColor,
+            UIColor.white.withAlphaComponent(0.0).cgColor,
         ]
         recordingGradient.startPoint = CGPoint(x: 0, y: 0.5)
         recordingGradient.endPoint = CGPoint(x: 1, y: 0.5)
         recordingGradient.locations = [0, 0.5, 1]
         recordingGradient.opacity = 0
-        inlineMicButton.layer.insertSublayer(recordingGradient, at: 0)
+        inlineMicButton.layer.addSublayer(recordingGradient)
 
         toolbarRow.addArrangedSubview(inlineMicButton)
 
@@ -309,7 +320,6 @@ class SpeakViewController: BaseViewController {
         toolbarRow.addArrangedSubview(doneButton)
 
         // ── Text field row: [text view] [send] ──
-        let fieldContainer = UIView()
         fieldContainer.backgroundColor = DesignTokens.Colors.surfacePrimary
         fieldContainer.layer.cornerRadius = DesignTokens.Radii.xl
         fieldContainer.layer.borderWidth = 1.5
@@ -453,8 +463,10 @@ class SpeakViewController: BaseViewController {
             }
         }
         micButton.onPartialResult = { [weak self] text in
+            guard !AuthService.isPro else { return }
             self?.textView.text = text
             self?.placeholderLabel.isHidden = !text.isEmpty
+            self?.updateTextViewHeight()
         }
         micButton.onAudioRecorded = { [weak self] fileURL in
             guard let self, AuthService.isPro else { return }
@@ -598,7 +610,7 @@ class SpeakViewController: BaseViewController {
         sendButton.alpha = blocked ? 0.4 : 1.0
         inlineMicButton.isEnabled = !(isProcessing || isTranscribing)
         inlineMicButton.alpha = (isProcessing || isTranscribing) ? 0.4 : 1.0
-        textView.isEditable = !isTranscribing
+        textView.isEditable = !(isTranscribing || isRecording)
     }
 
     private func transcribeWithWhisper(fileURL: URL) {
@@ -610,7 +622,11 @@ class SpeakViewController: BaseViewController {
             do {
                 guard let apiClient else { throw NSError(domain: "Speak", code: 0) }
                 let audioData = try Data(contentsOf: fileURL)
+                let fileSizeMB = Double(audioData.count) / (1024 * 1024)
                 let base64Audio = audioData.base64EncodedString()
+                let payloadSizeMB = Double(base64Audio.utf8.count) / (1024 * 1024)
+                let ext = fileURL.pathExtension
+                print("[Speak] Audio file (\(ext)): \(String(format: "%.2f", fileSizeMB))MB → base64 payload: \(String(format: "%.2f", payloadSizeMB))MB")
 
                 let response: WhisperResponse = try await apiClient.post(
                     "/v1/ai/transcribe",
@@ -624,6 +640,7 @@ class SpeakViewController: BaseViewController {
                     if !response.text.isEmpty {
                         self.textView.text = response.text
                         self.placeholderLabel.isHidden = true
+                        self.updateTextViewHeight()
                         self.updateClearButton()
                         self.sendButton.alpha = 1.0
                         self.updateControlsForProcessing()
@@ -656,25 +673,25 @@ class SpeakViewController: BaseViewController {
     private func updateMicAppearance(recording: Bool) {
         var config = inlineMicButton.configuration ?? .filled()
 
-        // Update gradient frame
-        inlineMicButton.layoutIfNeeded()
-        recordingGradient.frame = inlineMicButton.bounds
-
         if recording {
             config.baseBackgroundColor = DesignTokens.Colors.destructive
             config.baseForegroundColor = .white
             config.image = UIImage(systemName: "stop.fill")
             config.title = "  Recording..."
+            inlineMicButton.configuration = config
 
-            // Sweeping gradient animation
             recordingGradient.opacity = 1
-            let sweep = CABasicAnimation(keyPath: "locations")
-            sweep.fromValue = [-0.5, 0.0, 0.5]
-            sweep.toValue = [0.5, 1.0, 1.5]
-            sweep.duration = 1.5
-            sweep.repeatCount = .infinity
-            sweep.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            recordingGradient.add(sweep, forKey: "sweep")
+
+            // Collapse the text field, then start shimmer after layout settles
+            fieldContainerHeight.constant = 0
+            fieldContainer.alpha = 0
+            fieldContainer.isHidden = true
+            UIView.animate(withDuration: 0.25, delay: 0, options: .curveEaseInOut) {
+                self.view.layoutIfNeeded()
+            } completion: { _ in
+                self.startShimmerAnimation()
+            }
+            return
         } else {
             config.baseBackgroundColor = DesignTokens.Colors.accent
             config.baseForegroundColor = .white
@@ -685,8 +702,30 @@ class SpeakViewController: BaseViewController {
             recordingGradient.opacity = 0
             inlineMicButton.layer.removeAllAnimations()
             inlineMicButton.alpha = 1.0
+
+            // Restore the text field
+            fieldContainer.isHidden = false
+            fieldContainerHeight.constant = 48
+            UIView.animate(withDuration: 0.25, delay: 0, options: .curveEaseInOut) {
+                self.fieldContainer.alpha = 1
+                self.view.layoutIfNeeded()
+            }
         }
         inlineMicButton.configuration = config
+    }
+
+    private func startShimmerAnimation() {
+        recordingGradient.frame = inlineMicButton.bounds
+        recordingGradient.cornerRadius = inlineMicButton.bounds.height / 2
+        recordingGradient.removeAllAnimations()
+
+        let sweep = CABasicAnimation(keyPath: "locations")
+        sweep.fromValue = [-1.0, -0.5, 0.0]
+        sweep.toValue = [1.0, 1.5, 2.0]
+        sweep.duration = 2.0
+        sweep.repeatCount = .infinity
+        sweep.timingFunction = CAMediaTimingFunction(name: .linear)
+        recordingGradient.add(sweep, forKey: "sweep")
     }
 
     // MARK: - Scroll
