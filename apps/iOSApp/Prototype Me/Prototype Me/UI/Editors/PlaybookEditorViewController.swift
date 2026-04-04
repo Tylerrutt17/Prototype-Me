@@ -13,7 +13,11 @@ final class PlaybookEditorViewController: BaseViewController {
 
     // MARK: - Form Controls
 
-    private let nameField = FormTextField(title: "NAME", placeholder: "Folder name")
+    private let nameField: FormTextField = {
+        let f = FormTextField(title: "NAME", placeholder: "Folder name")
+        f.maxLength = FieldLimits.Folder.name
+        return f
+    }()
 
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()

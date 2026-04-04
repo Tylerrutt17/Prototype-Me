@@ -27,8 +27,16 @@ final class DirectiveEditorViewController: BaseViewController {
 
     // MARK: - Manual Form Controls
 
-    private let titleField = FormTextField(title: "TITLE", placeholder: "Directive title")
-    private let bodyField = FormTextView(title: "DESCRIPTION (OPTIONAL)", minHeight: 80)
+    private let titleField: FormTextField = {
+        let f = FormTextField(title: "TITLE", placeholder: "Directive title")
+        f.maxLength = FieldLimits.Directive.title
+        return f
+    }()
+    private let bodyField: FormTextView = {
+        let f = FormTextView(title: "DESCRIPTION (OPTIONAL)", minHeight: 80)
+        f.maxLength = FieldLimits.Directive.body
+        return f
+    }()
     private let statusPicker = DirectiveStatusPicker()
     private let scheduleSection = ScheduleEditorSection()
     private let balloonSection = BalloonEditorSection()
@@ -659,5 +667,12 @@ extension DirectiveEditorViewController: UITextFieldDelegate {
         }
         textField.resignFirstResponder()
         return true
+    }
+
+    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+        guard textField == problemField else { return true }
+        let current = textField.text ?? ""
+        guard let r = Range(range, in: current) else { return true }
+        return current.replacingCharacters(in: r, with: string).count <= FieldLimits.AI.prompt
     }
 }

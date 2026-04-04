@@ -43,6 +43,7 @@ class JournalCoordinator: Coordinator {
         let vc = HistoryViewController()
         vc.dbQueue = environment.db.dbQueue
         vc.apiClient = environment.apiClient
+        vc.periodicReviewService = environment.periodicReviewService
         navigationController.pushViewController(vc, animated: true)
     }
 

@@ -84,8 +84,17 @@ final class DayEntryEditorViewController: BaseViewController {
         return outer
     }()
 
-    private let journalField = FormTextView(title: "JOURNAL", minHeight: 160)
-    private let tagsField = FormTextField(title: "TAGS (COMMA SEPARATED)", placeholder: "focus, health, work")
+    private let journalField: FormTextView = {
+        let f = FormTextView(title: "JOURNAL", minHeight: 160)
+        f.maxLength = FieldLimits.Journal.diary
+        return f
+    }()
+    private let tagsField: FormTextField = {
+        let f = FormTextField(title: "TAGS (COMMA SEPARATED)", placeholder: "focus, health, work")
+        // Generous input limit derived from tag count × (tag length + ", ")
+        f.maxLength = FieldLimits.Journal.tagCount * (FieldLimits.Journal.tag + 2)
+        return f
+    }()
 
     // MARK: - State
 

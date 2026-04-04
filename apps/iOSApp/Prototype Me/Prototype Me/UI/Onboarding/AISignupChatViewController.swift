@@ -81,6 +81,7 @@ final class AISignupChatViewController: UIViewController {
         textView.textColor = DesignTokens.Colors.textPrimary
         textView.tintColor = DesignTokens.Colors.accent
         textView.textContainerInset = UIEdgeInsets(top: 12, left: 8, bottom: 12, right: 8)
+        textView.delegate = self
         textView.translatesAutoresizingMaskIntoConstraints = false
         inputPanel.addSubview(textView)
 
@@ -311,5 +312,15 @@ final class AISignupChatViewController: UIViewController {
     @objc private func keyboardWillHide(_ note: Notification) {
         inputPanelBottom.constant = 20
         UIView.animate(withDuration: 0.25) { self.view.layoutIfNeeded() }
+    }
+}
+
+// MARK: - UITextViewDelegate
+
+extension AISignupChatViewController: UITextViewDelegate {
+    func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+        let current = textView.text ?? ""
+        guard let r = Range(range, in: current) else { return true }
+        return current.replacingCharacters(in: r, with: text).count <= FieldLimits.AI.prompt
     }
 }

@@ -1,15 +1,16 @@
 import { z } from "zod/v4";
+import { LIMITS } from "./limits.js";
 
 export const aiSuggest = z.object({
-  context: z.string().optional(),
+  context: z.string().max(LIMITS.ai.prompt).optional(),
 });
 
 export const aiOnboard = z.object({
-  prompt: z.string().min(1),
+  prompt: z.string().min(1).max(LIMITS.ai.prompt),
 });
 
 export const directiveWizard = z.object({
-  problem: z.string().min(1),
+  problem: z.string().min(1).max(LIMITS.ai.prompt),
 });
 
 export type AiSuggestInput = z.infer<typeof aiSuggest>;

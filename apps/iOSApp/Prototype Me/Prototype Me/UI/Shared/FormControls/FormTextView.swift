@@ -6,6 +6,9 @@ final class FormTextView: UIView, UITextViewDelegate {
     let textView = UITextView()
     var onTextChanged: ((String) -> Void)?
 
+    /// Max character count. nil = unlimited. Input past this is blocked.
+    var maxLength: Int?
+
     init(title: String, minHeight: CGFloat = 120) {
         super.init(frame: .zero)
 
@@ -59,5 +62,13 @@ final class FormTextView: UIView, UITextViewDelegate {
 
     func textViewDidChange(_ textView: UITextView) {
         onTextChanged?(textView.text)
+    }
+
+    func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+        guard let maxLength else { return true }
+        let current = textView.text ?? ""
+        guard let r = Range(range, in: current) else { return true }
+        let updated = current.replacingCharacters(in: r, with: text)
+        return updated.count <= maxLength
     }
 }

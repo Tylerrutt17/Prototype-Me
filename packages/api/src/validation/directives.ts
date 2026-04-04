@@ -1,10 +1,11 @@
 import { z } from "zod/v4";
 import { uuid, directiveStatus } from "./shared.js";
+import { LIMITS } from "./limits.js";
 
 export const createDirective = z.object({
   id: uuid.optional(),
-  title: z.string().min(1),
-  body: z.string().nullable().optional(),
+  title: z.string().min(1).max(LIMITS.directive.title),
+  body: z.string().max(LIMITS.directive.body).nullable().optional(),
   status: directiveStatus,
   balloonEnabled: z.boolean().default(false),
   balloonDurationSec: z.number().default(0),
@@ -12,8 +13,8 @@ export const createDirective = z.object({
 });
 
 export const updateDirective = z.object({
-  title: z.string().min(1).optional(),
-  body: z.string().nullable().optional(),
+  title: z.string().min(1).max(LIMITS.directive.title).optional(),
+  body: z.string().max(LIMITS.directive.body).nullable().optional(),
   status: directiveStatus.optional(),
   balloonEnabled: z.boolean().optional(),
   balloonDurationSec: z.number().optional(),

@@ -6,6 +6,9 @@ final class FormTextField: UIView {
     let textField = UITextField()
     var onTextChanged: ((String) -> Void)?
 
+    /// Max character count. nil = unlimited. Input past this is blocked.
+    var maxLength: Int?
+
     init(title: String, placeholder: String = "") {
         super.init(frame: .zero)
 
@@ -58,5 +61,13 @@ extension FormTextField: UITextFieldDelegate {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         textField.resignFirstResponder()
         return true
+    }
+
+    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+        guard let maxLength else { return true }
+        let current = textField.text ?? ""
+        guard let r = Range(range, in: current) else { return true }
+        let updated = current.replacingCharacters(in: r, with: string)
+        return updated.count <= maxLength
     }
 }

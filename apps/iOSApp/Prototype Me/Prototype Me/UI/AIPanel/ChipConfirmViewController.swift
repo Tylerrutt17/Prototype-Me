@@ -15,8 +15,16 @@ class ChipConfirmViewController: BaseViewController {
 
     private let actionBadge = UILabel()
     private let whyLabel = UILabel()
-    private lazy var titleField = FormTextField(title: "Title", placeholder: "Directive or item title")
-    private lazy var bodyField = FormTextView(title: "Details", minHeight: 100)
+    private lazy var titleField: FormTextField = {
+        let f = FormTextField(title: "Title", placeholder: "Directive or item title")
+        f.maxLength = FieldLimits.Directive.title
+        return f
+    }()
+    private lazy var bodyField: FormTextView = {
+        let f = FormTextView(title: "Details", minHeight: 100)
+        f.maxLength = FieldLimits.Directive.body
+        return f
+    }()
     private let confirmButton = UIButton(type: .system)
     private let cancelButton = UIButton(type: .system)
 

@@ -222,7 +222,9 @@ extension SpeakViewController: UITextViewDelegate {
             textView.resignFirstResponder()
             return false
         }
-        return true
+        let current = textView.text ?? ""
+        guard let r = Range(range, in: current) else { return true }
+        return current.replacingCharacters(in: r, with: text).count <= FieldLimits.AI.speakMessage
     }
 
     public func textViewDidChange(_ textView: UITextView) {

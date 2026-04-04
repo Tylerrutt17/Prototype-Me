@@ -1,5 +1,11 @@
 import Foundation
 
+private extension String {
+    func capped(to limit: Int) -> String {
+        count > limit ? String(prefix(limit)) : self
+    }
+}
+
 /// Handles tool call description, enrichment with current state, and execution against local services.
 final class SpeakActionExecutor {
 
@@ -61,10 +67,10 @@ final class SpeakActionExecutor {
             case "create_directive":
                 tc.actionType = .create
                 tc.itemType = "directive"
-                tc.itemName = args["title"] as? String ?? "Untitled"
+                tc.itemName = (args["title"] as? String ?? "Untitled").capped(to: FieldLimits.Directive.title)
                 tc.changes = [SpeakActionChange(field: "title", oldValue: nil, newValue: tc.itemName)]
                 if let body = args["body"] as? String {
-                    tc.changes.append(SpeakActionChange(field: "body", oldValue: nil, newValue: body))
+                    tc.changes.append(SpeakActionChange(field: "body", oldValue: nil, newValue: body.capped(to: FieldLimits.Directive.body)))
                 }
 
             case "update_directive":
@@ -73,14 +79,20 @@ final class SpeakActionExecutor {
                 if let idStr = args["id"] as? String, let id = UUID(uuidString: idStr),
                    let directive = try? await directiveService?.fetch(id: id) {
                     tc.itemName = directive.title
-                    if let newTitle = args["title"] as? String, newTitle != directive.title {
-                        tc.changes.append(SpeakActionChange(field: "title", oldValue: directive.title, newValue: newTitle))
+                    if let newTitle = args["title"] as? String {
+                        let clamped = newTitle.capped(to: FieldLimits.Directive.title)
+                        if clamped != directive.title {
+                            tc.changes.append(SpeakActionChange(field: "title", oldValue: directive.title, newValue: clamped))
+                        }
                     }
-                    if let newBody = args["body"] as? String, newBody != (directive.body ?? "") {
-                        tc.changes.append(SpeakActionChange(field: "body", oldValue: directive.body, newValue: newBody))
+                    if let newBody = args["body"] as? String {
+                        let clamped = newBody.capped(to: FieldLimits.Directive.body)
+                        if clamped != (directive.body ?? "") {
+                            tc.changes.append(SpeakActionChange(field: "body", oldValue: directive.body, newValue: clamped))
+                        }
                     }
                 } else {
-                    tc.itemName = args["title"] as? String ?? "Unknown"
+                    tc.itemName = (args["title"] as? String ?? "Unknown").capped(to: FieldLimits.Directive.title)
                 }
 
             case "retire_directive":
@@ -96,7 +108,7 @@ final class SpeakActionExecutor {
                 tc.itemType = "journal"
                 tc.itemName = args["date"] as? String ?? "today"
                 if let diary = args["diary"] as? String {
-                    tc.changes.append(SpeakActionChange(field: "diary", oldValue: nil, newValue: diary))
+                    tc.changes.append(SpeakActionChange(field: "diary", oldValue: nil, newValue: diary.capped(to: FieldLimits.Journal.diary)))
                 }
                 if let rating = args["rating"] as? Int {
                     tc.changes.append(SpeakActionChange(field: "rating", oldValue: nil, newValue: "\(rating)/10"))
@@ -105,7 +117,7 @@ final class SpeakActionExecutor {
             case "create_note":
                 tc.actionType = .create
                 tc.itemType = args["kind"] as? String ?? "note"
-                tc.itemName = args["title"] as? String ?? "Untitled"
+                tc.itemName = (args["title"] as? String ?? "Untitled").capped(to: FieldLimits.Note.title)
                 tc.changes = [SpeakActionChange(field: "title", oldValue: nil, newValue: tc.itemName)]
 
             case "update_note":
@@ -114,14 +126,20 @@ final class SpeakActionExecutor {
                 if let idStr = args["id"] as? String, let id = UUID(uuidString: idStr),
                    let note = try? await noteService?.fetch(id: id) {
                     tc.itemName = note.title
-                    if let newTitle = args["title"] as? String, newTitle != note.title {
-                        tc.changes.append(SpeakActionChange(field: "title", oldValue: note.title, newValue: newTitle))
+                    if let newTitle = args["title"] as? String {
+                        let clamped = newTitle.capped(to: FieldLimits.Note.title)
+                        if clamped != note.title {
+                            tc.changes.append(SpeakActionChange(field: "title", oldValue: note.title, newValue: clamped))
+                        }
                     }
-                    if let newBody = args["body"] as? String, newBody != note.body {
-                        tc.changes.append(SpeakActionChange(field: "body", oldValue: String(note.body.prefix(80)), newValue: String(newBody.prefix(80))))
+                    if let newBody = args["body"] as? String {
+                        let clamped = newBody.capped(to: FieldLimits.Note.body)
+                        if clamped != note.body {
+                            tc.changes.append(SpeakActionChange(field: "body", oldValue: String(note.body.prefix(80)), newValue: String(clamped.prefix(80))))
+                        }
                     }
                 } else {
-                    tc.itemName = args["title"] as? String ?? "Unknown"
+                    tc.itemName = (args["title"] as? String ?? "Unknown").capped(to: FieldLimits.Note.title)
                 }
 
             case "rename_folder":
@@ -131,7 +149,7 @@ final class SpeakActionExecutor {
                    let folder = try? await folderService?.fetch(id: id) {
                     tc.itemName = folder.name
                     if let newName = args["name"] as? String {
-                        tc.changes.append(SpeakActionChange(field: "name", oldValue: folder.name, newValue: newName))
+                        tc.changes.append(SpeakActionChange(field: "name", oldValue: folder.name, newValue: newName.capped(to: FieldLimits.Folder.name)))
                     }
                 }
 
@@ -153,14 +171,24 @@ final class SpeakActionExecutor {
         return enriched
     }
 
+    // MARK: - Truncation Helpers
+
+    /// Safety net: AI occasionally ignores the limits in tool descriptions. Truncate
+    /// before writing to local DB so sync never fails validation on the backend.
+    private func truncatedTags(_ tags: [String]) -> [String] {
+        tags
+            .prefix(FieldLimits.Journal.tagCount)
+            .map { $0.capped(to: FieldLimits.Journal.tag) }
+    }
+
     // MARK: - Execute
 
     func execute(_ toolCall: SpeakPendingToolCall) async -> String {
         do {
             switch toolCall.function {
             case "create_directive":
-                let title = toolCall.arguments["title"] as? String ?? "Untitled"
-                let body = toolCall.arguments["body"] as? String
+                let title = (toolCall.arguments["title"] as? String ?? "Untitled").capped(to: FieldLimits.Directive.title)
+                let body = (toolCall.arguments["body"] as? String)?.capped(to: FieldLimits.Directive.body)
                 let directive = try await directiveService?.create(title: title, body: body)
                 return "Created directive: \(directive?.title ?? title)"
 
@@ -170,8 +198,8 @@ final class SpeakActionExecutor {
                       var directive = try await directiveService?.fetch(id: id) else {
                     return "Could not find directive to update"
                 }
-                if let title = toolCall.arguments["title"] as? String { directive.title = title }
-                if let body = toolCall.arguments["body"] as? String { directive.body = body }
+                if let title = toolCall.arguments["title"] as? String { directive.title = title.capped(to: FieldLimits.Directive.title) }
+                if let body = toolCall.arguments["body"] as? String { directive.body = body.capped(to: FieldLimits.Directive.body) }
                 try await directiveService?.update(directive)
                 return "Updated directive: \(directive.title)"
 
@@ -189,15 +217,15 @@ final class SpeakActionExecutor {
                     f.dateFormat = "yyyy-MM-dd"
                     return f.string(from: Date())
                 }()
-                let diary = toolCall.arguments["diary"] as? String ?? ""
+                let diary = (toolCall.arguments["diary"] as? String ?? "").capped(to: FieldLimits.Journal.diary)
                 let rating = toolCall.arguments["rating"] as? Int
-                let tags = toolCall.arguments["tags"] as? [String] ?? []
+                let tags = truncatedTags(toolCall.arguments["tags"] as? [String] ?? [])
                 _ = try await dayEntryService?.createOrUpdate(date: date, rating: rating, diary: diary, tags: tags)
                 return "Saved journal entry for \(date)"
 
             case "create_note":
-                let title = toolCall.arguments["title"] as? String ?? "Untitled"
-                let body = toolCall.arguments["body"] as? String ?? ""
+                let title = (toolCall.arguments["title"] as? String ?? "Untitled").capped(to: FieldLimits.Note.title)
+                let body = (toolCall.arguments["body"] as? String ?? "").capped(to: FieldLimits.Note.body)
                 let kindStr = toolCall.arguments["kind"] as? String ?? "regular"
                 let kind = NoteKind(rawValue: kindStr) ?? .regular
                 _ = try await noteService?.create(title: title, body: body, kind: kind)
@@ -225,8 +253,8 @@ final class SpeakActionExecutor {
                       var note = try await noteService?.fetch(id: id) else {
                     return "Could not find note to update"
                 }
-                if let title = toolCall.arguments["title"] as? String { note.title = title }
-                if let body = toolCall.arguments["body"] as? String { note.body = body }
+                if let title = toolCall.arguments["title"] as? String { note.title = title.capped(to: FieldLimits.Note.title) }
+                if let body = toolCall.arguments["body"] as? String { note.body = body.capped(to: FieldLimits.Note.body) }
                 try await noteService?.update(note)
                 return "Updated note: \(note.title)"
 
@@ -236,7 +264,7 @@ final class SpeakActionExecutor {
                       var folder = try await folderService?.fetch(id: id) else {
                     return "Could not find folder to rename"
                 }
-                let newName = toolCall.arguments["name"] as? String ?? folder.name
+                let newName = (toolCall.arguments["name"] as? String ?? folder.name).capped(to: FieldLimits.Folder.name)
                 folder.name = newName
                 try await folderService?.update(folder)
                 return "Renamed folder to: \(newName)"

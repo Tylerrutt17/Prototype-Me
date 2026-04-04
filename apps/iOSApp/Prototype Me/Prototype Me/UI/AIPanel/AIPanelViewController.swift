@@ -587,6 +587,12 @@ extension AIPanelViewController: UITextFieldDelegate {
         sendTapped()
         return true
     }
+
+    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+        let current = textField.text ?? ""
+        guard let r = Range(range, in: current) else { return true }
+        return current.replacingCharacters(in: r, with: string).count <= FieldLimits.AI.prompt
+    }
 }
 
 // MARK: - ChipCardCell

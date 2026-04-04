@@ -247,6 +247,14 @@ extension NoteEditorViewController: UITextViewDelegate {
             enteredBody = textView.text ?? ""
         }
     }
+
+    func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+        // tag 101 = body field
+        guard textView.tag == 101 else { return true }
+        let current = textView.text ?? ""
+        guard let r = Range(range, in: current) else { return true }
+        return current.replacingCharacters(in: r, with: text).count <= FieldLimits.Note.body
+    }
 }
 
 // MARK: - UITextFieldDelegate
@@ -255,5 +263,13 @@ extension NoteEditorViewController: UITextFieldDelegate {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         textField.resignFirstResponder()
         return true
+    }
+
+    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+        // tag 100 = title field
+        guard textField.tag == 100 else { return true }
+        let current = textField.text ?? ""
+        guard let r = Range(range, in: current) else { return true }
+        return current.replacingCharacters(in: r, with: string).count <= FieldLimits.Note.title
     }
 }

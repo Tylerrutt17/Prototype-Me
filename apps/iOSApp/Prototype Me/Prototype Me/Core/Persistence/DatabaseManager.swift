@@ -209,6 +209,26 @@ final class DatabaseManager: Sendable {
             }
         }
 
+        migrator.registerMigration("v7_periodicReview") { db in
+            try db.create(table: "periodicReview") { t in
+                t.primaryKey("id", .text).notNull()
+                t.column("period", .text).notNull()
+                t.column("periodStart", .text).notNull()
+                t.column("periodEnd", .text).notNull()
+                t.column("summary", .text).notNull()
+                t.column("bestDay", .text)
+                t.column("bestDayNote", .text)
+                t.column("lowestDay", .text)
+                t.column("lowestDayNote", .text)
+                t.column("suggestion", .text)
+                t.column("directiveInsights", .text)
+                t.column("avgRating", .double)
+                t.column("entryCount", .integer).notNull().defaults(to: 0)
+                t.column("createdAt", .text).notNull()
+            }
+            try db.create(indexOn: "periodicReview", columns: ["period", "periodStart"], options: .unique)
+        }
+
         try migrator.migrate(dbQueue)
     }
 }

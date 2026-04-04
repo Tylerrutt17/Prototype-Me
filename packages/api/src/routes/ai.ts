@@ -4,6 +4,7 @@ import * as converseFeature from "../features/converse.js";
 import * as transcribeFeature from "../features/transcribe.js";
 import * as reviewFeature from "../features/weeklyReview.js";
 import { aiSuggest, aiOnboard, directiveWizard } from "../validation/ai.js";
+import { LIMITS } from "../validation/limits.js";
 import { z } from "zod/v4";
 import { ok } from "../lib/responses.js";
 
@@ -14,7 +15,7 @@ const transcribeBody = z.object({
 const converseBody = z.object({
   messages: z.array(z.object({
     role: z.enum(["user", "assistant"]),
-    content: z.string(),
+    content: z.string().max(LIMITS.ai.speakMessage),
   })).min(1),
 });
 

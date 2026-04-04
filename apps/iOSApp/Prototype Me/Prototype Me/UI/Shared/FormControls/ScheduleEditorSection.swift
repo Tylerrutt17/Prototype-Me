@@ -1,7 +1,7 @@
 import UIKit
 
 /// Card-style section for configuring a schedule (weekly/monthly/one-off) on a directive.
-final class ScheduleEditorSection: UIView {
+final class ScheduleEditorSection: UIView, UITextFieldDelegate {
 
     private let toggle = UISwitch()
     private let detailStack = UIStackView()
@@ -223,6 +223,7 @@ final class ScheduleEditorSection: UIView {
         monthlyField.backgroundColor = DesignTokens.Colors.surfaceSecondary
         monthlyField.layer.cornerRadius = DesignTokens.Radii.sm
         monthlyField.keyboardType = .numbersAndPunctuation
+        monthlyField.delegate = self
         monthlyField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 12, height: 0))
         monthlyField.leftViewMode = .always
         monthlyField.heightAnchor.constraint(equalToConstant: 40).isActive = true
@@ -351,6 +352,14 @@ final class ScheduleEditorSection: UIView {
         oneOffDates.remove(at: sender.tag)
         rebuildOneOffList()
         Haptics.selection()
+    }
+
+    // MARK: - UITextFieldDelegate
+
+    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+        let current = textField.text ?? ""
+        guard let r = Range(range, in: current) else { return true }
+        return current.replacingCharacters(in: r, with: string).count <= FieldLimits.Schedule.monthlyDays
     }
 
     // MARK: - Public API

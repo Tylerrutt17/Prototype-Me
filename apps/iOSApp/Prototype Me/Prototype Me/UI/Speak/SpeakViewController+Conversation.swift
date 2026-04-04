@@ -21,7 +21,12 @@ extension SpeakViewController {
 
     // MARK: - Send Message
 
-    func sendMessage(_ text: String) {
+    func sendMessage(_ rawText: String) {
+        // Safety cap for voice transcriptions that might exceed the typed-input cap
+        let text = rawText.count > FieldLimits.AI.speakMessage
+            ? String(rawText.prefix(FieldLimits.AI.speakMessage))
+            : rawText
+
         isProcessing = true
         hideEmptyState()
         updateControlsForProcessing()

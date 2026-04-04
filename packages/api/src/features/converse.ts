@@ -7,6 +7,7 @@ import * as modeQueries from "../db/queries/modes.js";
 import * as dayEntryQueries from "../db/queries/dayEntries.js";
 import * as folderQueries from "../db/queries/folders.js";
 import * as searchQueries from "../db/queries/search.js";
+import { LIMITS } from "../validation/limits.js";
 import type OpenAI from "openai";
 
 // ── Quota ──────────────────────────────────────
@@ -32,8 +33,8 @@ const tools: OpenAI.Responses.Tool[] = [
     parameters: {
       type: "object",
       properties: {
-        title: { type: "string", description: "Short, imperative title. e.g. 'No caffeine after 12pm'" },
-        body: { type: "string", description: "Optional explanation of why this works or how to do it." },
+        title: { type: "string", description: `Short, imperative title (max ${LIMITS.directive.title} chars). e.g. 'No caffeine after 12pm'` },
+        body: { type: "string", description: `Optional explanation of why this works or how to do it (max ${LIMITS.directive.body} chars).` },
       },
       required: ["title"],
     },
@@ -47,8 +48,8 @@ const tools: OpenAI.Responses.Tool[] = [
       type: "object",
       properties: {
         id: { type: "string", description: "The UUID of the directive to update." },
-        title: { type: "string", description: "New title (omit to keep current)." },
-        body: { type: "string", description: "Full new body. This REPLACES the existing body entirely. To append, include the original body text plus the new content. Omit to keep current body unchanged." },
+        title: { type: "string", description: `New title (max ${LIMITS.directive.title} chars). Omit to keep current.` },
+        body: { type: "string", description: `Full new body (max ${LIMITS.directive.body} chars). This REPLACES the existing body entirely. To append, include the original body text plus the new content. Omit to keep current body unchanged.` },
       },
       required: ["id"],
     },
@@ -75,9 +76,9 @@ const tools: OpenAI.Responses.Tool[] = [
       type: "object",
       properties: {
         date: { type: "string", description: "ISO date string yyyy-MM-dd. Use today if not specified." },
-        diary: { type: "string", description: "The journal entry text." },
+        diary: { type: "string", description: `The journal entry text (max ${LIMITS.journal.diary} chars).` },
         rating: { type: "integer", description: "Day rating 1-10. Omit if user didn't mention.", minimum: 1, maximum: 10 },
-        tags: { type: "array", items: { type: "string" }, description: "Optional tags for the entry." },
+        tags: { type: "array", items: { type: "string" }, description: `Optional tags for the entry (max ${LIMITS.journal.tagCount} tags, each max ${LIMITS.journal.tag} chars).` },
       },
       required: ["date", "diary"],
     },
@@ -90,8 +91,8 @@ const tools: OpenAI.Responses.Tool[] = [
     parameters: {
       type: "object",
       properties: {
-        title: { type: "string", description: "Note title." },
-        body: { type: "string", description: "Note content." },
+        title: { type: "string", description: `Note title (max ${LIMITS.note.title} chars).` },
+        body: { type: "string", description: `Note content (max ${LIMITS.note.body} chars).` },
         kind: { type: "string", enum: ["regular", "mode", "framework", "situation", "goal"], description: "Type of note. Default 'regular'." },
       },
       required: ["title", "body"],
@@ -179,8 +180,8 @@ const tools: OpenAI.Responses.Tool[] = [
       type: "object",
       properties: {
         id: { type: "string", description: "The UUID of the note to update." },
-        title: { type: "string", description: "New title (omit to keep current)." },
-        body: { type: "string", description: "Full new body. This REPLACES the existing body entirely. To append, include the original body text plus the new content. Omit to keep current body unchanged." },
+        title: { type: "string", description: `New title (max ${LIMITS.note.title} chars). Omit to keep current.` },
+        body: { type: "string", description: `Full new body (max ${LIMITS.note.body} chars). This REPLACES the existing body entirely. To append, include the original body text plus the new content. Omit to keep current body unchanged.` },
       },
       required: ["id"],
     },
@@ -217,7 +218,7 @@ const tools: OpenAI.Responses.Tool[] = [
       type: "object",
       properties: {
         id: { type: "string", description: "The UUID of the folder to rename." },
-        name: { type: "string", description: "The new folder name." },
+        name: { type: "string", description: `The new folder name (max ${LIMITS.folder.name} chars).` },
       },
       required: ["id", "name"],
     },

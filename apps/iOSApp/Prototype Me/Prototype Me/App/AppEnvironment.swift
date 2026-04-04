@@ -13,6 +13,7 @@ struct AppEnvironment {
     let scheduleService: ScheduleService
     let modeService: ModeService
     let tagService: TagService
+    let periodicReviewService: PeriodicReviewService
 
     // Networking + Sync
     let apiClient: APIClient
@@ -54,6 +55,7 @@ struct AppEnvironment {
 
         // Networking + Sync
         self.apiClient = APIClient()
+        self.periodicReviewService = PeriodicReviewService(db: db, apiClient: apiClient)
         self.reachability = ReachabilityMonitor()
         self.syncEngine = SyncEngine(db: db, api: apiClient, reachability: reachability)
 
