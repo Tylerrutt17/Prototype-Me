@@ -265,6 +265,12 @@ Matching and lookup behavior:
 - If there are ZERO matches, tell the user you couldn't find anything matching that name.
 - NEVER act on a weak or ambiguous match. When in doubt, confirm.
 
+ID handling (CRITICAL):
+- You MUST NEVER invent, guess, or hallucinate UUIDs. Every id/noteId you send to a tool MUST come from a read tool (search, list_*, get_journal_entry) you called earlier in this SAME conversation turn.
+- Before calling update_directive, update_note, retire_directive, rename_folder, activate_mode, or deactivate_mode, you must have already called search or list_* in this turn to obtain the real ID.
+- Do NOT reuse IDs from earlier turns — they may be stale or from a different item. Look them up fresh every time.
+- If you don't have a verified ID from a read tool in the current turn, call search FIRST, then take the write action.
+
 Update behavior:
 - When the user says "rename", "change the name", or "update" a directive/note/folder without specifying WHICH field (title vs body), ask them: "Do you want to change the title, the description, or both?"
 - Do NOT guess which field to change. "Rename my meditation directive" means change the title. "Update the description of my meditation directive" means change the body. But "update my meditation directive" is ambiguous — ask.
@@ -387,10 +393,22 @@ export async function converse(
   const textOutput = response.output.find(
     (item): item is OpenAI.Responses.ResponseOutputMessage => item.type === "message",
   );
-  const finalMessage = textOutput?.content
+  let finalMessage = textOutput?.content
     ?.filter((c): c is OpenAI.Responses.ResponseOutputText => c.type === "output_text")
     .map((c) => c.text)
     .join("") ?? "";
+
+  // Validate that any IDs referenced in write tool calls actually exist.
+  // The model sometimes hallucinates UUIDs; drop those tool calls so the client
+  // doesn't try to execute against a non-existent item.
+  const { validCalls, droppedSummaries } = await validateActionIds(userId, actionCalls);
+  actionCalls = validCalls;
+  if (droppedSummaries.length > 0) {
+    const note = droppedSummaries.length === 1
+      ? `I couldn't find ${droppedSummaries[0]} — could you clarify which one you mean?`
+      : `I couldn't find: ${droppedSummaries.join(", ")}. Could you clarify?`;
+    finalMessage = finalMessage ? `${finalMessage}\n\n${note}` : note;
+  }
 
   await usageQueries.increment(userId);
   const updatedQuota = await getQuota(userId);
@@ -401,6 +419,54 @@ export async function converse(
     remainingQuota: updatedQuota.dailyLimit - updatedQuota.dailyUsed,
     resetAt: getResetTime(),
   };
+}
+
+async function validateActionIds(
+  userId: string,
+  calls: ToolCall[],
+): Promise<{ validCalls: ToolCall[]; droppedSummaries: string[] }> {
+  const validCalls: ToolCall[] = [];
+  const droppedSummaries: string[] = [];
+
+  for (const call of calls) {
+    const args = call.arguments as Record<string, unknown>;
+    let valid = true;
+    let droppedLabel: string | null = null;
+
+    if (call.function === "update_directive" || call.function === "retire_directive") {
+      const id = typeof args.id === "string" ? args.id : null;
+      if (!id || !(await directiveQueries.findById(userId, id))) {
+        valid = false;
+        droppedLabel = "that directive";
+      }
+    } else if (call.function === "update_note") {
+      const id = typeof args.id === "string" ? args.id : null;
+      if (!id || !(await noteQueries.findById(userId, id))) {
+        valid = false;
+        droppedLabel = "that note";
+      }
+    } else if (call.function === "activate_mode" || call.function === "deactivate_mode") {
+      const id = typeof args.noteId === "string" ? args.noteId : null;
+      if (!id || !(await noteQueries.findById(userId, id))) {
+        valid = false;
+        droppedLabel = "that mode";
+      }
+    } else if (call.function === "rename_folder") {
+      const id = typeof args.id === "string" ? args.id : null;
+      if (!id || !(await folderQueries.findById(userId, id))) {
+        valid = false;
+        droppedLabel = "that folder";
+      }
+    }
+
+    if (valid) {
+      validCalls.push(call);
+    } else if (droppedLabel) {
+      droppedSummaries.push(droppedLabel);
+    }
+  }
+
+  return { validCalls, droppedSummaries };
 }
 
 // ── Helpers ────────────────────────────────────

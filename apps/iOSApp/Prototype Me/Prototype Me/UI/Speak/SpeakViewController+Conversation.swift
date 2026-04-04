@@ -42,7 +42,11 @@ extension SpeakViewController {
             do {
                 guard let apiClient else { throw NSError(domain: "Speak", code: 0) }
 
-                let conversationMessages: [[String: String]] = self.messages.compactMap { msg in
+                // Only send the most recent N messages to keep context focused
+                // and API costs predictable (each turn re-sends all history).
+                // 10 ≈ 5 user/assistant exchanges.
+                let historyLimit = 10
+                let allHistory: [[String: String]] = self.messages.compactMap { msg in
                     switch msg.role {
                     case .user:
                         return ["role": "user", "content": msg.text]
@@ -52,6 +56,7 @@ extension SpeakViewController {
                         return nil
                     }
                 }
+                let conversationMessages = Array(allHistory.suffix(historyLimit))
 
                 let response: SpeakConverseResponse = try await apiClient.post(
                     "/v1/ai/converse",

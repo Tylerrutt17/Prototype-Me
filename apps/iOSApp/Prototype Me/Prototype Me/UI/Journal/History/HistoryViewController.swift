@@ -59,16 +59,18 @@ class HistoryViewController: BaseViewController {
     }
 
     private func createLayout() -> UICollectionViewCompositionalLayout {
-        UICollectionViewCompositionalLayout { _, _ in
+        UICollectionViewCompositionalLayout { sectionIndex, _ in
             let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .estimated(160))
             let item = NSCollectionLayoutItem(layoutSize: itemSize)
             let group = NSCollectionLayoutGroup.vertical(layoutSize: itemSize, subitems: [item])
             let section = NSCollectionLayoutSection(group: group)
-            section.interGroupSpacing = DesignTokens.Spacing.md
+            // Tight spacing between weekly sub-cards within a month section
+            section.interGroupSpacing = DesignTokens.Spacing.sm
+            // First section gets top padding; subsequent sections just get bottom spacing
             section.contentInsets = NSDirectionalEdgeInsets(
-                top: DesignTokens.Spacing.lg,
+                top: sectionIndex == 0 ? DesignTokens.Spacing.lg : 0,
                 leading: DesignTokens.Spacing.lg,
-                bottom: DesignTokens.Spacing.lg,
+                bottom: DesignTokens.Spacing.md,
                 trailing: DesignTokens.Spacing.lg
             )
             return section
