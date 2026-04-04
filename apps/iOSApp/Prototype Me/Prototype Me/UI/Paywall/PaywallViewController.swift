@@ -120,7 +120,7 @@ class PaywallViewController: BaseViewController {
         titleLabel.numberOfLines = 0
 
         let subtitleLabel = UILabel()
-        subtitleLabel.text = "Sync everywhere, unlimited AI, share folders, and more."
+        subtitleLabel.text = "Unlimited Speak, voice talk, journal summaries, and more."
         subtitleLabel.font = DesignTokens.Typography.body
         subtitleLabel.textColor = DesignTokens.Colors.textSecondary
         subtitleLabel.textAlignment = .center

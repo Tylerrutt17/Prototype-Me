@@ -264,15 +264,23 @@ export const periodicReview = pgTable(
     period: reviewPeriodEnum("period").notNull(),
     periodStart: date("period_start").notNull(),
     periodEnd: date("period_end").notNull(),
+
+    // Structured insights (source of truth for UI)
+    themes: jsonb("themes").$type<Array<{ name: string; mentions: number }>>().notNull().default([]),
+    directiveWins: jsonb("directive_wins").$type<Array<{ directiveTitle: string; evidence: string }>>().notNull().default([]),
+    directiveFocus: jsonb("directive_focus").$type<Array<{ directiveTitle: string; reason: string }>>().notNull().default([]),
+    directiveGaps: jsonb("directive_gaps").$type<Array<{ theme: string; suggestedTitle: string }>>().notNull().default([]),
+    suggestion: text("suggestion"),
+
+    // Context
     summary: text("summary").notNull(),
     bestDay: date("best_day"),
     bestDayNote: text("best_day_note"),
     lowestDay: date("lowest_day"),
     lowestDayNote: text("lowest_day_note"),
-    suggestion: text("suggestion"),
-    directiveInsights: text("directive_insights"),
     avgRating: doublePrecision("avg_rating"),
     entryCount: integer("entry_count").notNull().default(0),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

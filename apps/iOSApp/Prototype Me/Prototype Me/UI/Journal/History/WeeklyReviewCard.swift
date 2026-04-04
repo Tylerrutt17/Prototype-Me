@@ -1,11 +1,13 @@
 import UIKit
 
-/// Smaller card shown beneath a month card for each week's AI review.
+/// Compact card shown beneath a month card for each week's AI review.
 final class WeeklyReviewCard: UICollectionViewCell {
 
+    private let containerView = UIView()
     private let weekLabel = UILabel()
-    private let ratingPill = UILabel()
-    private let summaryLabel = UILabel()
+    private let ratingPill = PaddedLabel()
+    private let themesLabel = UILabel()
+    private let focusLabel = UILabel()
     private let suggestionContainer = UIView()
     private let suggestionLabel = UILabel()
 
@@ -15,8 +17,6 @@ final class WeeklyReviewCard: UICollectionViewCell {
     }
 
     required init?(coder: NSCoder) { super.init(coder: coder); setupCell() }
-
-    private let containerView = UIView()
 
     private func setupCell() {
         contentView.backgroundColor = .clear
@@ -45,23 +45,26 @@ final class WeeklyReviewCard: UICollectionViewCell {
         ratingPill.layer.cornerRadius = 8
         ratingPill.clipsToBounds = true
         ratingPill.textAlignment = .center
+        ratingPill.contentInsets = UIEdgeInsets(top: 3, left: 8, bottom: 3, right: 8)
         ratingPill.setContentHuggingPriority(.required, for: .horizontal)
 
-        summaryLabel.font = DesignTokens.Typography.footnote
-        summaryLabel.textColor = DesignTokens.Colors.textPrimary
-        summaryLabel.numberOfLines = 0
+        themesLabel.font = DesignTokens.Typography.caption1
+        themesLabel.textColor = DesignTokens.Colors.textPrimary
+        themesLabel.numberOfLines = 0
 
-        // Suggestion box
+        focusLabel.font = DesignTokens.Typography.caption1
+        focusLabel.textColor = DesignTokens.Colors.textSecondary
+        focusLabel.numberOfLines = 0
+
+        // Suggestion
         suggestionContainer.backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.08)
         suggestionContainer.layer.cornerRadius = DesignTokens.Radii.sm
-
         suggestionLabel.font = DesignTokens.Typography.rounded(style: .caption1, weight: .medium)
         suggestionLabel.textColor = DesignTokens.Colors.accent
         suggestionLabel.numberOfLines = 0
         suggestionLabel.translatesAutoresizingMaskIntoConstraints = false
         suggestionContainer.addSubview(suggestionLabel)
-
-        let sp: CGFloat = DesignTokens.Spacing.sm
+        let sp = DesignTokens.Spacing.sm
         NSLayoutConstraint.activate([
             suggestionLabel.topAnchor.constraint(equalTo: suggestionContainer.topAnchor, constant: sp),
             suggestionLabel.bottomAnchor.constraint(equalTo: suggestionContainer.bottomAnchor, constant: -sp),
@@ -73,10 +76,11 @@ final class WeeklyReviewCard: UICollectionViewCell {
         topRow.axis = .horizontal
         topRow.alignment = .center
 
-        let stack = UIStackView(arrangedSubviews: [topRow, summaryLabel, suggestionContainer])
+        let stack = UIStackView(arrangedSubviews: [topRow, themesLabel, focusLabel, suggestionContainer])
         stack.axis = .vertical
-        stack.spacing = DesignTokens.Spacing.sm
-        stack.setCustomSpacing(DesignTokens.Spacing.xs, after: topRow)
+        stack.spacing = DesignTokens.Spacing.xs
+        stack.setCustomSpacing(DesignTokens.Spacing.sm, after: topRow)
+        stack.setCustomSpacing(DesignTokens.Spacing.sm, after: focusLabel)
         stack.translatesAutoresizingMaskIntoConstraints = false
         containerView.addSubview(stack)
 
@@ -91,13 +95,33 @@ final class WeeklyReviewCard: UICollectionViewCell {
 
     func configure(with review: PeriodicReview) {
         weekLabel.text = HistoryDateFormat.weekRange(start: review.periodStart, end: review.periodEnd)
-        summaryLabel.text = review.summary
 
         if let avg = review.avgRating {
-            ratingPill.text = "  \(String(format: "%.1f", avg))  "
+            ratingPill.text = String(format: "%.1f", avg)
             ratingPill.isHidden = false
         } else {
             ratingPill.isHidden = true
+        }
+
+        // Themes
+        if !review.themes.isEmpty {
+            themesLabel.text = review.themes.prefix(4).map(\.name).joined(separator: " · ")
+            themesLabel.isHidden = false
+        } else {
+            themesLabel.isHidden = true
+        }
+
+        // Top focus OR win (prefer focus since it's actionable)
+        if let focus = review.directiveFocus.first {
+            focusLabel.text = "↻ \(focus.directiveTitle) — \(focus.reason)"
+            focusLabel.textColor = DesignTokens.Colors.warning
+            focusLabel.isHidden = false
+        } else if let win = review.directiveWins.first {
+            focusLabel.text = "✓ \(win.directiveTitle) — \(win.evidence)"
+            focusLabel.textColor = DesignTokens.Colors.success
+            focusLabel.isHidden = false
+        } else {
+            focusLabel.isHidden = true
         }
 
         if let suggestion = review.suggestion, !suggestion.isEmpty {

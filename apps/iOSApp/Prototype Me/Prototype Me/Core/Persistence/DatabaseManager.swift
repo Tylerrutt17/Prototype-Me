@@ -38,12 +38,14 @@ final class DatabaseManager: Sendable {
         // NOTE: eraseDatabaseOnSchemaChange was removed — it wiped all user data
         // on every rebuild when migrations changed. Use "Delete app + reinstall" instead.
 
-        migrator.registerMigration("v1_createTables") { db in
+        migrator.registerMigration("v1_initialSchema") { db in
             // ── folders — created first because notePage references it ──
             try db.create(table: "folder") { t in
                 t.primaryKey("id", .text).notNull()
                 t.column("name", .text).notNull().defaults(to: "")
                 t.column("parentFolderId", .text).references("folder", onDelete: .cascade)
+                t.column("sortIndex", .integer).notNull().defaults(to: 0)
+                t.column("version", .integer).notNull().defaults(to: 1)
                 t.column("createdAt", .datetime).notNull()
                 t.column("updatedAt", .datetime).notNull()
             }
@@ -57,6 +59,7 @@ final class DatabaseManager: Sendable {
                 t.column("folderId", .text).references("folder", onDelete: .setNull)
                 t.column("sortIndex", .integer).notNull().defaults(to: 0)
                 t.column("version", .integer).notNull().defaults(to: 1)
+                t.column("updatedByDeviceId", .text)
                 t.column("createdAt", .datetime).notNull()
                 t.column("updatedAt", .datetime).notNull()
             }
@@ -72,6 +75,7 @@ final class DatabaseManager: Sendable {
                 t.column("balloonSnapshotSec", .double).notNull().defaults(to: 0)
                 t.column("snoozedUntil", .datetime)
                 t.column("version", .integer).notNull().defaults(to: 1)
+                t.column("updatedByDeviceId", .text)
                 t.column("createdAt", .datetime).notNull()
                 t.column("updatedAt", .datetime).notNull()
             }
@@ -81,6 +85,7 @@ final class DatabaseManager: Sendable {
                 t.column("noteId", .text).notNull().references("notePage", onDelete: .cascade)
                 t.column("directiveId", .text).notNull().references("directive", onDelete: .cascade)
                 t.column("sortIndex", .integer).notNull().defaults(to: 0)
+                t.column("createdAt", .datetime).notNull().defaults(to: Date())
                 t.primaryKey(["noteId", "directiveId"])
             }
 
@@ -91,6 +96,8 @@ final class DatabaseManager: Sendable {
                 t.column("rating", .integer)
                 t.column("diary", .text).notNull().defaults(to: "")
                 t.column("tagsJSON", .text).notNull().defaults(to: "[]")  // JSON array of strings
+                t.column("version", .integer).notNull().defaults(to: 1)
+                t.column("updatedByDeviceId", .text)
                 t.column("createdAt", .datetime).notNull()
                 t.column("updatedAt", .datetime).notNull()
                 t.uniqueKey(["date"])
@@ -102,7 +109,9 @@ final class DatabaseManager: Sendable {
                 t.column("directiveId", .text).notNull().references("directive", onDelete: .cascade)
                 t.column("ruleType", .text).notNull()
                 t.column("paramsJSON", .text).notNull().defaults(to: "{}")
+                t.column("version", .integer).notNull().defaults(to: 1)
                 t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull().defaults(to: Date())
                 t.column("lastCompletedDate", .text)  // yyyy-MM-dd, nullable
             }
 
@@ -111,6 +120,7 @@ final class DatabaseManager: Sendable {
                 t.primaryKey("id", .text).notNull()
                 t.column("name", .text).notNull()
                 t.column("color", .text)
+                t.column("version", .integer).notNull().defaults(to: 1)
                 t.uniqueKey(["name"])
             }
 
@@ -122,17 +132,13 @@ final class DatabaseManager: Sendable {
                 t.column("payload", .text).notNull().defaults(to: "{}")
                 t.column("createdAt", .datetime).notNull()
             }
-        }
 
-        migrator.registerMigration("v2_addActiveModes") { db in
             // ── active modes ──
             try db.create(table: "activeMode") { t in
                 t.primaryKey("noteId", .text).references("notePage", onDelete: .cascade)
                 t.column("activatedAt", .datetime).notNull()
             }
-        }
 
-        migrator.registerMigration("v3_syncInfrastructure") { db in
             // ── outbox queue (pending sync operations) ──
             try db.create(table: "outboxOp") { t in
                 t.primaryKey("id", .text).notNull()
@@ -174,42 +180,8 @@ final class DatabaseManager: Sendable {
                 t.column("createdAt", .datetime).notNull()
                 t.column("lastSeenAt", .datetime).notNull()
             }
-        }
 
-        migrator.registerMigration("v4_addSyncFieldsToEntities") { db in
-            // Add updatedByDeviceId to all mutable entities for LWW conflict resolution
-            for table in ["notePage", "directive", "dayEntry"] {
-                try db.alter(table: table) { t in
-                    t.add(column: "updatedByDeviceId", .text)
-                }
-            }
-        }
-
-        migrator.registerMigration("v5_addFolderSortIndex") { db in
-            try db.alter(table: "folder") { t in
-                t.add(column: "sortIndex", .integer).notNull().defaults(to: 0)
-            }
-        }
-
-        migrator.registerMigration("v6_syncVersionFields") { db in
-            for table in ["folder", "tag"] {
-                try db.alter(table: table) { t in
-                    t.add(column: "version", .integer).notNull().defaults(to: 1)
-                }
-            }
-            try db.alter(table: "dayEntry") { t in
-                t.add(column: "version", .integer).notNull().defaults(to: 1)
-            }
-            try db.alter(table: "scheduleRule") { t in
-                t.add(column: "version", .integer).notNull().defaults(to: 1)
-                t.add(column: "updatedAt", .datetime).notNull().defaults(to: Date())
-            }
-            try db.alter(table: "noteDirective") { t in
-                t.add(column: "createdAt", .datetime).notNull().defaults(to: Date())
-            }
-        }
-
-        migrator.registerMigration("v7_periodicReview") { db in
+            // ── periodic reviews (server-cached AI reviews) ──
             try db.create(table: "periodicReview") { t in
                 t.primaryKey("id", .text).notNull()
                 t.column("period", .text).notNull()
@@ -221,12 +193,27 @@ final class DatabaseManager: Sendable {
                 t.column("lowestDay", .text)
                 t.column("lowestDayNote", .text)
                 t.column("suggestion", .text)
-                t.column("directiveInsights", .text)
+                t.column("themesJSON", .text).notNull().defaults(to: "[]")
+                t.column("directiveWinsJSON", .text).notNull().defaults(to: "[]")
+                t.column("directiveFocusJSON", .text).notNull().defaults(to: "[]")
+                t.column("directiveGapsJSON", .text).notNull().defaults(to: "[]")
                 t.column("avgRating", .double)
                 t.column("entryCount", .integer).notNull().defaults(to: 0)
                 t.column("createdAt", .text).notNull()
             }
             try db.create(indexOn: "periodicReview", columns: ["period", "periodStart"], options: .unique)
+
+            // ── speak history (local-only, for undo) ──
+            try db.create(table: "speakHistory") { t in
+                t.primaryKey("id", .text).notNull()
+                t.column("timestamp", .text).notNull()
+                t.column("actionType", .text).notNull()
+                t.column("entityType", .text).notNull()
+                t.column("entityId", .text).notNull()
+                t.column("itemName", .text).notNull()
+                t.column("beforeJSON", .text)
+            }
+            try db.create(indexOn: "speakHistory", columns: ["timestamp"])
         }
 
         try migrator.migrate(dbQueue)

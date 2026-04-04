@@ -225,33 +225,59 @@ final class SpeakActionExecutor {
 
     // MARK: - Execute
 
-    func execute(_ toolCall: SpeakPendingToolCall) async -> String {
+    /// Result of executing a tool call.
+    /// `history` is nil on failure or for actions that can't be undone.
+    struct ExecutionResult {
+        let message: String
+        let history: SpeakHistoryEntry?
+    }
+
+    func execute(_ toolCall: SpeakPendingToolCall) async -> ExecutionResult {
         do {
             switch toolCall.function {
             case "create_directive":
                 let title = (toolCall.arguments["title"] as? String ?? "Untitled").capped(to: FieldLimits.Directive.title)
                 let body = (toolCall.arguments["body"] as? String)?.capped(to: FieldLimits.Directive.body)
                 let directive = try await directiveService?.create(title: title, body: body)
-                return "Created directive: \(directive?.title ?? title)"
+                let history = directive.map {
+                    SpeakHistoryEntry(
+                        actionType: .create,
+                        itemName: $0.title,
+                        entityKind: .directive(id: $0.id, before: nil)
+                    )
+                }
+                return ExecutionResult(message: "Created directive: \(directive?.title ?? title)", history: history)
 
             case "update_directive":
                 guard let idString = toolCall.arguments["id"] as? String,
                       let id = UUID(uuidString: idString),
                       var directive = try await directiveService?.fetch(id: id) else {
-                    return "Could not find directive to update"
+                    return ExecutionResult(message: "Could not find directive to update", history: nil)
                 }
+                let before = directive
                 if let title = toolCall.arguments["title"] as? String { directive.title = title.capped(to: FieldLimits.Directive.title) }
                 if let body = toolCall.arguments["body"] as? String { directive.body = body.capped(to: FieldLimits.Directive.body) }
                 try await directiveService?.update(directive)
-                return "Updated directive: \(directive.title)"
+                let history = SpeakHistoryEntry(
+                    actionType: .update,
+                    itemName: directive.title,
+                    entityKind: .directive(id: id, before: before)
+                )
+                return ExecutionResult(message: "Updated directive: \(directive.title)", history: history)
 
             case "retire_directive":
                 guard let idString = toolCall.arguments["id"] as? String,
-                      let id = UUID(uuidString: idString) else {
-                    return "Could not find directive to retire"
+                      let id = UUID(uuidString: idString),
+                      let before = try await directiveService?.fetch(id: id) else {
+                    return ExecutionResult(message: "Could not find directive to retire", history: nil)
                 }
                 try await directiveService?.archive(id: id)
-                return "Retired directive"
+                let history = SpeakHistoryEntry(
+                    actionType: .retire,
+                    itemName: before.title,
+                    entityKind: .directive(id: id, before: before)
+                )
+                return ExecutionResult(message: "Retired directive: \(before.title)", history: history)
 
             case "create_journal_entry", "update_journal_entry":
                 let date = toolCall.arguments["date"] as? String ?? {
@@ -259,7 +285,6 @@ final class SpeakActionExecutor {
                     f.dateFormat = "yyyy-MM-dd"
                     return f.string(from: Date())
                 }()
-                // Preserve existing fields for any the AI didn't provide (partial update).
                 let existing = try? await dayEntryService?.fetch(date: date)
                 let providedDiary = toolCall.arguments["diary"] as? String
                 let providedRating = toolCall.arguments["rating"] as? Int
@@ -269,59 +294,163 @@ final class SpeakActionExecutor {
                 let rating = providedRating ?? existing?.rating
                 let tags = providedTags.map(truncatedTags) ?? existing?.tags ?? []
                 _ = try await dayEntryService?.createOrUpdate(date: date, rating: rating, diary: diary, tags: tags)
-                return existing == nil ? "Created journal entry for \(date)" : "Updated journal entry for \(date)"
+                let history = SpeakHistoryEntry(
+                    actionType: existing == nil ? .create : .update,
+                    itemName: date,
+                    entityKind: .journal(date: date, before: existing)
+                )
+                return ExecutionResult(
+                    message: existing == nil ? "Created journal entry for \(date)" : "Updated journal entry for \(date)",
+                    history: history
+                )
 
             case "create_note":
                 let title = (toolCall.arguments["title"] as? String ?? "Untitled").capped(to: FieldLimits.Note.title)
                 let body = (toolCall.arguments["body"] as? String ?? "").capped(to: FieldLimits.Note.body)
                 let kindStr = toolCall.arguments["kind"] as? String ?? "regular"
                 let kind = NoteKind(rawValue: kindStr) ?? .regular
-                _ = try await noteService?.create(title: title, body: body, kind: kind)
-                return "Created \(kindStr) note: \(title)"
-
-            case "activate_mode":
-                guard let idString = toolCall.arguments["noteId"] as? String,
-                      let noteId = UUID(uuidString: idString) else {
-                    return "Could not find mode to activate"
+                let note = try await noteService?.create(title: title, body: body, kind: kind)
+                let history = note.map {
+                    SpeakHistoryEntry(
+                        actionType: .create,
+                        itemName: $0.title,
+                        entityKind: .note(id: $0.id, before: nil)
+                    )
                 }
-                try await modeService?.activate(noteId: noteId)
-                return "Activated mode"
-
-            case "deactivate_mode":
-                guard let idString = toolCall.arguments["noteId"] as? String,
-                      let noteId = UUID(uuidString: idString) else {
-                    return "Could not find mode to deactivate"
-                }
-                try await modeService?.deactivate(noteId: noteId)
-                return "Deactivated mode"
+                return ExecutionResult(message: "Created \(kindStr) note: \(title)", history: history)
 
             case "update_note":
                 guard let idString = toolCall.arguments["id"] as? String,
                       let id = UUID(uuidString: idString),
                       var note = try await noteService?.fetch(id: id) else {
-                    return "Could not find note to update"
+                    return ExecutionResult(message: "Could not find note to update", history: nil)
                 }
+                let before = note
                 if let title = toolCall.arguments["title"] as? String { note.title = title.capped(to: FieldLimits.Note.title) }
                 if let body = toolCall.arguments["body"] as? String { note.body = body.capped(to: FieldLimits.Note.body) }
                 try await noteService?.update(note)
-                return "Updated note: \(note.title)"
+                let history = SpeakHistoryEntry(
+                    actionType: .update,
+                    itemName: note.title,
+                    entityKind: .note(id: id, before: before)
+                )
+                return ExecutionResult(message: "Updated note: \(note.title)", history: history)
+
+            case "activate_mode":
+                guard let idString = toolCall.arguments["noteId"] as? String,
+                      let noteId = UUID(uuidString: idString) else {
+                    return ExecutionResult(message: "Could not find mode to activate", history: nil)
+                }
+                let wasActive = (try? await modeService?.isActive(noteId: noteId)) ?? false
+                try await modeService?.activate(noteId: noteId)
+                let modeName = (try? await noteService?.fetch(id: noteId))?.title ?? "Mode"
+                let history = SpeakHistoryEntry(
+                    actionType: .activate,
+                    itemName: modeName,
+                    entityKind: .mode(noteId: noteId, wasActive: wasActive)
+                )
+                return ExecutionResult(message: "Activated mode: \(modeName)", history: history)
+
+            case "deactivate_mode":
+                guard let idString = toolCall.arguments["noteId"] as? String,
+                      let noteId = UUID(uuidString: idString) else {
+                    return ExecutionResult(message: "Could not find mode to deactivate", history: nil)
+                }
+                let wasActive = (try? await modeService?.isActive(noteId: noteId)) ?? true
+                try await modeService?.deactivate(noteId: noteId)
+                let modeName = (try? await noteService?.fetch(id: noteId))?.title ?? "Mode"
+                let history = SpeakHistoryEntry(
+                    actionType: .deactivate,
+                    itemName: modeName,
+                    entityKind: .mode(noteId: noteId, wasActive: wasActive)
+                )
+                return ExecutionResult(message: "Deactivated mode: \(modeName)", history: history)
 
             case "rename_folder":
                 guard let idString = toolCall.arguments["id"] as? String,
                       let id = UUID(uuidString: idString),
                       var folder = try await folderService?.fetch(id: id) else {
-                    return "Could not find folder to rename"
+                    return ExecutionResult(message: "Could not find folder to rename", history: nil)
                 }
+                let before = folder
                 let newName = (toolCall.arguments["name"] as? String ?? folder.name).capped(to: FieldLimits.Folder.name)
                 folder.name = newName
                 try await folderService?.update(folder)
-                return "Renamed folder to: \(newName)"
+                let history = SpeakHistoryEntry(
+                    actionType: .update,
+                    itemName: newName,
+                    entityKind: .folder(id: id, before: before)
+                )
+                return ExecutionResult(message: "Renamed folder to: \(newName)", history: history)
 
             default:
-                return "Unknown action: \(toolCall.function)"
+                return ExecutionResult(message: "Unknown action: \(toolCall.function)", history: nil)
             }
         } catch {
-            return "Failed: \(toolCall.function) — \(error.localizedDescription)"
+            return ExecutionResult(message: "Failed: \(toolCall.function) — \(error.localizedDescription)", history: nil)
+        }
+    }
+
+    // MARK: - Undo
+
+    /// Reverses a previously-recorded action. Returns a human-readable summary.
+    func undo(_ entry: SpeakHistoryEntry) async -> String {
+        do {
+            switch entry.entityKind {
+            case .directive(let id, let before):
+                if let before {
+                    // Was an update or retire — restore entity
+                    try await directiveService?.update(before)
+                    return "Reverted directive: \(before.title)"
+                } else {
+                    // Was a create — delete the entity
+                    try await directiveService?.delete(id: id)
+                    return "Removed created directive"
+                }
+
+            case .note(let id, let before):
+                if let before {
+                    try await noteService?.update(before)
+                    return "Reverted note: \(before.title)"
+                } else {
+                    try await noteService?.delete(id: id)
+                    return "Removed created note"
+                }
+
+            case .journal(let date, let before):
+                if let before {
+                    // Restore previous values
+                    _ = try await dayEntryService?.createOrUpdate(
+                        date: date,
+                        rating: before.rating,
+                        diary: before.diary,
+                        tags: before.tags
+                    )
+                    return "Reverted journal entry for \(date)"
+                } else {
+                    // Was a create — delete by finding the entry for that date
+                    if let entry = try await dayEntryService?.fetch(date: date) {
+                        try await dayEntryService?.delete(id: entry.id)
+                    }
+                    return "Removed created journal entry"
+                }
+
+            case .folder(_, let before):
+                try await folderService?.update(before)
+                return "Reverted folder name to: \(before.name)"
+
+            case .mode(let noteId, let wasActive):
+                // Flip back to prior state
+                if wasActive {
+                    try await modeService?.activate(noteId: noteId)
+                    return "Reactivated mode: \(entry.itemName)"
+                } else {
+                    try await modeService?.deactivate(noteId: noteId)
+                    return "Deactivated mode: \(entry.itemName)"
+                }
+            }
+        } catch {
+            return "Undo failed: \(error.localizedDescription)"
         }
     }
 }

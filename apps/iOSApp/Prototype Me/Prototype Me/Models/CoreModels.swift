@@ -314,6 +314,25 @@ nonisolated struct DirectiveHistory: Identifiable, Hashable, Sendable, Codable, 
     static let directive = belongsTo(Directive.self)
 }
 
+// MARK: - SpeakHistoryRecord
+// Flat GRDB-persisted form of SpeakHistoryEntry (local-only, not synced).
+// Before-state is JSON-encoded; the service layer handles conversion.
+
+nonisolated struct SpeakHistoryRecord: Identifiable, Hashable, Sendable, Codable, FetchableRecord, PersistableRecord {
+    static let databaseTableName = "speakHistory"
+
+    let id: UUID
+    let timestamp: Date
+    var actionType: String      // "create"|"update"|"retire"|"activate"|"deactivate"
+    var entityType: String      // "directive"|"note"|"journal"|"folder"|"mode"
+    var entityId: String        // UUID string, or yyyy-MM-dd for journal
+    var itemName: String
+    var beforeJSON: String?     // JSON snapshot, nil for creates
+
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    static func == (lhs: SpeakHistoryRecord, rhs: SpeakHistoryRecord) -> Bool { lhs.id == rhs.id }
+}
+
 // MARK: - OutboxOp
 
 nonisolated struct OutboxOp: Identifiable, Hashable, Sendable, Codable, FetchableRecord, PersistableRecord {
@@ -457,21 +476,127 @@ extension OutboxOp {
 nonisolated struct PeriodicReview: Identifiable, Hashable, Sendable, Codable, FetchableRecord, PersistableRecord {
     static let databaseTableName = "periodicReview"
 
+    struct Theme: Codable, Hashable, Sendable {
+        let name: String
+        let mentions: Int
+    }
+    struct DirectiveWin: Codable, Hashable, Sendable {
+        let directiveTitle: String
+        let evidence: String
+    }
+    struct DirectiveFocus: Codable, Hashable, Sendable {
+        let directiveTitle: String
+        let reason: String
+    }
+    struct DirectiveGap: Codable, Hashable, Sendable {
+        let theme: String
+        let suggestedTitle: String
+    }
+
     let id: UUID
     let period: String           // "weekly" | "monthly"
     let periodStart: String      // yyyy-MM-dd
     let periodEnd: String        // yyyy-MM-dd
+
+    // Structured insights
+    var themes: [Theme]
+    var directiveWins: [DirectiveWin]
+    var directiveFocus: [DirectiveFocus]
+    var directiveGaps: [DirectiveGap]
+    let suggestion: String?
+
+    // Context
     let summary: String
     let bestDay: String?
     let bestDayNote: String?
     let lowestDay: String?
     let lowestDayNote: String?
-    let suggestion: String?
-    let directiveInsights: String?
     let avgRating: Double?
     let entryCount: Int
     let createdAt: String        // ISO8601 from server
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (lhs: PeriodicReview, rhs: PeriodicReview) -> Bool { lhs.id == rhs.id }
+
+    // Standard synthesized init for API decoding
+    init(
+        id: UUID, period: String, periodStart: String, periodEnd: String,
+        themes: [Theme], directiveWins: [DirectiveWin],
+        directiveFocus: [DirectiveFocus], directiveGaps: [DirectiveGap],
+        suggestion: String?, summary: String,
+        bestDay: String?, bestDayNote: String?,
+        lowestDay: String?, lowestDayNote: String?,
+        avgRating: Double?, entryCount: Int, createdAt: String
+    ) {
+        self.id = id
+        self.period = period
+        self.periodStart = periodStart
+        self.periodEnd = periodEnd
+        self.themes = themes
+        self.directiveWins = directiveWins
+        self.directiveFocus = directiveFocus
+        self.directiveGaps = directiveGaps
+        self.suggestion = suggestion
+        self.summary = summary
+        self.bestDay = bestDay
+        self.bestDayNote = bestDayNote
+        self.lowestDay = lowestDay
+        self.lowestDayNote = lowestDayNote
+        self.avgRating = avgRating
+        self.entryCount = entryCount
+        self.createdAt = createdAt
+    }
+
+    // GRDB row decoding (JSON arrays stored in TEXT columns)
+    init(row: Row) {
+        id = row["id"]
+        period = row["period"]
+        periodStart = row["periodStart"]
+        periodEnd = row["periodEnd"]
+        suggestion = row["suggestion"]
+        summary = row["summary"]
+        bestDay = row["bestDay"]
+        bestDayNote = row["bestDayNote"]
+        lowestDay = row["lowestDay"]
+        lowestDayNote = row["lowestDayNote"]
+        avgRating = row["avgRating"]
+        entryCount = row["entryCount"]
+        createdAt = row["createdAt"]
+        themes = Self.decodeJSON(row["themesJSON"]) ?? []
+        directiveWins = Self.decodeJSON(row["directiveWinsJSON"]) ?? []
+        directiveFocus = Self.decodeJSON(row["directiveFocusJSON"]) ?? []
+        directiveGaps = Self.decodeJSON(row["directiveGapsJSON"]) ?? []
+    }
+
+    // GRDB row encoding
+    func encode(to container: inout PersistenceContainer) {
+        container["id"] = id
+        container["period"] = period
+        container["periodStart"] = periodStart
+        container["periodEnd"] = periodEnd
+        container["suggestion"] = suggestion
+        container["summary"] = summary
+        container["bestDay"] = bestDay
+        container["bestDayNote"] = bestDayNote
+        container["lowestDay"] = lowestDay
+        container["lowestDayNote"] = lowestDayNote
+        container["avgRating"] = avgRating
+        container["entryCount"] = entryCount
+        container["createdAt"] = createdAt
+        container["themesJSON"] = Self.encodeJSON(themes)
+        container["directiveWinsJSON"] = Self.encodeJSON(directiveWins)
+        container["directiveFocusJSON"] = Self.encodeJSON(directiveFocus)
+        container["directiveGapsJSON"] = Self.encodeJSON(directiveGaps)
+    }
+
+    private static func encodeJSON<T: Encodable>(_ value: T) -> String {
+        guard let data = try? JSONEncoder().encode(value),
+              let json = String(data: data, encoding: .utf8) else { return "[]" }
+        return json
+    }
+
+    private static func decodeJSON<T: Decodable>(_ jsonString: String?) -> T? {
+        guard let jsonString, let data = jsonString.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(T.self, from: data)
+    }
 }

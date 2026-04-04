@@ -7,24 +7,47 @@ import { callLLMJson } from "../lib/llm.js";
 
 type Period = "weekly" | "monthly";
 
+interface Theme {
+  name: string;
+  mentions: number;
+}
+interface DirectiveWin {
+  directiveTitle: string;
+  evidence: string;
+}
+interface DirectiveFocus {
+  directiveTitle: string;
+  reason: string;
+}
+interface DirectiveGap {
+  theme: string;
+  suggestedTitle: string;
+}
+
 interface ReviewOutput {
+  themes: Theme[];
+  directiveWins: DirectiveWin[];
+  directiveFocus: DirectiveFocus[];
+  directiveGaps: DirectiveGap[];
+  suggestion: string | null;
   summary: string;
   bestDay: string | null;
   bestDayNote: string | null;
   lowestDay: string | null;
   lowestDayNote: string | null;
-  suggestion: string | null;
-  directiveInsights: string | null;
 }
 
 const REVIEW_FALLBACK: ReviewOutput = {
+  themes: [],
+  directiveWins: [],
+  directiveFocus: [],
+  directiveGaps: [],
+  suggestion: null,
   summary: "",
   bestDay: null,
   bestDayNote: null,
   lowestDay: null,
   lowestDayNote: null,
-  suggestion: null,
-  directiveInsights: null,
 };
 
 // ── Cron Entry Points ──────────────────────────
@@ -208,25 +231,34 @@ async function generateReviewForUser(userId: string, period: Period, periodStart
 
   const periodLabel = period === "weekly" ? "week" : "month";
 
-  const system = `You analyze someone's ${periodLabel} from their journal. Write in plain, direct English. State observations as facts.
+  const system = `You analyze someone's ${periodLabel} from their journal and map it to their directives (habits/intentions they've set for themselves).
+
+Your job is to answer four questions from the data:
+1. What themes are they writing about? (stress, sleep, relationships, focus, etc.)
+2. Which directives are working? (evidence in journal + completion data)
+3. Which directives need re-focus? (themes match them but completion is low, or journal shows struggle with them)
+4. What themes have no directive yet? (recurring topics with no related habit)
 
 Tone rules:
-- Direct and declarative. State what happened, don't narrate around it.
-- No coaching voice, no encouragement phrases, no motivational wrap-ups.
-- Never start with "You" or "Your". State the observation directly.
-- Drop filler phrases: "it seems", "overall", "this week was", "great job", "keep it up", "you're doing well".
-- No emojis, no exclamation marks, no rhetorical questions.
-- Reference specific days, tags, or directives by name when relevant.
-- If there's nothing meaningful to say in a field, return null.
+- Direct and declarative. State observations as facts.
+- No coaching voice, no encouragement, no motivational wrap-ups.
+- Never start with "You" or "Your".
+- Drop filler phrases: "it seems", "overall", "great job", "you're doing well".
+- No emojis, no exclamation marks.
+- Reference specific days, tags, or directive titles by name.
+- Return empty arrays or null when there's nothing meaningful to say.
 
-Return a JSON object:
-- "summary": overview of what happened. As long or short as needed.
+Return a JSON object with these fields:
+- "themes": array of {name, mentions}. Top 3-5 recurring topics in the journal. name = short phrase ("sleep quality", "work stress"). mentions = rough count of entries referencing it.
+- "directiveWins": array of {directiveTitle, evidence}. Directives with signs of working. directiveTitle = exact title from the directive list. evidence = one sentence, what in the journal suggests it's helping.
+- "directiveFocus": array of {directiveTitle, reason}. Directives to re-focus on. directiveTitle = exact title. reason = one sentence, why (low completion, journal shows struggle).
+- "directiveGaps": array of {theme, suggestedTitle}. Recurring themes with no matching directive. suggestedTitle = a concise directive title they could add.
+- "suggestion": one concrete action for next ${periodLabel}. Imperative voice. Null if no clear pattern.
+- "summary": 1-3 sentences of context. What happened, in plain terms.
 - "bestDay": yyyy-MM-dd of highest-rated day, or null.
 - "bestDayNote": what made it highest. Null if no ratings.
 - "lowestDay": yyyy-MM-dd of lowest-rated day, or null.
 - "lowestDayNote": what pulled it down. Null if no ratings.
-- "suggestion": one concrete action for next ${periodLabel}. Imperative voice ("Try X", "Cut Y"). Null if no clear pattern.
-- "directiveInsights": connect journal content to directive completion. Name specific directives. Null if no directive data.
 
 Return ONLY valid JSON. No markdown.`;
 
@@ -241,8 +273,8 @@ ${avgRating != null ? `Average rating: ${avgRating.toFixed(1)}/10` : "No ratings
 ${entries.length} total entries.`;
 
   const { data } = await callLLMJson<ReviewOutput>(
-    { system, prompt, maxTokens: period === "monthly" ? 768 : 512 },
-    { ...REVIEW_FALLBACK, summary: `You logged ${entries.length} journal ${entries.length === 1 ? "entry" : "entries"} this ${periodLabel}.` },
+    { system, prompt, maxTokens: period === "monthly" ? 1200 : 900 },
+    { ...REVIEW_FALLBACK, summary: `Logged ${entries.length} journal ${entries.length === 1 ? "entry" : "entries"} this ${periodLabel}.` },
   );
 
   // ── Insert ──
@@ -252,13 +284,16 @@ ${entries.length} total entries.`;
     period,
     periodStart,
     periodEnd,
+    themes: data.themes ?? [],
+    directiveWins: data.directiveWins ?? [],
+    directiveFocus: data.directiveFocus ?? [],
+    directiveGaps: data.directiveGaps ?? [],
+    suggestion: data.suggestion,
     summary: data.summary,
     bestDay: data.bestDay,
     bestDayNote: data.bestDayNote,
     lowestDay: data.lowestDay,
     lowestDayNote: data.lowestDayNote,
-    suggestion: data.suggestion,
-    directiveInsights: data.directiveInsights,
     avgRating,
     entryCount: entries.length,
   });

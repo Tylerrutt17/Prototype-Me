@@ -88,6 +88,7 @@ final class ActionConfirmView: UIView {
 
     private var toolCalls: [SpeakPendingToolCall] = []
     private let cardView = UIView()
+    private let contentStack = UIStackView()
     private let actionsStack = UIStackView()
     private let buttonStack = UIStackView()
 
@@ -111,8 +112,12 @@ final class ActionConfirmView: UIView {
 
         actionsStack.axis = .vertical
         actionsStack.spacing = DesignTokens.Spacing.sm
-        actionsStack.translatesAutoresizingMaskIntoConstraints = false
-        cardView.addSubview(actionsStack)
+
+        contentStack.axis = .vertical
+        contentStack.spacing = DesignTokens.Spacing.md
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        contentStack.addArrangedSubview(actionsStack)
+        cardView.addSubview(contentStack)
 
         let approveButton = UIButton(type: .system)
         var approveConfig = UIButton.Configuration.filled()
@@ -137,12 +142,14 @@ final class ActionConfirmView: UIView {
         dismissButton.configuration = dismissConfig
         dismissButton.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
 
-        buttonStack.axis = .horizontal
-        buttonStack.spacing = DesignTokens.Spacing.sm
-        buttonStack.addArrangedSubview(approveButton)
-        buttonStack.addArrangedSubview(dismissButton)
-        buttonStack.translatesAutoresizingMaskIntoConstraints = false
-        cardView.addSubview(buttonStack)
+        // Wrapper row so the horizontal button group isn't forced to fill the full width
+        let buttonRow = UIStackView(arrangedSubviews: [approveButton, dismissButton, UIView()])
+        buttonRow.axis = .horizontal
+        buttonRow.spacing = DesignTokens.Spacing.sm
+
+        buttonStack.axis = .vertical
+        buttonStack.addArrangedSubview(buttonRow)
+        contentStack.addArrangedSubview(buttonStack)
 
         let pad = DesignTokens.Spacing.md
         NSLayoutConstraint.activate([
@@ -151,13 +158,10 @@ final class ActionConfirmView: UIView {
             cardView.leadingAnchor.constraint(equalTo: leadingAnchor),
             cardView.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-            actionsStack.topAnchor.constraint(equalTo: cardView.topAnchor, constant: pad),
-            actionsStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: pad),
-            actionsStack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -pad),
-
-            buttonStack.topAnchor.constraint(equalTo: actionsStack.bottomAnchor, constant: pad),
-            buttonStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: pad),
-            buttonStack.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -pad),
+            contentStack.topAnchor.constraint(equalTo: cardView.topAnchor, constant: pad),
+            contentStack.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -pad),
+            contentStack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: pad),
+            contentStack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -pad),
         ])
     }
 
@@ -196,6 +200,70 @@ final class ActionConfirmView: UIView {
         }
     }
 
+    /// Morphs the pending action cards into their applied state with a staggered
+    /// slide+fade: buttons drop out, card pulses, and the action cards flip to the
+    /// applied version (icon → checkmark, badge → past tense, diffs collapse to
+    /// final values only). The contentStack auto-collapses the freed button space.
+    func animateToApplied() {
+        // Phase 1 — buttons slide down and fade out, card pulses
+        UIView.animate(
+            withDuration: 0.25,
+            delay: 0,
+            options: [.curveEaseIn],
+            animations: {
+                self.buttonStack.alpha = 0
+                self.buttonStack.transform = CGAffineTransform(translationX: 0, y: 12)
+            }
+        )
+
+        // Brief "seal" pulse on the whole card
+        UIView.animate(
+            withDuration: 0.18,
+            delay: 0.1,
+            options: [.curveEaseInOut],
+            animations: {
+                self.cardView.transform = CGAffineTransform(scaleX: 1.02, y: 1.02)
+            }
+        ) { _ in
+            UIView.animate(withDuration: 0.22, delay: 0, usingSpringWithDamping: 0.6, initialSpringVelocity: 0, options: [], animations: {
+                self.cardView.transform = .identity
+            })
+        }
+
+        // Phase 2 — swap in applied cards, then collapse the button space
+        UIView.animate(
+            withDuration: 0.2,
+            delay: 0.1,
+            options: [.curveEaseOut],
+            animations: {
+                self.actionsStack.alpha = 0
+                self.actionsStack.transform = CGAffineTransform(translationX: 0, y: -4)
+            }
+        ) { _ in
+            // Build applied cards
+            self.actionsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+            for tc in self.toolCalls {
+                self.actionsStack.addArrangedSubview(self.buildActionCard(for: tc, applied: true))
+            }
+            self.actionsStack.transform = CGAffineTransform(translationX: 0, y: 4)
+
+            // Fade in + spring down into place, simultaneously collapse buttons
+            UIView.animate(
+                withDuration: 0.38,
+                delay: 0,
+                usingSpringWithDamping: 0.78,
+                initialSpringVelocity: 0.1,
+                options: [],
+                animations: {
+                    self.actionsStack.alpha = 1
+                    self.actionsStack.transform = .identity
+                    self.buttonStack.isHidden = true
+                    self.layoutIfNeeded()
+                }
+            )
+        }
+    }
+
     private static func iconName(for itemType: String) -> String {
         switch itemType.lowercased() {
         case "directive":   return "target"
@@ -210,14 +278,15 @@ final class ActionConfirmView: UIView {
         }
     }
 
-    private func buildActionCard(for tc: SpeakPendingToolCall) -> UIView {
+    private func buildActionCard(for tc: SpeakPendingToolCall, applied: Bool = false) -> UIView {
         let container = UIView()
         container.backgroundColor = tc.actionType.color.withAlphaComponent(0.08)
         container.layer.cornerRadius = DesignTokens.Radii.md
 
-        // Large item type icon
+        // Large item type icon (becomes a checkmark once applied)
         let typeIconConfig = UIImage.SymbolConfiguration(pointSize: 22, weight: .medium)
-        let typeIconView = UIImageView(image: UIImage(systemName: Self.iconName(for: tc.itemType), withConfiguration: typeIconConfig))
+        let iconName = applied ? "checkmark.circle.fill" : Self.iconName(for: tc.itemType)
+        let typeIconView = UIImageView(image: UIImage(systemName: iconName, withConfiguration: typeIconConfig))
         typeIconView.tintColor = tc.actionType.color
         typeIconView.setContentHuggingPriority(.required, for: .horizontal)
         typeIconView.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -234,9 +303,9 @@ final class ActionConfirmView: UIView {
         dotLabel.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .bold)
         dotLabel.textColor = DesignTokens.Colors.textTertiary
 
-        // Action badge (secondary)
+        // Action badge (flips to past tense when applied)
         let badgeLabel = UILabel()
-        badgeLabel.text = tc.actionType.label.uppercased()
+        badgeLabel.text = (applied ? tc.actionType.appliedLabel : tc.actionType.label).uppercased()
         badgeLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .bold)
         badgeLabel.textColor = tc.actionType.color
 
@@ -259,7 +328,7 @@ final class ActionConfirmView: UIView {
         stack.spacing = DesignTokens.Spacing.xs
 
         for change in tc.changes {
-            stack.addArrangedSubview(buildChangeRow(change: change, color: tc.actionType.color))
+            stack.addArrangedSubview(buildChangeRow(change: change, color: tc.actionType.color, applied: applied))
         }
 
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -275,7 +344,7 @@ final class ActionConfirmView: UIView {
         return container
     }
 
-    private func buildChangeRow(change: SpeakActionChange, color: UIColor) -> UIView {
+    private func buildChangeRow(change: SpeakActionChange, color: UIColor, applied: Bool = false) -> UIView {
         let stack = UIStackView()
         stack.axis = .vertical
         stack.spacing = 2
@@ -285,6 +354,17 @@ final class ActionConfirmView: UIView {
         fieldLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .medium)
         fieldLabel.textColor = DesignTokens.Colors.textTertiary
         stack.addArrangedSubview(fieldLabel)
+
+        // Applied mode: show only the final value, no strikethrough/arrow
+        if applied {
+            let newLabel = UILabel()
+            newLabel.text = change.newValue
+            newLabel.font = DesignTokens.Typography.rounded(style: .footnote, weight: .medium)
+            newLabel.textColor = DesignTokens.Colors.textPrimary
+            newLabel.numberOfLines = 3
+            stack.addArrangedSubview(newLabel)
+            return stack
+        }
 
         if let oldValue = change.oldValue {
             let oldLabel = UILabel()

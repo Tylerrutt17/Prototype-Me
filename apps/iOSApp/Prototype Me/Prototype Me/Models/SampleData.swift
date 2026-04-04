@@ -407,7 +407,9 @@ enum SampleData {
         PaywallFeature(title: "Balloons & Schedules",     freeValue: "Unlimited", proValue: "Unlimited"),
         PaywallFeature(title: "Journal",                  freeValue: "checkmark", proValue: "checkmark"),
         PaywallFeature(title: "AI suggestions per day",   freeValue: "5",         proValue: "Unlimited"),
-        PaywallFeature(title: "AI journal analysis",      freeValue: "—",         proValue: "checkmark"),
+        PaywallFeature(title: "Weekly & monthly summaries", freeValue: "—",       proValue: "checkmark"),
+        PaywallFeature(title: "Speak chats",              freeValue: "Limited",   proValue: "Unlimited"),
+        PaywallFeature(title: "Voice talk",               freeValue: "—",         proValue: "checkmark"),
         PaywallFeature(title: "Cloud sync",               freeValue: "—",         proValue: "checkmark"),
         PaywallFeature(title: "Priority support",         freeValue: "—",         proValue: "checkmark"),
     ]

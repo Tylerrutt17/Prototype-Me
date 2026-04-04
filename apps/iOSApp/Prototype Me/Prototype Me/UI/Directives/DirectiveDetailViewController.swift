@@ -329,13 +329,14 @@ extension DirectiveDetailViewController: UICollectionViewDelegate {
 
 // MARK: - DirectiveHeaderCell
 
-private final class DirectiveHeaderCell: UICollectionViewCell, UITextFieldDelegate, UITextViewDelegate {
+private final class DirectiveHeaderCell: UICollectionViewCell, UITextViewDelegate {
 
     var onFieldEdited: ((String, String?) -> Void)?
 
     private let accentBar = UIView()
     private let statusBadge = UIButton(type: .system)
-    private let titleField = UITextField()
+    private let titleView = UITextView()
+    private let titlePlaceholder = UILabel()
     private let bodyView = UITextView()
     private let bodyPlaceholder = UILabel()
     private let metaLabel = UILabel()
@@ -369,13 +370,26 @@ private final class DirectiveHeaderCell: UICollectionViewCell, UITextFieldDelega
         statusBadge.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(statusBadge)
 
-        // Title (editable)
-        titleField.font = DesignTokens.Typography.rounded(style: .title2, weight: .bold)
-        titleField.textColor = DesignTokens.Colors.textPrimary
-        titleField.returnKeyType = .done
-        titleField.delegate = self
-        titleField.backgroundColor = .clear
-        titleField.borderStyle = .none
+        // Title (editable, multi-line)
+        titleView.font = DesignTokens.Typography.rounded(style: .title2, weight: .bold)
+        titleView.textColor = DesignTokens.Colors.textPrimary
+        titleView.backgroundColor = .clear
+        titleView.isScrollEnabled = false
+        titleView.textContainerInset = .zero
+        titleView.textContainer.lineFragmentPadding = 0
+        titleView.delegate = self
+        titleView.returnKeyType = .done
+
+        // Placeholder for title
+        titlePlaceholder.text = "Title"
+        titlePlaceholder.font = DesignTokens.Typography.rounded(style: .title2, weight: .bold)
+        titlePlaceholder.textColor = DesignTokens.Colors.textTertiary
+        titlePlaceholder.translatesAutoresizingMaskIntoConstraints = false
+        titleView.addSubview(titlePlaceholder)
+        NSLayoutConstraint.activate([
+            titlePlaceholder.topAnchor.constraint(equalTo: titleView.topAnchor),
+            titlePlaceholder.leadingAnchor.constraint(equalTo: titleView.leadingAnchor),
+        ])
 
         // Body (editable)
         bodyView.font = DesignTokens.Typography.body
@@ -401,7 +415,7 @@ private final class DirectiveHeaderCell: UICollectionViewCell, UITextFieldDelega
         metaLabel.font = DesignTokens.Typography.caption1
         metaLabel.textColor = DesignTokens.Colors.textTertiary
 
-        let stack = UIStackView(arrangedSubviews: [titleField, bodyView, metaLabel])
+        let stack = UIStackView(arrangedSubviews: [titleView, bodyView, metaLabel])
         stack.axis = .vertical
         stack.spacing = DesignTokens.Spacing.md
         stack.alignment = .fill
@@ -450,8 +464,9 @@ private final class DirectiveHeaderCell: UICollectionViewCell, UITextFieldDelega
         statusBadge.configuration = badgeCfg
 
         // Title — only update if not currently being edited
-        if !titleField.isFirstResponder {
-            titleField.text = directive.title
+        if !titleView.isFirstResponder {
+            titleView.text = directive.title
+            titlePlaceholder.isHidden = !directive.title.isEmpty
         }
 
         // Body — only update if not currently being edited
@@ -466,32 +481,42 @@ private final class DirectiveHeaderCell: UICollectionViewCell, UITextFieldDelega
         metaLabel.text = "Created " + fmt.localizedString(for: directive.createdAt, relativeTo: .now)
     }
 
-    // MARK: - UITextFieldDelegate
+    // MARK: - UITextViewDelegate
 
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        textField.resignFirstResponder()
+    func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+        // Title: pressing Return dismisses the keyboard instead of inserting a newline
+        if textView === titleView, text == "\n" {
+            textView.resignFirstResponder()
+            return false
+        }
         return true
     }
 
-    func textFieldDidEndEditing(_ textField: UITextField) {
-        commitEdit()
-    }
-
-    // MARK: - UITextViewDelegate
-
     func textViewDidChange(_ textView: UITextView) {
-        bodyPlaceholder.isHidden = !textView.text.isEmpty
-        // Invalidate layout so the cell resizes
+        if textView === titleView {
+            titlePlaceholder.isHidden = !textView.text.isEmpty
+        } else {
+            bodyPlaceholder.isHidden = !textView.text.isEmpty
+        }
+        // Invalidate layout so the cell resizes as the title/body grows
         invalidateIntrinsicContentSize()
+        // Ask the collection view to re-measure this cell
+        if let collectionView = self.superview as? UICollectionView {
+            collectionView.collectionViewLayout.invalidateLayout()
+        }
     }
 
     func textViewDidEndEditing(_ textView: UITextView) {
-        bodyPlaceholder.isHidden = !textView.text.isEmpty
+        if textView === titleView {
+            titlePlaceholder.isHidden = !textView.text.isEmpty
+        } else {
+            bodyPlaceholder.isHidden = !textView.text.isEmpty
+        }
         commitEdit()
     }
 
     private func commitEdit() {
-        let title = titleField.text ?? ""
+        let title = titleView.text ?? ""
         let body = bodyView.text
         onFieldEdited?(title, body)
     }

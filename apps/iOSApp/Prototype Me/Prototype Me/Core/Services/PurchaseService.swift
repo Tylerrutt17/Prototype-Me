@@ -1,5 +1,6 @@
 import Foundation
 import RevenueCat
+import GRDB
 
 /// Manages in-app purchases via RevenueCat.
 final class PurchaseService {
@@ -7,9 +8,13 @@ final class PurchaseService {
     static let apiKey = "appl_oEbuLzXbsmhGCPkiovPoDYNfWty"
 
     private let apiClient: APIClient
+    private let syncEngine: SyncEngine?
+    private let db: DatabaseManager?
 
-    init(apiClient: APIClient) {
+    init(apiClient: APIClient, syncEngine: SyncEngine? = nil, db: DatabaseManager? = nil) {
         self.apiClient = apiClient
+        self.syncEngine = syncEngine
+        self.db = db
     }
 
     // MARK: - Configure
@@ -63,8 +68,11 @@ final class PurchaseService {
     // MARK: - Sync with Backend
 
     /// Update the user's plan on our backend based on RevenueCat entitlements.
+    /// On a free→pro transition, triggers an initial seed push (if the user has
+    /// never synced before) or a normal sync to flush accumulated outbox ops.
     func syncPlanWithBackend() async {
         do {
+            let wasPro = UserDefaults.standard.string(forKey: "userPlan") == "pro"
             let isPro = try await isPro()
             let plan = isPro ? "pro" : "free"
             let _: EmptyResponse = try await apiClient.patch("/v1/profile", body: ["plan": plan])
@@ -72,8 +80,34 @@ final class PurchaseService {
             // Update local state
             UserDefaults.standard.set(plan, forKey: "userPlan")
             SyncEngine.isSyncEnabled = isPro
+
+            // On free→pro transition, kick off the initial push of local data.
+            if isPro && !wasPro {
+                await kickoffInitialSync()
+            }
         } catch {
             print("[PurchaseService] Failed to sync plan with backend: \(error)")
+        }
+    }
+
+    /// Push local data up after a free→pro upgrade. Uses `seedFullPush` the
+    /// first time the user ever syncs (no `lastSyncToken`), otherwise just
+    /// triggers a normal sync to drain any ops that accumulated while on free.
+    private func kickoffInitialSync() async {
+        guard let syncEngine, let db else { return }
+        do {
+            let hasSyncedBefore = try await db.dbQueue.read { db -> Bool in
+                (try SyncState.current(in: db)?.lastSyncToken) != nil
+            }
+            if hasSyncedBefore {
+                print("[PurchaseService] Upgrade detected — flushing outbox")
+                try await syncEngine.sync()
+            } else {
+                print("[PurchaseService] Upgrade detected — seeding full push")
+                try await syncEngine.seedFullPush()
+            }
+        } catch {
+            print("[PurchaseService] Initial sync after upgrade failed: \(error)")
         }
     }
 }

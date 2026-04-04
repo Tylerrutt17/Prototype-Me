@@ -84,11 +84,14 @@ extension SpeakViewController {
                             // Auto-execute actions
                             Task {
                                 var results: [String] = []
+                                var newHistory: [SpeakHistoryEntry] = []
                                 for tc in pending {
-                                    let result = await self.actionExecutor.execute(tc)
-                                    results.append(result)
+                                    let r = await self.actionExecutor.execute(tc)
+                                    results.append(r.message)
+                                    if let h = r.history { newHistory.append(h) }
                                 }
                                 await MainActor.run {
+                                    self.recordHistory(newHistory)
                                     self.showActionSuccess(results: results)
                                 }
                             }
@@ -289,11 +292,14 @@ extension SpeakViewController {
 
         Task {
             var results: [String] = []
+            var newHistory: [SpeakHistoryEntry] = []
             for toolCall in toolCalls {
-                let result = await actionExecutor.execute(toolCall)
-                results.append(result)
+                let r = await actionExecutor.execute(toolCall)
+                results.append(r.message)
+                if let h = r.history { newHistory.append(h) }
             }
             await MainActor.run {
+                self.recordHistory(newHistory)
                 self.showActionSuccess(results: results)
             }
         }

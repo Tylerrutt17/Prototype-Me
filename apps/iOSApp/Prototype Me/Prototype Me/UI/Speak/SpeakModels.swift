@@ -59,6 +59,16 @@ struct SpeakPendingToolCall {
             }
         }
 
+        var appliedLabel: String {
+            switch self {
+            case .create: return "Created"
+            case .update: return "Updated"
+            case .retire: return "Retired"
+            case .activate: return "Activated"
+            case .deactivate: return "Deactivated"
+            }
+        }
+
         var color: UIColor {
             switch self {
             case .create: return DesignTokens.Colors.accent
@@ -68,6 +78,41 @@ struct SpeakPendingToolCall {
             case .deactivate: return DesignTokens.Colors.textTertiary
             }
         }
+    }
+}
+
+// MARK: - Speak History (in-memory, for undo)
+
+/// A record of a single AI-driven change. Captures the BEFORE state so we can
+/// reverse it. Stored only in memory on SpeakViewController — dies when the
+/// app is killed, which is fine for "oops just did that" undo semantics.
+struct SpeakHistoryEntry: Identifiable {
+    let id: UUID
+    let timestamp: Date
+    let actionType: SpeakPendingToolCall.ActionType
+    let itemName: String
+    let entityKind: EntityKind
+
+    init(
+        id: UUID = UUID(),
+        timestamp: Date = Date(),
+        actionType: SpeakPendingToolCall.ActionType,
+        itemName: String,
+        entityKind: EntityKind
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.actionType = actionType
+        self.itemName = itemName
+        self.entityKind = entityKind
+    }
+
+    enum EntityKind {
+        case directive(id: UUID, before: Directive?)   // nil before = this was a create
+        case note(id: UUID, before: NotePage?)         // nil before = this was a create
+        case journal(date: String, before: DayEntry?)  // nil before = this was a create
+        case folder(id: UUID, before: Folder)          // rename only — always an update
+        case mode(noteId: UUID, wasActive: Bool)       // activate/deactivate flip
     }
 }
 

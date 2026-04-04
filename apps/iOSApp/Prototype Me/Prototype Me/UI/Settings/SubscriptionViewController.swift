@@ -166,17 +166,19 @@ class SubscriptionViewController: BaseViewController {
         snapshot.appendSections([.features])
         if isPro {
             snapshot.appendItems([
-                .feature("Unlimited AI", true),
+                .feature("Weekly & monthly journal summaries", true),
+                .feature("Unlimited Speak chats", true),
+                .feature("Voice talk", true),
                 .feature("Cloud sync", true),
-                .feature("AI journal analysis", true),
                 .feature("Priority support", true),
             ], toSection: .features)
         } else {
             snapshot.appendItems([
                 .feature("5 AI suggestions / day", true),
-                .feature("Unlimited AI", false),
+                .feature("Weekly & monthly journal summaries", false),
+                .feature("Unlimited Speak chats", false),
+                .feature("Voice talk", false),
                 .feature("Cloud sync", false),
-                .feature("AI journal analysis", false),
             ], toSection: .features)
         }
 

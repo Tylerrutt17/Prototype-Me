@@ -14,6 +14,7 @@ struct AppEnvironment {
     let modeService: ModeService
     let tagService: TagService
     let periodicReviewService: PeriodicReviewService
+    let speakHistoryService: SpeakHistoryService
 
     // Networking + Sync
     let apiClient: APIClient
@@ -52,6 +53,7 @@ struct AppEnvironment {
         self.scheduleService = ScheduleService(db: db)
         self.modeService = ModeService(db: db)
         self.tagService = TagService(db: db)
+        self.speakHistoryService = SpeakHistoryService(db: db)
 
         // Networking + Sync
         self.apiClient = APIClient()
@@ -63,7 +65,7 @@ struct AppEnvironment {
         self.authService = AuthService(apiClient: apiClient)
 
         // Purchases
-        self.purchaseService = PurchaseService(apiClient: apiClient)
+        self.purchaseService = PurchaseService(apiClient: apiClient, syncEngine: syncEngine, db: db)
         self.purchaseService.configure()
 
         // Notifications

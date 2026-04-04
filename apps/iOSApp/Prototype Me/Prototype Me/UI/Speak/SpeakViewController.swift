@@ -76,6 +76,7 @@ class SpeakViewController: BaseViewController {
     var isProcessing = false
     var recordingStartTime: Date?
     var pendingToolCalls: [SpeakPendingToolCall]?
+    var speakHistoryService: SpeakHistoryService?
 
     // MARK: - Lifecycle
 
@@ -270,7 +271,16 @@ class SpeakViewController: BaseViewController {
     }
 
     func showActionSuccess(results: [String]) {
-        actionConfirmView.showSuccess(results: results)
+        // Fall back to text-based success display if any action failed
+        let anyFailed = results.contains {
+            let lower = $0.lowercased()
+            return lower.hasPrefix("failed:") || lower.contains("could not")
+        }
+        if anyFailed {
+            actionConfirmView.showSuccess(results: results)
+        } else {
+            actionConfirmView.animateToApplied()
+        }
 
         // Also add to messages for conversation context
         let actionsText = results.map { "\u{2713} \($0)" }.joined(separator: "\n")
@@ -427,6 +437,9 @@ class SpeakViewController: BaseViewController {
         navBar.setTitleView(titleStack)
 
         navBar.setRightButtons([
+            NavBarButton(systemImage: "clock.arrow.circlepath") { [weak self] in
+                self?.showHistory()
+            },
             NavBarButton(systemImage: "gearshape") { [weak self] in
                 self?.showSpeakSettings()
             }
@@ -437,6 +450,31 @@ class SpeakViewController: BaseViewController {
                 await MainActor.run {
                     self.quotaLabel.text = "\(quota.remaining)/\(quota.dailyLimit) AI left"
                 }
+            }
+        }
+    }
+
+    private func showHistory() {
+        let vc = SpeakHistoryViewController()
+        vc.onUndo = { [weak self] entry in
+            guard let self else { return "" }
+            let result = await self.actionExecutor.undo(entry)
+            await MainActor.run {
+                self.removeHistory(entryId: entry.id)
+            }
+            return result
+        }
+        if let sheet = vc.sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+            sheet.prefersGrabberVisible = true
+            sheet.preferredCornerRadius = DesignTokens.Radii.xl
+        }
+        // Load entries before presenting
+        Task {
+            let entries = (try? await speakHistoryService?.recent()) ?? []
+            await MainActor.run {
+                vc.entries = entries
+                self.present(vc, animated: true)
             }
         }
     }
@@ -675,6 +713,31 @@ class SpeakViewController: BaseViewController {
             }
         default:
             break
+        }
+    }
+
+    // MARK: - History
+
+    /// Persists new entries via the history service. Pruning to max size
+    /// happens inside the service.
+    func recordHistory(_ entries: [SpeakHistoryEntry]) {
+        guard !entries.isEmpty, let speakHistoryService else { return }
+        Task {
+            for entry in entries {
+                do {
+                    try await speakHistoryService.record(entry)
+                } catch {
+                    print("[Speak] Failed to record history: \(error)")
+                }
+            }
+        }
+    }
+
+    /// Removes an entry from the history DB (called after undo completes).
+    func removeHistory(entryId: UUID) {
+        guard let speakHistoryService else { return }
+        Task {
+            try? await speakHistoryService.remove(id: entryId)
         }
     }
 }
