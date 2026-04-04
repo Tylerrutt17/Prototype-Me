@@ -1,6 +1,6 @@
 import { db } from "../db/client.js";
 import { dayEntry, periodicReview, directive, directiveHistory, scheduleInstance } from "../db/schema.js";
-import { eq, and, gte, lte, desc, sql, inArray } from "drizzle-orm";
+import { eq, and, gte, lte, desc, sql, inArray, gt } from "drizzle-orm";
 import { callLLMJson } from "../lib/llm.js";
 
 // ── Types ──────────────────────────────────────
@@ -163,6 +163,27 @@ async function generateReviewForUser(userId: string, period: Period, periodStart
     completionStats = Array.from(grouped.entries()).map(([directiveId, stats]) => ({ directiveId, ...stats }));
   }
 
+  // Checklist completions from directive_history
+  const checklistStats = new Map<string, number>();
+  if (directiveIds.length > 0) {
+    const startTs = new Date(`${periodStart}T00:00:00Z`);
+    const endTs = new Date(`${periodEnd}T23:59:59Z`);
+    const checklistRows = await db
+      .select({ directiveId: directiveHistory.directiveId })
+      .from(directiveHistory)
+      .where(
+        and(
+          inArray(directiveHistory.directiveId, directiveIds),
+          eq(directiveHistory.action, "checklist_complete"),
+          gte(directiveHistory.createdAt, startTs),
+          lte(directiveHistory.createdAt, endTs),
+        ),
+      );
+    for (const row of checklistRows) {
+      checklistStats.set(row.directiveId, (checklistStats.get(row.directiveId) ?? 0) + 1);
+    }
+  }
+
   // Tag frequency
   const tagCounts = new Map<string, number>();
   for (const entry of entries) {
@@ -218,11 +239,16 @@ async function generateReviewForUser(userId: string, period: Period, periodStart
         directives
           .map((d) => {
             const stats = completionStats.find((s) => s.directiveId === d.id);
+            const checklistCount = checklistStats.get(d.id) ?? 0;
+            const parts: string[] = [`- ${d.title}`];
             if (stats && stats.total > 0) {
               const pct = Math.round((stats.done / stats.total) * 100);
-              return `- ${d.title} (${pct}% completed — ${stats.done}/${stats.total} done, ${stats.skipped} skipped)`;
+              parts.push(`(schedule: ${pct}% — ${stats.done}/${stats.total} done, ${stats.skipped} skipped)`);
             }
-            return `- ${d.title}`;
+            if (checklistCount > 0) {
+              parts.push(`(checklist: ${checklistCount} check-in${checklistCount === 1 ? "" : "s"})`);
+            }
+            return parts.join(" ");
           })
           .join("\n")
       : "";
@@ -233,11 +259,15 @@ async function generateReviewForUser(userId: string, period: Period, periodStart
 
   const system = `You analyze someone's ${periodLabel} from their journal and map it to their directives (habits/intentions they've set for themselves).
 
-Your job is to answer four questions from the data:
-1. What themes are they writing about? (stress, sleep, relationships, focus, etc.)
-2. Which directives are working? (evidence in journal + completion data)
-3. Which directives need re-focus? (themes match them but completion is low, or journal shows struggle with them)
-4. What themes have no directive yet? (recurring topics with no related habit)
+Core method: find themes in the journal, then EVERY directive insight must be causally linked to a specific theme you extracted.
+
+Process:
+1. Read the journal entries. Identify recurring themes — what are they actually writing about? (tiredness, sleep, work stress, loneliness, focus, exercise, diet, etc.)
+2. For each theme, check the directive list for directives that address that theme.
+   - If a directive addresses the theme AND has low completion OR the journal shows struggle with it → directiveFocus.
+   - If a directive addresses the theme AND the journal shows evidence it's helping → directiveWin.
+   - If a theme has NO directive addressing it → directiveGap.
+3. Completion % alone is never enough. A directive at 20% completion is only a focus area if the journal shows they need it. A 100% completion directive is only a win if the journal mentions it helping.
 
 Tone rules:
 - Direct and declarative. State observations as facts.
@@ -246,14 +276,14 @@ Tone rules:
 - Drop filler phrases: "it seems", "overall", "great job", "you're doing well".
 - No emojis, no exclamation marks.
 - Reference specific days, tags, or directive titles by name.
-- Return empty arrays or null when there's nothing meaningful to say.
+- Return empty arrays when there's no causal link to make. Never list a directive just because its completion is low.
 
 Return a JSON object with these fields:
-- "themes": array of {name, mentions}. Top 3-5 recurring topics in the journal. name = short phrase ("sleep quality", "work stress"). mentions = rough count of entries referencing it.
-- "directiveWins": array of {directiveTitle, evidence}. Directives with signs of working. directiveTitle = exact title from the directive list. evidence = one sentence, what in the journal suggests it's helping.
-- "directiveFocus": array of {directiveTitle, reason}. Directives to re-focus on. directiveTitle = exact title. reason = one sentence, why (low completion, journal shows struggle).
-- "directiveGaps": array of {theme, suggestedTitle}. Recurring themes with no matching directive. suggestedTitle = a concise directive title they could add.
-- "suggestion": one concrete action for next ${periodLabel}. Imperative voice. Null if no clear pattern.
+- "themes": array of {name, mentions}. Top 3-5 recurring topics in the journal. name = short phrase ("tiredness", "work stress"). mentions = rough count of entries referencing it.
+- "directiveWins": array of {directiveTitle, evidence}. directiveTitle = exact title from the list. evidence = one sentence quoting or paraphrasing what in the journal shows this directive helping. Must reference a theme.
+- "directiveFocus": array of {directiveTitle, reason}. directiveTitle = exact title. reason = one sentence connecting a journal theme to this directive and why it needs attention. Format: "[theme] appears in journal but [directive] is [completion status / evidence of struggle]."
+- "directiveGaps": array of {theme, suggestedTitle}. Only for themes that recurred but have NO matching directive in the list. suggestedTitle = concise directive title they could add.
+- "suggestion": one concrete action for next ${periodLabel}. Imperative voice. Tied to the most important focus area or gap. Null if no clear pattern.
 - "summary": 1-3 sentences of context. What happened, in plain terms.
 - "bestDay": yyyy-MM-dd of highest-rated day, or null.
 - "bestDayNote": what made it highest. Null if no ratings.

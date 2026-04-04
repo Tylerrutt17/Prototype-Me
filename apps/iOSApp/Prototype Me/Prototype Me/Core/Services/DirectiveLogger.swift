@@ -20,6 +20,14 @@ enum DirectiveLogger {
                 createdAt: Date()
             )
             try entry.insert(db)
+            // Push to backend (append-only, create-only sync)
+            try OutboxOp.enqueue(
+                entityType: "directiveHistory",
+                entityId: entry.id.uuidString,
+                op: "create",
+                patch: entry.syncPatch(),
+                in: db
+            )
         }
     }
 

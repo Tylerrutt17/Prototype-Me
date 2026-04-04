@@ -104,6 +104,11 @@ async function processOpTx(tx: TxDb, userId: string, deviceId: string, op: Outbo
     return;
   }
 
+  if (op.entityType === "directiveHistory") {
+    await processDirectiveHistoryOpTx(tx, op);
+    return;
+  }
+
   const table = syncQueries.getIdTable(op.entityType);
   if (!table) throw new Error(`Unknown entity type: ${op.entityType}`);
 
@@ -216,6 +221,35 @@ async function processActiveModeOpTx(tx: TxDb, userId: string, op: OutboxOp): Pr
       break;
     }
   }
+}
+
+/**
+ * DirectiveHistory is an append-only log. Only accept `create` ops.
+ * Silently ignore updates and deletes — history entries are immutable.
+ */
+async function processDirectiveHistoryOpTx(tx: TxDb, op: OutboxOp): Promise<void> {
+  if (op.op !== "create") return;
+
+  const data = parsePatchDates(JSON.parse(op.patch));
+  // Verify the parent directive exists (FK requirement). If not, skip silently —
+  // the parent directive op should be in the same batch but may arrive later.
+  const parentExists = await tx
+    .select({ id: schema.directive.id })
+    .from(schema.directive)
+    .where(eq(schema.directive.id, data.directiveId as string))
+    .then((r) => r.length > 0);
+  if (!parentExists) return;
+
+  await tx
+    .insert(schema.directiveHistory)
+    .values({
+      id: op.entityId,
+      directiveId: data.directiveId as string,
+      action: data.action as typeof schema.directiveHistoryActionEnum.enumValues[number],
+      payload: typeof data.payload === "string" ? data.payload : JSON.stringify(data.payload ?? {}),
+      createdAt: (data.createdAt as Date | undefined) ?? new Date(),
+    })
+    .onConflictDoNothing();
 }
 
 // ── Pull: paginated, all entity types, correct response format ──
