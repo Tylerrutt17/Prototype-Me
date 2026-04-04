@@ -2,6 +2,7 @@ import { eq, and, gt } from "drizzle-orm";
 import { db } from "../db/client.js";
 import * as syncQueries from "../db/queries/sync.js";
 import * as schema from "../db/schema.js";
+import { validateHistoryPayload } from "../validation/directiveHistory.js";
 
 // Transaction-compatible DB type (works with both db and db.transaction callback)
 type TxDb = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -224,13 +225,34 @@ async function processActiveModeOpTx(tx: TxDb, userId: string, op: OutboxOp): Pr
 }
 
 /**
- * DirectiveHistory is an append-only log. Only accept `create` ops.
- * Silently ignore updates and deletes — history entries are immutable.
+ * DirectiveHistory is mostly append-only, but supports `delete` for retraction
+ * (e.g. user unchecks a checklist item). Updates are never allowed.
+ *
+ * Payload shapes for creates are versioned per-action via Zod schemas. Invalid
+ * payloads are rejected (op counted as applied but nothing written).
  */
 async function processDirectiveHistoryOpTx(tx: TxDb, op: OutboxOp): Promise<void> {
-  if (op.op !== "create") return;
+  if (op.op === "delete") {
+    await tx.delete(schema.directiveHistory).where(eq(schema.directiveHistory.id, op.entityId));
+    return;
+  }
+
+  if (op.op !== "create") return; // updates not supported
 
   const data = parsePatchDates(JSON.parse(op.patch));
+  const action = data.action as string | undefined;
+  if (!action) {
+    console.warn(`[Sync] directiveHistory op ${op.id} missing action`);
+    return;
+  }
+
+  // Validate the payload against its action-specific versioned schema
+  const validation = validateHistoryPayload(action, data.payload);
+  if (!validation.ok) {
+    console.warn(`[Sync] directiveHistory op ${op.id} invalid payload for action "${action}": ${validation.error}`);
+    return;
+  }
+
   // Verify the parent directive exists (FK requirement). If not, skip silently —
   // the parent directive op should be in the same batch but may arrive later.
   const parentExists = await tx
@@ -245,8 +267,8 @@ async function processDirectiveHistoryOpTx(tx: TxDb, op: OutboxOp): Promise<void
     .values({
       id: op.entityId,
       directiveId: data.directiveId as string,
-      action: data.action as typeof schema.directiveHistoryActionEnum.enumValues[number],
-      payload: typeof data.payload === "string" ? data.payload : JSON.stringify(data.payload ?? {}),
+      action: action as typeof schema.directiveHistoryActionEnum.enumValues[number],
+      payload: JSON.stringify(validation.data),
       createdAt: (data.createdAt as Date | undefined) ?? new Date(),
     })
     .onConflictDoNothing();

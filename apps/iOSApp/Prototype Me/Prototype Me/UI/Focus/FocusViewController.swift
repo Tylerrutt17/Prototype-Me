@@ -563,6 +563,13 @@ class FocusViewController: BaseViewController {
                     date: todayStr,
                     dbQueue: dbQueue
                 )
+            } else {
+                // User unchecked — retract the log entry for today
+                DirectiveLogger.undoChecklistComplete(
+                    directiveId: rule.directiveId,
+                    date: todayStr,
+                    dbQueue: dbQueue
+                )
             }
             Haptics.selection()
         } catch {

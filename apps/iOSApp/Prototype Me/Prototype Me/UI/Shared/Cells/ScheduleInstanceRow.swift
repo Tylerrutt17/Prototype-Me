@@ -142,6 +142,12 @@ final class ScheduleInstanceRowCell: InteractiveCell {
                     date: todayStr,
                     dbQueue: dbQueue
                 )
+            } else {
+                DirectiveLogger.undoChecklistComplete(
+                    directiveId: rule.directiveId,
+                    date: todayStr,
+                    dbQueue: dbQueue
+                )
             }
             Haptics.selection()
         } catch {
