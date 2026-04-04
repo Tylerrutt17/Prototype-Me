@@ -176,6 +176,7 @@ extension SpeakViewController {
         placeholderLabel.isHidden = false
         updateTextViewHeight()
         textView.resignFirstResponder()
+        hideThinkingContext(animated: false)
         sendMessage(text)
     }
 

@@ -30,6 +30,8 @@ class SpeakViewController: BaseViewController {
     let responseContentStack = UIStackView()
     let responseLabel = UILabel()
     let thinkingDotsView = ThinkingDotsView()
+    let thinkingContextPill = UIView()
+    let thinkingContextLabel = UILabel()
     let actionConfirmView = ActionConfirmView()
     let upgradeButton = UIButton(type: .system)
 
@@ -172,6 +174,33 @@ class SpeakViewController: BaseViewController {
         thinkingDotsView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(thinkingDotsView)
 
+        // Thinking context pill (shown above thinking dots for externally-triggered prompts)
+        thinkingContextPill.backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.12)
+        thinkingContextPill.layer.cornerRadius = DesignTokens.Radii.lg
+        thinkingContextPill.clipsToBounds = true
+        thinkingContextPill.isHidden = true
+        thinkingContextPill.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(thinkingContextPill)
+
+        let contextIcon = UIImageView(image: UIImage(systemName: "sparkles"))
+        contextIcon.tintColor = DesignTokens.Colors.accent
+        contextIcon.contentMode = .scaleAspectFit
+        contextIcon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+        contextIcon.translatesAutoresizingMaskIntoConstraints = false
+
+        thinkingContextLabel.font = DesignTokens.Typography.rounded(style: .footnote, weight: .medium)
+        thinkingContextLabel.textColor = DesignTokens.Colors.accent
+        thinkingContextLabel.numberOfLines = 2
+        thinkingContextLabel.textAlignment = .center
+        thinkingContextLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let contextStack = UIStackView(arrangedSubviews: [contextIcon, thinkingContextLabel])
+        contextStack.axis = .horizontal
+        contextStack.spacing = DesignTokens.Spacing.xs
+        contextStack.alignment = .center
+        contextStack.translatesAutoresizingMaskIntoConstraints = false
+        thinkingContextPill.addSubview(contextStack)
+
         let pad = DesignTokens.Spacing.xl
 
         NSLayoutConstraint.activate([
@@ -189,7 +218,53 @@ class SpeakViewController: BaseViewController {
             thinkingDotsView.topAnchor.constraint(equalTo: responseScrollView.topAnchor, constant: pad * 2),
             thinkingDotsView.widthAnchor.constraint(equalToConstant: 80),
             thinkingDotsView.heightAnchor.constraint(equalToConstant: 40),
+
+            contextIcon.widthAnchor.constraint(equalToConstant: 14),
+            contextIcon.heightAnchor.constraint(equalToConstant: 14),
+
+            contextStack.topAnchor.constraint(equalTo: thinkingContextPill.topAnchor, constant: DesignTokens.Spacing.sm),
+            contextStack.bottomAnchor.constraint(equalTo: thinkingContextPill.bottomAnchor, constant: -DesignTokens.Spacing.sm),
+            contextStack.leadingAnchor.constraint(equalTo: thinkingContextPill.leadingAnchor, constant: DesignTokens.Spacing.md),
+            contextStack.trailingAnchor.constraint(equalTo: thinkingContextPill.trailingAnchor, constant: -DesignTokens.Spacing.md),
+
+            thinkingContextPill.centerXAnchor.constraint(equalTo: responseScrollView.centerXAnchor),
+            thinkingContextPill.bottomAnchor.constraint(equalTo: thinkingDotsView.topAnchor, constant: -DesignTokens.Spacing.sm),
+            thinkingContextPill.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: pad),
+            thinkingContextPill.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -pad),
         ])
+    }
+
+    // MARK: - Thinking Context Pill
+
+    /// Show a context pill above the thinking dots to explain what the AI is working on.
+    /// Call this BEFORE sendMessage() when triggering from an external action like "Not Working?".
+    func showThinkingContext(_ text: String) {
+        thinkingContextLabel.text = text
+        thinkingContextPill.isHidden = false
+        thinkingContextPill.alpha = 0
+        thinkingContextPill.transform = CGAffineTransform(translationX: 0, y: 8)
+        UIView.animate(withDuration: 0.3, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0) {
+            self.thinkingContextPill.alpha = 1
+            self.thinkingContextPill.transform = .identity
+        }
+    }
+
+    func hideThinkingContext(animated: Bool = true) {
+        guard !thinkingContextPill.isHidden else { return }
+        guard animated else {
+            thinkingContextPill.isHidden = true
+            thinkingContextPill.alpha = 1
+            thinkingContextPill.transform = .identity
+            return
+        }
+        UIView.animate(withDuration: 0.2) {
+            self.thinkingContextPill.alpha = 0
+            self.thinkingContextPill.transform = CGAffineTransform(translationX: 0, y: -4)
+        } completion: { _ in
+            self.thinkingContextPill.isHidden = true
+            self.thinkingContextPill.alpha = 1
+            self.thinkingContextPill.transform = .identity
+        }
     }
 
     // MARK: - Response State Transitions
@@ -223,6 +298,7 @@ class SpeakViewController: BaseViewController {
 
     func showResponse(text: String) {
         thinkingDotsView.stopAnimating()
+        hideThinkingContext()
         responseLabel.attributedText = Self.renderSpeakMarkdown(text)
 
         responseLabel.isHidden = false
@@ -303,6 +379,7 @@ class SpeakViewController: BaseViewController {
 
     func showError(_ text: String, showUpgrade: Bool = false) {
         thinkingDotsView.stopAnimating()
+        hideThinkingContext()
 
         UIView.animate(withDuration: 0.15) {
             self.thinkingDotsView.alpha = 0
@@ -500,6 +577,18 @@ class SpeakViewController: BaseViewController {
         emptyStateView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(emptyStateView)
 
+        // Floating color orbs in the background for ambient motion
+        let orbsView = BackgroundOrbsView()
+        orbsView.translatesAutoresizingMaskIntoConstraints = false
+        emptyStateView.addSubview(orbsView)
+
+        NSLayoutConstraint.activate([
+            orbsView.topAnchor.constraint(equalTo: emptyStateView.topAnchor),
+            orbsView.leadingAnchor.constraint(equalTo: emptyStateView.leadingAnchor),
+            orbsView.trailingAnchor.constraint(equalTo: emptyStateView.trailingAnchor),
+            orbsView.bottomAnchor.constraint(equalTo: emptyStateView.bottomAnchor),
+        ])
+
         let titleLabel = UILabel()
         titleLabel.text = "What can I help with?"
         titleLabel.font = DesignTokens.Typography.rounded(style: .title3, weight: .bold)
@@ -512,22 +601,26 @@ class SpeakViewController: BaseViewController {
         subtitleLabel.textColor = DesignTokens.Colors.textTertiary
         subtitleLabel.textAlignment = .center
 
-        let suggestions: [(icon: String, text: String)] = [
-            ("plus.circle.fill", "\"Add a directive to meditate daily\""),
-            ("pencil.circle.fill", "\"Update my cold shower directive\""),
-            ("book.fill", "\"Log my journal \u{2014} today was a great day\""),
-            ("bolt.fill", "\"Switch to my Deep Work mode\""),
-            ("lightbulb.fill", "\"What should I focus on today?\""),
-            ("arrow.triangle.2.circlepath", "\"What's not working in my routine?\""),
+        let suggestions: [(icon: String, text: String, color: UIColor)] = [
+            ("plus.circle.fill", "\"Add a directive to meditate daily\"", DesignTokens.Colors.accent),
+            ("pencil.circle.fill", "\"Update my cold shower directive\"", .systemOrange),
+            ("book.fill", "\"Log my journal \u{2014} today was a great day\"", .systemPurple),
+            ("bolt.fill", "\"Switch to my Deep Work mode\"", .systemYellow),
+            ("lightbulb.fill", "\"What should I focus on today?\"", .systemPink),
+            ("arrow.triangle.2.circlepath", "\"What's not working in my routine?\"", .systemTeal),
         ]
+
+        // Horizontal offsets create a zigzag layout; animation gives a subtle float.
+        let horizontalOffsets: [CGFloat] = [-18, 20, -14, 16, -20, 14]
 
         let chipsStack = UIStackView()
         chipsStack.axis = .vertical
         chipsStack.spacing = DesignTokens.Spacing.sm
         chipsStack.alignment = .center
 
-        for suggestion in suggestions {
-            let chip = makeSuggestionChip(icon: suggestion.icon, text: suggestion.text)
+        for (index, suggestion) in suggestions.enumerated() {
+            let chip = makeSuggestionChip(icon: suggestion.icon, text: suggestion.text, color: suggestion.color)
+            chip.transform = CGAffineTransform(translationX: horizontalOffsets[index], y: 0)
             chipsStack.addArrangedSubview(chip)
         }
 
@@ -551,14 +644,16 @@ class SpeakViewController: BaseViewController {
         ])
     }
 
-    private func makeSuggestionChip(icon: String, text: String) -> UIView {
+    private func makeSuggestionChip(icon: String, text: String, color: UIColor) -> UIView {
         let pill = UIView()
-        pill.backgroundColor = DesignTokens.Colors.surfaceSecondary.withAlphaComponent(0.6)
+        pill.backgroundColor = color.withAlphaComponent(0.12)
         pill.layer.cornerRadius = DesignTokens.Radii.md
+        pill.layer.borderWidth = 1
+        pill.layer.borderColor = color.withAlphaComponent(0.22).cgColor
 
-        let iconConfig = UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        let iconConfig = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
         let iconView = UIImageView(image: UIImage(systemName: icon, withConfiguration: iconConfig))
-        iconView.tintColor = DesignTokens.Colors.accent
+        iconView.tintColor = color
         iconView.contentMode = .scaleAspectFit
         iconView.setContentHuggingPriority(.required, for: .horizontal)
 

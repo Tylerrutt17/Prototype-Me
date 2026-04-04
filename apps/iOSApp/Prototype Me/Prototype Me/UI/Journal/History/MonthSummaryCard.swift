@@ -199,7 +199,7 @@ final class MonthSummaryCard: UICollectionViewCell {
         if !review.missedScheduled.isEmpty {
             missedSection.setItems(review.missedScheduled.map { item in
                 let plural = item.missedCount == 1 ? "day" : "days"
-                return (item.directiveTitle, "Skipped \(item.missedCount) \(plural)")
+                return (item.directiveTitle, "\(item.missedCount) \(plural) missed")
             })
             missedSection.isHidden = false
         }

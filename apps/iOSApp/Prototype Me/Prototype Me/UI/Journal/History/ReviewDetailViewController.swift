@@ -71,16 +71,7 @@ final class ReviewDetailViewController: BaseViewController {
 
         // Missed scheduled items (mechanical accountability — goes first)
         if !review.missedScheduled.isEmpty {
-            contentStack.addArrangedSubview(makeInsightSection(
-                header: "MISSED",
-                accentColor: DesignTokens.Colors.destructive,
-                items: review.missedScheduled.map { item in
-                    let plural = item.missedCount == 1 ? "day" : "days"
-                    let dateHint = item.missedDates.prefix(3).joined(separator: ", ")
-                    let extra = item.missedDates.count > 3 ? " +\(item.missedDates.count - 3) more" : ""
-                    return (item.directiveTitle, "Skipped \(item.missedCount) \(plural): \(dateHint)\(extra)")
-                }
-            ))
+            contentStack.addArrangedSubview(makeMissedSection(review.missedScheduled))
         }
 
         // Themes
@@ -251,6 +242,54 @@ final class ReviewDetailViewController: BaseViewController {
         chips.translatesAutoresizingMaskIntoConstraints = false
 
         let stack = UIStackView(arrangedSubviews: [header, chips])
+        stack.axis = .vertical
+        stack.spacing = DesignTokens.Spacing.sm
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(stack)
+
+        let pad = DesignTokens.Spacing.lg
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -pad),
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
+        ])
+        return card
+    }
+
+    private func presentMissedCalendar(for item: PeriodicReview.MissedScheduled) {
+        guard let review else { return }
+        let sheet = MissedCalendarSheet(item: item, periodStart: review.periodStart, periodEnd: review.periodEnd)
+        if let presentation = sheet.sheetPresentationController {
+            presentation.detents = [.medium(), .large()]
+            presentation.prefersGrabberVisible = true
+            presentation.preferredCornerRadius = DesignTokens.Radii.xl
+        }
+        present(sheet, animated: true)
+    }
+
+    private func makeMissedSection(_ items: [PeriodicReview.MissedScheduled]) -> UIView {
+        let accent = DesignTokens.Colors.destructive
+        let card = UIView()
+        card.backgroundColor = DesignTokens.Colors.surfacePrimary
+        card.layer.cornerRadius = DesignTokens.Radii.lg
+
+        let headerLabel = UILabel()
+        headerLabel.text = "MISSED"
+        headerLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .bold)
+        headerLabel.textColor = accent
+
+        let itemsStack = UIStackView()
+        itemsStack.axis = .vertical
+        itemsStack.spacing = DesignTokens.Spacing.sm
+
+        for item in items {
+            itemsStack.addArrangedSubview(MissedRow(item: item, accent: accent, onTap: { [weak self] tapped in
+                self?.presentMissedCalendar(for: tapped)
+            }))
+        }
+
+        let stack = UIStackView(arrangedSubviews: [headerLabel, itemsStack])
         stack.axis = .vertical
         stack.spacing = DesignTokens.Spacing.sm
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -493,5 +532,72 @@ final class ReviewDetailViewController: BaseViewController {
         if let summary { return HistoryDateFormat.monthTitle(summary.month) }
         if let review { return HistoryDateFormat.weekRange(start: review.periodStart, end: review.periodEnd) }
         return "Review"
+    }
+}
+
+// MARK: - MissedRow
+
+/// Directive title + count badge + chevron, tappable to open a calendar sheet.
+private final class MissedRow: UIView {
+    private let item: PeriodicReview.MissedScheduled
+    private let onTap: (PeriodicReview.MissedScheduled) -> Void
+
+    init(item: PeriodicReview.MissedScheduled, accent: UIColor, onTap: @escaping (PeriodicReview.MissedScheduled) -> Void) {
+        self.item = item
+        self.onTap = onTap
+        super.init(frame: .zero)
+        setupView(accent: accent)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    private func setupView(accent: UIColor) {
+        backgroundColor = accent.withAlphaComponent(0.08)
+        layer.cornerRadius = DesignTokens.Radii.md
+
+        let titleLabel = UILabel()
+        titleLabel.text = item.directiveTitle
+        titleLabel.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
+        titleLabel.textColor = DesignTokens.Colors.textPrimary
+        titleLabel.numberOfLines = 0
+
+        let countLabel = PaddedLabel()
+        let plural = item.missedCount == 1 ? "day" : "days"
+        countLabel.text = "\(item.missedCount) \(plural)"
+        countLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .bold)
+        countLabel.textColor = accent
+        countLabel.backgroundColor = accent.withAlphaComponent(0.15)
+        countLabel.layer.cornerRadius = 8
+        countLabel.clipsToBounds = true
+        countLabel.contentInsets = UIEdgeInsets(top: 3, left: 8, bottom: 3, right: 8)
+        countLabel.setContentHuggingPriority(.required, for: .horizontal)
+        countLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)))
+        chevron.tintColor = DesignTokens.Colors.textTertiary
+        chevron.setContentHuggingPriority(.required, for: .horizontal)
+
+        let row = UIStackView(arrangedSubviews: [titleLabel, countLabel, chevron])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = DesignTokens.Spacing.sm
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+
+        let h = 10.0, v = 8.0
+        NSLayoutConstraint.activate([
+            row.topAnchor.constraint(equalTo: topAnchor, constant: v),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -v),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: h),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -h),
+        ])
+
+        isUserInteractionEnabled = true
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
+        addGestureRecognizer(tap)
+    }
+
+    @objc private func handleTap() {
+        onTap(item)
     }
 }

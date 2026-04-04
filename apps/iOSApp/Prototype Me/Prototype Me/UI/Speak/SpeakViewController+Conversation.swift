@@ -16,6 +16,7 @@ extension SpeakViewController {
 
     func finishVoiceInput(text: String) {
         guard !text.isEmpty else { return }
+        hideThinkingContext(animated: false)
         sendMessage(text)
     }
 

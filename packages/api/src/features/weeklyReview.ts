@@ -175,6 +175,7 @@ async function generateReviewForUser(userId: string, period: Period, periodStart
     scheduled: number;
     completed: number;
     missedDates: string[];
+    scheduledDates: string[];
     hasSchedule: boolean;
   };
   const completionStats: CompletionStat[] = [];
@@ -235,6 +236,7 @@ async function generateReviewForUser(userId: string, period: Period, periodStart
           scheduled: 0,
           completed: completedDates.size,
           missedDates: [],
+          scheduledDates: [],
           hasSchedule: false,
         });
         continue;
@@ -255,12 +257,14 @@ async function generateReviewForUser(userId: string, period: Period, periodStart
         if (!completedDates.has(date)) missed.push(date);
       }
       missed.sort();
+      const sortedScheduled = [...expectedDates].sort();
 
       completionStats.push({
         directiveId,
         scheduled: expectedDates.size,
         completed: expectedDates.size - missed.length,
         missedDates: missed,
+        scheduledDates: sortedScheduled,
         hasSchedule: true,
       });
     }
@@ -403,6 +407,7 @@ ${entries.length} total entries.`;
       directiveTitle: directiveIdToTitle.get(s.directiveId) ?? "Unknown",
       missedCount: s.missedDates.length,
       missedDates: s.missedDates,
+      scheduledDates: s.scheduledDates,
     }))
     // Sort by most-missed first
     .sort((a, b) => b.missedCount - a.missedCount);

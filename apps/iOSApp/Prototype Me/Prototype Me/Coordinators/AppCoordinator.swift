@@ -214,6 +214,7 @@ class AppCoordinator: Coordinator {
         // Wait one runloop tick so the Speak tab's view is loaded before sending
         DispatchQueue.main.async {
             guard !speakVC.isProcessing else { return }
+            speakVC.showThinkingContext("Finding an alternative for \u{201C}\(title)\u{201D}")
             speakVC.sendMessage(prompt)
         }
     }

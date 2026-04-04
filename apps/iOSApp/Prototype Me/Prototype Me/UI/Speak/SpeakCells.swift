@@ -168,7 +168,12 @@ final class ActionConfirmView: UIView {
     func configure(with toolCalls: [SpeakPendingToolCall]) {
         self.toolCalls = toolCalls
         actionsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        // Reset any leftover state from a prior animateToApplied() call
         buttonStack.isHidden = false
+        buttonStack.alpha = 1
+        buttonStack.transform = .identity
+        actionsStack.alpha = 1
+        actionsStack.transform = .identity
         for (index, tc) in toolCalls.enumerated() {
             let card = buildActionCard(for: tc)
             // Only make tappable if there's an existing item to navigate to (not creates)

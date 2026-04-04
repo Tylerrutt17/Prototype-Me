@@ -496,6 +496,7 @@ nonisolated struct PeriodicReview: Identifiable, Hashable, Sendable, Codable, Fe
         let directiveTitle: String
         let missedCount: Int
         let missedDates: [String]
+        let scheduledDates: [String]
     }
 
     let id: UUID

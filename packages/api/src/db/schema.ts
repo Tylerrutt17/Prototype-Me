@@ -271,7 +271,7 @@ export const periodicReview = pgTable(
     directiveFocus: jsonb("directive_focus").$type<Array<{ directiveTitle: string; reason: string }>>().notNull().default([]),
     directiveGaps: jsonb("directive_gaps").$type<Array<{ theme: string; suggestedTitle: string }>>().notNull().default([]),
     // Pure schedule math (no LLM): directives the user scheduled but skipped.
-    missedScheduled: jsonb("missed_scheduled").$type<Array<{ directiveTitle: string; missedCount: number; missedDates: string[] }>>().notNull().default([]),
+    missedScheduled: jsonb("missed_scheduled").$type<Array<{ directiveTitle: string; missedCount: number; missedDates: string[]; scheduledDates: string[] }>>().notNull().default([]),
     suggestion: text("suggestion"),
 
     // Context
