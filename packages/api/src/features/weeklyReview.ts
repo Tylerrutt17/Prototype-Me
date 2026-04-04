@@ -1,6 +1,6 @@
 import { db } from "../db/client.js";
-import { dayEntry, periodicReview, directive, directiveHistory, scheduleInstance } from "../db/schema.js";
-import { eq, and, gte, lte, desc, sql, inArray, gt } from "drizzle-orm";
+import { dayEntry, periodicReview, directive, directiveHistory, scheduleRule } from "../db/schema.js";
+import { eq, and, gte, lte, desc, inArray } from "drizzle-orm";
 import { callLLMJson } from "../lib/llm.js";
 
 // ── Types ──────────────────────────────────────
@@ -132,55 +132,103 @@ async function generateReviewForUser(userId: string, period: Period, periodStart
     .where(and(eq(directive.userId, userId), eq(directive.status, "active")))
     .limit(30);
 
-  // Directive completion stats for the period
+  // Schedule-based completion stats for the period.
+  // For each directive with a schedule rule, compute which dates were *expected*
+  // based on the rule, then compare to actual checklist_complete rows.
   const directiveIds = directives.map((d) => d.id);
-  let completionStats: { directiveId: string; done: number; skipped: number; total: number }[] = [];
+  type CompletionStat = {
+    directiveId: string;
+    scheduled: number;
+    completed: number;
+    missedDates: string[];
+    hasSchedule: boolean;
+  };
+  const completionStats: CompletionStat[] = [];
+
   if (directiveIds.length > 0) {
-    const instances = await db
+    // Fetch schedule rules for these directives
+    const rules = await db
       .select({
-        directiveId: scheduleInstance.directiveId,
-        status: scheduleInstance.status,
+        directiveId: scheduleRule.directiveId,
+        ruleType: scheduleRule.ruleType,
+        params: scheduleRule.params,
       })
-      .from(scheduleInstance)
-      .where(
-        and(
-          eq(scheduleInstance.userId, userId),
-          inArray(scheduleInstance.directiveId, directiveIds),
-          gte(scheduleInstance.date, periodStart),
-          lte(scheduleInstance.date, periodEnd),
-        ),
-      );
+      .from(scheduleRule)
+      .where(inArray(scheduleRule.directiveId, directiveIds));
 
-    // Group by directive
-    const grouped = new Map<string, { done: number; skipped: number; total: number }>();
-    for (const inst of instances) {
-      const stats = grouped.get(inst.directiveId) ?? { done: 0, skipped: 0, total: 0 };
-      stats.total++;
-      if (inst.status === "done") stats.done++;
-      if (inst.status === "skipped") stats.skipped++;
-      grouped.set(inst.directiveId, stats);
-    }
-    completionStats = Array.from(grouped.entries()).map(([directiveId, stats]) => ({ directiveId, ...stats }));
-  }
-
-  // Checklist completions from directive_history
-  const checklistStats = new Map<string, number>();
-  if (directiveIds.length > 0) {
-    const startTs = new Date(`${periodStart}T00:00:00Z`);
-    const endTs = new Date(`${periodEnd}T23:59:59Z`);
+    // Fetch checklist completions for the period from the directive_history table.
+    // Payload shape: {"v":1,"date":"yyyy-MM-dd"} — we match on payload->>'date'.
     const checklistRows = await db
-      .select({ directiveId: directiveHistory.directiveId })
+      .select({ directiveId: directiveHistory.directiveId, payload: directiveHistory.payload })
       .from(directiveHistory)
       .where(
         and(
           inArray(directiveHistory.directiveId, directiveIds),
           eq(directiveHistory.action, "checklist_complete"),
-          gte(directiveHistory.createdAt, startTs),
-          lte(directiveHistory.createdAt, endTs),
         ),
       );
+
+    // Index completed dates per directive (only dates inside the period)
+    const completedDatesPerDirective = new Map<string, Set<string>>();
     for (const row of checklistRows) {
-      checklistStats.set(row.directiveId, (checklistStats.get(row.directiveId) ?? 0) + 1);
+      const date = extractPayloadDate(row.payload);
+      if (!date || date < periodStart || date > periodEnd) continue;
+      let set = completedDatesPerDirective.get(row.directiveId);
+      if (!set) {
+        set = new Set<string>();
+        completedDatesPerDirective.set(row.directiveId, set);
+      }
+      set.add(date);
+    }
+
+    // Group schedule rules by directiveId
+    const rulesByDirective = new Map<string, typeof rules>();
+    for (const rule of rules) {
+      const existing = rulesByDirective.get(rule.directiveId) ?? [];
+      existing.push(rule);
+      rulesByDirective.set(rule.directiveId, existing);
+    }
+
+    // Compute expected dates for each directive, then diff against completions
+    for (const { id: directiveId } of directives) {
+      const directiveRules = rulesByDirective.get(directiveId) ?? [];
+      const completedDates = completedDatesPerDirective.get(directiveId) ?? new Set<string>();
+
+      if (directiveRules.length === 0) {
+        // No schedule — only count raw completions. Not a "has schedule" directive.
+        completionStats.push({
+          directiveId,
+          scheduled: 0,
+          completed: completedDates.size,
+          missedDates: [],
+          hasSchedule: false,
+        });
+        continue;
+      }
+
+      const expectedDates = new Set<string>();
+      for (const date of enumerateDates(periodStart, periodEnd)) {
+        for (const rule of directiveRules) {
+          if (ruleMatchesDate(rule.ruleType, rule.params, date)) {
+            expectedDates.add(date);
+            break;
+          }
+        }
+      }
+
+      const missed: string[] = [];
+      for (const date of expectedDates) {
+        if (!completedDates.has(date)) missed.push(date);
+      }
+      missed.sort();
+
+      completionStats.push({
+        directiveId,
+        scheduled: expectedDates.size,
+        completed: expectedDates.size - missed.length,
+        missedDates: missed,
+        hasSchedule: true,
+      });
     }
   }
 
@@ -223,6 +271,8 @@ async function generateReviewForUser(userId: string, period: Period, periodStart
 
   // ── Build prompt ──
 
+  const periodLabel = period === "weekly" ? "week" : "month";
+
   const entriesText = entries
     .map((e) => {
       const parts = [`${e.date}`];
@@ -239,14 +289,17 @@ async function generateReviewForUser(userId: string, period: Period, periodStart
         directives
           .map((d) => {
             const stats = completionStats.find((s) => s.directiveId === d.id);
-            const checklistCount = checklistStats.get(d.id) ?? 0;
             const parts: string[] = [`- ${d.title}`];
-            if (stats && stats.total > 0) {
-              const pct = Math.round((stats.done / stats.total) * 100);
-              parts.push(`(schedule: ${pct}% — ${stats.done}/${stats.total} done, ${stats.skipped} skipped)`);
-            }
-            if (checklistCount > 0) {
-              parts.push(`(checklist: ${checklistCount} check-in${checklistCount === 1 ? "" : "s"})`);
+            if (stats?.hasSchedule && stats.scheduled > 0) {
+              const pct = Math.round((stats.completed / stats.scheduled) * 100);
+              parts.push(`(${stats.completed}/${stats.scheduled} scheduled days completed, ${pct}%)`);
+              if (stats.missedDates.length > 0) {
+                parts.push(`(missed: ${stats.missedDates.join(", ")})`);
+              }
+            } else if (stats && !stats.hasSchedule && stats.completed > 0) {
+              parts.push(`(no schedule, ${stats.completed} check-in${stats.completed === 1 ? "" : "s"})`);
+            } else if (stats?.hasSchedule && stats.scheduled === 0) {
+              parts.push(`(scheduled but not this ${periodLabel})`);
             }
             return parts.join(" ");
           })
@@ -255,8 +308,6 @@ async function generateReviewForUser(userId: string, period: Period, periodStart
 
   const tagsText = topTags.length > 0 ? `\n\nMost used tags: ${topTags.map(([t, c]) => `${t} (${c}x)`).join(", ")}` : "";
 
-  const periodLabel = period === "weekly" ? "week" : "month";
-
   const system = `You analyze someone's ${periodLabel} from their journal and map it to their directives (habits/intentions they've set for themselves).
 
 Core method: find themes in the journal, then EVERY directive insight must be causally linked to a specific theme you extracted.
@@ -264,10 +315,17 @@ Core method: find themes in the journal, then EVERY directive insight must be ca
 Process:
 1. Read the journal entries. Identify recurring themes — what are they actually writing about? (tiredness, sleep, work stress, loneliness, focus, exercise, diet, etc.)
 2. For each theme, check the directive list for directives that address that theme.
-   - If a directive addresses the theme AND has low completion OR the journal shows struggle with it → directiveFocus.
+   - If a directive addresses the theme AND has low completion (many missed days) OR the journal shows struggle with it → directiveFocus.
    - If a directive addresses the theme AND the journal shows evidence it's helping → directiveWin.
    - If a theme has NO directive addressing it → directiveGap.
-3. Completion % alone is never enough. A directive at 20% completion is only a focus area if the journal shows they need it. A 100% completion directive is only a win if the journal mentions it helping.
+3. Completion % alone is never enough. A directive with many missed days is only a focus area if the journal shows they need it. A directive completed every scheduled day is only a win if the journal mentions it helping.
+
+Directive completion data format:
+- "X/Y scheduled days completed, Z%" means this directive was scheduled Y times; the user checked off X of them.
+- "(missed: yyyy-MM-dd, yyyy-MM-dd, ...)" lists specific dates the user skipped the scheduled directive.
+- "(no schedule, N check-ins)" means the user has no recurring schedule for this but checked in N times anyway.
+- "(scheduled but not this ${periodLabel})" means the schedule doesn't land on any day in this period.
+- Use missed dates to cross-reference journal entries. If the user complains about tiredness on a day they missed their "Go for a run" directive, that's a causal link.
 
 Tone rules:
 - Direct and declarative. State observations as facts.
@@ -391,6 +449,60 @@ export async function getReview(userId: string, period: Period, periodStartDate:
 
 function toDateStr(d: Date): string {
   return d.toISOString().split("T")[0];
+}
+
+/** Extract the "date" field from a checklist_complete payload JSON string. */
+function extractPayloadDate(payload: string): string | null {
+  try {
+    const parsed = JSON.parse(payload);
+    const date = parsed?.date;
+    if (typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Yield every yyyy-MM-dd between start and end, inclusive. */
+function* enumerateDates(startStr: string, endStr: string): Generator<string> {
+  const start = new Date(`${startStr}T12:00:00Z`);
+  const end = new Date(`${endStr}T12:00:00Z`);
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    yield toDateStr(cursor);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+}
+
+/**
+ * Match a schedule rule against a specific date string.
+ * Port of iOS ScheduleRule.ruleMatchesDate — params shape supports weekdays,
+ * monthDays, and oneOffs (flat [y, m, d, y, m, d, ...] triplets).
+ */
+function ruleMatchesDate(
+  ruleType: "weekly" | "monthly" | "oneOff",
+  params: Record<string, number[]>,
+  dateStr: string,
+): boolean {
+  const d = new Date(`${dateStr}T12:00:00Z`);
+  // JS getUTCDay: 0=Sun, 1=Mon, ... 6=Sat. iOS Calendar weekday: 1=Sun, 2=Mon, ... 7=Sat.
+  const weekday = d.getUTCDay() + 1;
+  const dayOfMonth = d.getUTCDate();
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth() + 1;
+
+  const weekdays = params.weekdays ?? (ruleType === "weekly" ? params.days : undefined);
+  if (weekdays?.includes(weekday)) return true;
+
+  if (params.monthDays?.includes(dayOfMonth)) return true;
+
+  const oneOffs = params.oneOffs;
+  if (oneOffs && oneOffs.length >= 3) {
+    for (let i = 0; i <= oneOffs.length - 3; i += 3) {
+      if (oneOffs[i] === year && oneOffs[i + 1] === month && oneOffs[i + 2] === dayOfMonth) return true;
+    }
+  }
+  return false;
 }
 
 /** Current week (Monday → today), for test triggers. */
