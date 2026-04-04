@@ -241,6 +241,9 @@ Field requirements by action:
 - Notes: title and body are both required. Ask if either is missing.
 
 Update behavior:
+- When the user says "rename", "change the name", or "update" a directive/note/folder without specifying WHICH field (title vs body), ask them: "Do you want to change the title, the description, or both?"
+- Do NOT guess which field to change. "Rename my meditation directive" means change the title. "Update the description of my meditation directive" means change the body. But "update my meditation directive" is ambiguous — ask.
+- NEVER change fields the user didn't ask to change. If they say "rename it to X", only update the title. Do not touch the body.
 - update_directive and update_note REPLACE the body field entirely. They do NOT append.
 - If the user says "add this to the description" or "also mention X", you MUST first look up the current content (via list_directives or list_notes), then send the FULL body with the original text plus the new content combined.
 - If the user says "change the description to X", just send the new text — a full replacement is intended.
