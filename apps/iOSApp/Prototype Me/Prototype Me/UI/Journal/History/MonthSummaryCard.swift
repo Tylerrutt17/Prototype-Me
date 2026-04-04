@@ -6,20 +6,20 @@ final class MonthSummaryCard: UICollectionViewCell {
 
     // Header
     private let monthLabel = UILabel()
-    private let avgRatingPill = UILabel()
+    private let avgRatingPill = PaddedLabel()
     private let subtitleLabel = UILabel()
 
-    // Non-AI stats
+    // Non-AI stats (shown when no AI review)
     private let bestLabel = UILabel()
     private let worstLabel = UILabel()
     private let statsRow = UIStackView()
 
     // AI review content
-    private let aiDivider = UIView()
+    private let aiBadge = PaddedLabel()
     private let aiSummaryLabel = UILabel()
-    private let aiDaysRow = UIStackView()
-    private let aiBestPill = PaddedLabel()
-    private let aiWorstPill = PaddedLabel()
+    private let aiDayStack = UIStackView()
+    private let aiBestCard = DayNoteCard()
+    private let aiWorstCard = DayNoteCard()
     private let aiSuggestionContainer = UIView()
     private let aiSuggestionLabel = UILabel()
     private let aiDirectiveLabel = UILabel()
@@ -42,13 +42,15 @@ final class MonthSummaryCard: UICollectionViewCell {
         monthLabel.font = DesignTokens.Typography.rounded(style: .title3, weight: .bold)
         monthLabel.textColor = DesignTokens.Colors.textPrimary
 
-        avgRatingPill.font = DesignTokens.Typography.rounded(style: .footnote, weight: .bold)
+        avgRatingPill.font = DesignTokens.Typography.rounded(style: .caption1, weight: .bold)
         avgRatingPill.textColor = DesignTokens.Colors.accent
         avgRatingPill.backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.12)
-        avgRatingPill.layer.cornerRadius = 10
+        avgRatingPill.layer.cornerRadius = 9
         avgRatingPill.clipsToBounds = true
         avgRatingPill.textAlignment = .center
+        avgRatingPill.contentInsets = UIEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
         avgRatingPill.setContentHuggingPriority(.required, for: .horizontal)
+        avgRatingPill.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         subtitleLabel.font = DesignTokens.Typography.caption1
         subtitleLabel.textColor = DesignTokens.Colors.textSecondary
@@ -57,12 +59,13 @@ final class MonthSummaryCard: UICollectionViewCell {
         let topRow = UIStackView(arrangedSubviews: [monthLabel, UIView(), avgRatingPill])
         topRow.axis = .horizontal
         topRow.alignment = .center
+        topRow.spacing = DesignTokens.Spacing.sm
 
         let headerStack = UIStackView(arrangedSubviews: [topRow, subtitleLabel])
         headerStack.axis = .vertical
-        headerStack.spacing = DesignTokens.Spacing.xxs
+        headerStack.spacing = 3
 
-        // ── Non-AI stats (inline compact) ──
+        // ── Non-AI stats ──
         bestLabel.font = DesignTokens.Typography.caption1
         bestLabel.textColor = DesignTokens.Colors.success
         bestLabel.numberOfLines = 0
@@ -74,27 +77,30 @@ final class MonthSummaryCard: UICollectionViewCell {
         statsRow.addArrangedSubview(bestLabel)
         statsRow.addArrangedSubview(worstLabel)
         statsRow.axis = .vertical
-        statsRow.spacing = DesignTokens.Spacing.xxs
+        statsRow.spacing = 3
 
-        // ── AI: divider ──
-        aiDivider.backgroundColor = DesignTokens.Colors.separator.withAlphaComponent(0.3)
-        aiDivider.translatesAutoresizingMaskIntoConstraints = false
-        aiDivider.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        // ── AI badge ──
+        aiBadge.text = "AI REVIEW"
+        aiBadge.font = DesignTokens.Typography.rounded(style: .caption2, weight: .bold)
+        aiBadge.textColor = DesignTokens.Colors.accent
+        aiBadge.backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.12)
+        aiBadge.layer.cornerRadius = 6
+        aiBadge.clipsToBounds = true
+        aiBadge.contentInsets = UIEdgeInsets(top: 3, left: 8, bottom: 3, right: 8)
+        aiBadge.setContentHuggingPriority(.required, for: .horizontal)
+
+        let aiBadgeRow = UIStackView(arrangedSubviews: [aiBadge, UIView()])
+        aiBadgeRow.axis = .horizontal
+        aiBadgeRow.alignment = .leading
 
         // ── AI: summary ──
         aiSummaryLabel.font = DesignTokens.Typography.subheadline
         aiSummaryLabel.textColor = DesignTokens.Colors.textPrimary
         aiSummaryLabel.numberOfLines = 0
 
-        // ── AI: day pills ──
-        configureDayPill(aiBestPill, color: DesignTokens.Colors.success)
-        configureDayPill(aiWorstPill, color: DesignTokens.Colors.warning)
-
-        aiDaysRow.addArrangedSubview(aiBestPill)
-        aiDaysRow.addArrangedSubview(aiWorstPill)
-        aiDaysRow.axis = .vertical
-        aiDaysRow.spacing = DesignTokens.Spacing.xs
-        aiDaysRow.alignment = .leading
+        // ── AI: day cards (inline, smaller than detail view) ──
+        aiDayStack.axis = .vertical
+        aiDayStack.spacing = DesignTokens.Spacing.xs
 
         // ── AI: suggestion box ──
         aiSuggestionContainer.backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.08)
@@ -106,27 +112,32 @@ final class MonthSummaryCard: UICollectionViewCell {
         aiSuggestionLabel.translatesAutoresizingMaskIntoConstraints = false
         aiSuggestionContainer.addSubview(aiSuggestionLabel)
 
-        let sp = DesignTokens.Spacing.md
+        let sp = DesignTokens.Spacing.sm + 2 // 10pt
         NSLayoutConstraint.activate([
             aiSuggestionLabel.topAnchor.constraint(equalTo: aiSuggestionContainer.topAnchor, constant: sp),
             aiSuggestionLabel.bottomAnchor.constraint(equalTo: aiSuggestionContainer.bottomAnchor, constant: -sp),
-            aiSuggestionLabel.leadingAnchor.constraint(equalTo: aiSuggestionContainer.leadingAnchor, constant: sp),
-            aiSuggestionLabel.trailingAnchor.constraint(equalTo: aiSuggestionContainer.trailingAnchor, constant: -sp),
+            aiSuggestionLabel.leadingAnchor.constraint(equalTo: aiSuggestionContainer.leadingAnchor, constant: sp + 2),
+            aiSuggestionLabel.trailingAnchor.constraint(equalTo: aiSuggestionContainer.trailingAnchor, constant: -sp - 2),
         ])
 
-        // ── AI: directive insights (small footnote) ──
+        // ── AI: directive insights ──
         aiDirectiveLabel.font = DesignTokens.Typography.caption1
         aiDirectiveLabel.textColor = DesignTokens.Colors.textTertiary
         aiDirectiveLabel.numberOfLines = 0
 
         // ── Main stack ──
         mainStack = UIStackView(arrangedSubviews: [
-            headerStack, statsRow, aiDivider, aiSummaryLabel, aiDaysRow, aiSuggestionContainer, aiDirectiveLabel,
+            headerStack, statsRow, aiBadgeRow, aiSummaryLabel, aiDayStack, aiSuggestionContainer, aiDirectiveLabel,
         ])
         mainStack.axis = .vertical
-        mainStack.spacing = DesignTokens.Spacing.md
+        mainStack.spacing = DesignTokens.Spacing.sm
         mainStack.translatesAutoresizingMaskIntoConstraints = false
-        mainStack.setCustomSpacing(DesignTokens.Spacing.sm, after: headerStack)
+
+        // Custom spacing for visual rhythm
+        mainStack.setCustomSpacing(DesignTokens.Spacing.md, after: subtitleLabel)
+        mainStack.setCustomSpacing(DesignTokens.Spacing.md, after: statsRow)
+        mainStack.setCustomSpacing(DesignTokens.Spacing.sm, after: aiBadgeRow)
+
         contentView.addSubview(mainStack)
 
         NSLayoutConstraint.activate([
@@ -137,28 +148,18 @@ final class MonthSummaryCard: UICollectionViewCell {
         ])
     }
 
-    private func configureDayPill(_ pill: PaddedLabel, color: UIColor) {
-        pill.font = DesignTokens.Typography.rounded(style: .caption1, weight: .semibold)
-        pill.textColor = color
-        pill.backgroundColor = color.withAlphaComponent(0.12)
-        pill.layer.cornerRadius = DesignTokens.Radii.sm
-        pill.clipsToBounds = true
-        pill.numberOfLines = 0
-        pill.contentInsets = UIEdgeInsets(top: 6, left: 10, bottom: 6, right: 10)
-    }
-
     func configure(with summary: HistoryMonthSummary, review: PeriodicReview?) {
         monthLabel.text = HistoryDateFormat.monthTitle(summary.month)
 
         // Avg rating pill
         if let avg = summary.averageRating {
-            avgRatingPill.text = "  \(String(format: "%.1f", avg)) avg  "
+            avgRatingPill.text = "\(String(format: "%.1f", avg)) avg"
             avgRatingPill.isHidden = false
         } else {
             avgRatingPill.isHidden = true
         }
 
-        // Combined subtitle: "12 entries • work, exercise, reading"
+        // Combined subtitle
         var subtitleParts: [String] = ["\(summary.entryCount) entr\(summary.entryCount == 1 ? "y" : "ies")"]
         if !summary.topTags.isEmpty {
             subtitleParts.append(summary.topTags.joined(separator: ", "))
@@ -167,7 +168,7 @@ final class MonthSummaryCard: UICollectionViewCell {
 
         let hasReview = review != nil
 
-        // Non-AI stats block: only show when no review (AI version uses pills)
+        // Non-AI stats (hidden when review present)
         statsRow.isHidden = hasReview
         if !hasReview {
             if let best = summary.bestDay {
@@ -182,37 +183,36 @@ final class MonthSummaryCard: UICollectionViewCell {
             } else {
                 worstLabel.isHidden = true
             }
-            // Hide parent if neither has content
             statsRow.isHidden = bestLabel.isHidden && worstLabel.isHidden
         }
 
-        // AI section
-        aiDivider.isHidden = !hasReview
+        // AI content
+        let badgeRow = mainStack.arrangedSubviews[2] // aiBadgeRow
+        badgeRow.isHidden = !hasReview
         aiSummaryLabel.isHidden = !hasReview
-        aiDaysRow.isHidden = !hasReview
+        aiDayStack.isHidden = !hasReview
         aiSuggestionContainer.isHidden = true
         aiDirectiveLabel.isHidden = true
+
+        // Reset day cards
+        aiDayStack.arrangedSubviews.forEach { aiDayStack.removeArrangedSubview($0); $0.removeFromSuperview() }
 
         guard let review else { return }
 
         aiSummaryLabel.text = review.summary
 
-        // Day pills
+        // Day note cards
         if let note = review.bestDayNote {
-            let prefix = review.bestDay.map { "↑ \(HistoryDateFormat.shortDate($0))  " } ?? "↑ "
-            aiBestPill.text = prefix + note
-            aiBestPill.isHidden = false
-        } else {
-            aiBestPill.isHidden = true
+            let title = review.bestDay.map { "↑ \(HistoryDateFormat.shortDate($0))" } ?? "↑ Best"
+            aiBestCard.configure(title: title, body: note, accent: DesignTokens.Colors.success)
+            aiDayStack.addArrangedSubview(aiBestCard)
         }
         if let note = review.lowestDayNote {
-            let prefix = review.lowestDay.map { "↓ \(HistoryDateFormat.shortDate($0))  " } ?? "↓ "
-            aiWorstPill.text = prefix + note
-            aiWorstPill.isHidden = false
-        } else {
-            aiWorstPill.isHidden = true
+            let title = review.lowestDay.map { "↓ \(HistoryDateFormat.shortDate($0))" } ?? "↓ Lowest"
+            aiWorstCard.configure(title: title, body: note, accent: DesignTokens.Colors.warning)
+            aiDayStack.addArrangedSubview(aiWorstCard)
         }
-        aiDaysRow.isHidden = aiBestPill.isHidden && aiWorstPill.isHidden
+        aiDayStack.isHidden = aiDayStack.arrangedSubviews.isEmpty
 
         if let suggestion = review.suggestion, !suggestion.isEmpty {
             aiSuggestionLabel.text = "💡 \(suggestion)"
@@ -223,6 +223,51 @@ final class MonthSummaryCard: UICollectionViewCell {
             aiDirectiveLabel.text = insights
             aiDirectiveLabel.isHidden = false
         }
+    }
+}
+
+// MARK: - DayNoteCard (inline day summary used in month card)
+
+final class DayNoteCard: UIView {
+    private let titleLabel = UILabel()
+    private let bodyLabel = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupView()
+    }
+
+    required init?(coder: NSCoder) { super.init(coder: coder); setupView() }
+
+    private func setupView() {
+        layer.cornerRadius = DesignTokens.Radii.sm
+
+        titleLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .bold)
+        bodyLabel.font = DesignTokens.Typography.caption1
+        bodyLabel.textColor = DesignTokens.Colors.textPrimary
+        bodyLabel.numberOfLines = 0
+
+        let stack = UIStackView(arrangedSubviews: [titleLabel, bodyLabel])
+        stack.axis = .vertical
+        stack.spacing = 2
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+
+        let h = DesignTokens.Spacing.sm + 2
+        let v = DesignTokens.Spacing.sm
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: v),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -v),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: h),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -h),
+        ])
+    }
+
+    func configure(title: String, body: String, accent: UIColor) {
+        titleLabel.text = title
+        titleLabel.textColor = accent
+        bodyLabel.text = body
+        backgroundColor = accent.withAlphaComponent(0.08)
     }
 }
 

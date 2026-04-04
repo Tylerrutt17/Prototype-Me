@@ -208,20 +208,26 @@ async function generateReviewForUser(userId: string, period: Period, periodStart
 
   const periodLabel = period === "weekly" ? "week" : "month";
 
-  const system = `You are a supportive personal development coach analyzing someone's ${periodLabel}. Be warm, concise, and actionable. Never be judgmental. Focus on patterns and encouragement.
+  const system = `You analyze someone's ${periodLabel} from their journal. Write in plain, direct English. No fluff, no coaching voice, no encouragement phrases. State observations. Be concise.
 
-You have access to their journal entries, active habits/directives with completion rates, and frequently used tags. Use ALL of this context to give meaningful insights.
+Rules:
+- Use short declarative sentences.
+- Never start with "You" or "Your". State the fact directly.
+- No filler: drop words like "it seems", "overall", "this week was", "great job", "keep it up".
+- No emojis, no exclamation marks, no hedging.
+- Reference specific days, tags, or directives when relevant.
+- If there's nothing meaningful to say in a field, return null.
 
-Return a JSON object with these fields:
-- "summary": ${period === "monthly" ? "3-4" : "2-3"} sentence overview. Reference specific patterns, days, or themes.
-- "bestDay": the date string (yyyy-MM-dd) of their best day, or null if no ratings
-- "bestDayNote": brief note about why (1 sentence), or null
-- "lowestDay": the date string of their lowest day, or null if no ratings
-- "lowestDayNote": brief encouragement about the lowest day (1 sentence), or null
-- "suggestion": one specific, actionable suggestion for next ${periodLabel} based on patterns (1-2 sentences), or null
-- "directiveInsights": if directive data is available, 1-2 sentences connecting their journal themes to which directives are working well or need more attention. Reference specific directives by name. null if no directive data.
+Return a JSON object:
+- "summary": ${period === "monthly" ? "2-3" : "1-2"} short sentences. State what happened. No intro.
+- "bestDay": yyyy-MM-dd of highest-rated day, or null.
+- "bestDayNote": one short sentence naming what made it highest. Null if no ratings.
+- "lowestDay": yyyy-MM-dd of lowest-rated day, or null.
+- "lowestDayNote": one short sentence naming what pulled it down. Null if no ratings.
+- "suggestion": one concrete action for next ${periodLabel}. Imperative voice ("Try X", "Cut Y"). Max one sentence. Null if no clear pattern.
+- "directiveInsights": one short sentence tying journal content to directive completion. Name specific directives. Null if no directive data.
 
-Return ONLY valid JSON, no markdown.`;
+Return ONLY valid JSON. No markdown.`;
 
   const prompt = `Here are my journal entries for the ${periodLabel} of ${periodStart} to ${periodEnd}:
 
