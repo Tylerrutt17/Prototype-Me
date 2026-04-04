@@ -31,6 +31,7 @@ class SpeakViewController: BaseViewController {
     let responseLabel = UILabel()
     let thinkingDotsView = ThinkingDotsView()
     let actionConfirmView = ActionConfirmView()
+    let upgradeButton = UIButton(type: .system)
 
     // MARK: - Input UI
 
@@ -140,6 +141,31 @@ class SpeakViewController: BaseViewController {
         actionConfirmView.isHidden = true
         responseContentStack.addArrangedSubview(actionConfirmView)
 
+        // Upgrade button (shown when free tier hits quota)
+        var upgradeConfig = UIButton.Configuration.filled()
+        upgradeConfig.title = "Upgrade to Pro"
+        upgradeConfig.image = UIImage(systemName: "sparkles")
+        upgradeConfig.imagePadding = DesignTokens.Spacing.xs
+        upgradeConfig.baseBackgroundColor = DesignTokens.Colors.accent
+        upgradeConfig.baseForegroundColor = .white
+        upgradeConfig.cornerStyle = .capsule
+        upgradeConfig.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 24, bottom: 12, trailing: 24)
+        upgradeConfig.titleTextAttributesTransformer = .init { c in
+            var c = c; c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold); return c
+        }
+        upgradeButton.configuration = upgradeConfig
+        upgradeButton.addTarget(self, action: #selector(upgradeTapped), for: .touchUpInside)
+        upgradeButton.isHidden = true
+
+        // Centered container so the pill button doesn't stretch full width
+        let upgradeRow = UIStackView(arrangedSubviews: [UIView(), upgradeButton, UIView()])
+        upgradeRow.axis = .horizontal
+        upgradeRow.alignment = .center
+        upgradeRow.distribution = .equalCentering
+        upgradeRow.isHidden = true
+        upgradeRow.tag = 9001 // identify later for show/hide
+        responseContentStack.addArrangedSubview(upgradeRow)
+
         // Thinking dots (near top of response area)
         thinkingDotsView.isHidden = true
         thinkingDotsView.translatesAutoresizingMaskIntoConstraints = false
@@ -171,6 +197,9 @@ class SpeakViewController: BaseViewController {
         emptyStateView.isHidden = true
         emptyStateView.alpha = 0
 
+        // Hide upgrade row if it was showing
+        responseContentStack.arrangedSubviews.first { $0.tag == 9001 }?.isHidden = true
+
         // Fade out current response
         UIView.animate(withDuration: 0.2) {
             self.responseLabel.alpha = 0
@@ -193,15 +222,7 @@ class SpeakViewController: BaseViewController {
 
     func showResponse(text: String) {
         thinkingDotsView.stopAnimating()
-
-        // Render markdown (bold/italic) if possible, fall back to plain text
-        if var attributed = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
-            attributed.foregroundColor = DesignTokens.Colors.textPrimary
-            attributed.font = DesignTokens.Typography.rounded(style: .body, weight: .regular)
-            responseLabel.attributedText = NSAttributedString(attributed)
-        } else {
-            responseLabel.text = text
-        }
+        responseLabel.attributedText = Self.renderSpeakMarkdown(text)
 
         responseLabel.isHidden = false
         responseLabel.alpha = 0
@@ -270,7 +291,7 @@ class SpeakViewController: BaseViewController {
         }
     }
 
-    func showError(_ text: String) {
+    func showError(_ text: String, showUpgrade: Bool = false) {
         thinkingDotsView.stopAnimating()
 
         UIView.animate(withDuration: 0.15) {
@@ -283,9 +304,62 @@ class SpeakViewController: BaseViewController {
         responseLabel.isHidden = false
         responseLabel.alpha = 0
 
+        // Show/hide upgrade row (tag 9001 set during setup)
+        let upgradeRow = responseContentStack.arrangedSubviews.first { $0.tag == 9001 }
+        upgradeRow?.isHidden = !showUpgrade
+        upgradeRow?.alpha = showUpgrade ? 0 : 1
+
         UIView.animate(withDuration: 0.3, delay: 0.1) {
             self.responseLabel.alpha = 1
+            if showUpgrade { upgradeRow?.alpha = 1 }
         }
+    }
+
+    @objc private func upgradeTapped() {
+        onUpgradeTapped?()
+    }
+
+    // MARK: - Markdown Rendering
+
+    /// Renders inline markdown (**bold**, *italic*) with bold text in the accent color.
+    /// Walks attributed runs and applies fonts per-run since `.font =` on the whole
+    /// string would overwrite the markdown's `inlinePresentationIntent`.
+    static func renderSpeakMarkdown(_ text: String) -> NSAttributedString {
+        let baseFont = DesignTokens.Typography.rounded(style: .body, weight: .regular)
+        let boldFont = DesignTokens.Typography.rounded(style: .body, weight: .bold)
+        let italicFont: UIFont = {
+            if let desc = baseFont.fontDescriptor.withSymbolicTraits(.traitItalic) {
+                return UIFont(descriptor: desc, size: baseFont.pointSize)
+            }
+            return baseFont
+        }()
+
+        guard var attributed = try? AttributedString(
+            markdown: text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ) else {
+            return NSAttributedString(
+                string: text,
+                attributes: [.font: baseFont, .foregroundColor: DesignTokens.Colors.textPrimary]
+            )
+        }
+
+        // Apply base font + color everywhere as defaults
+        attributed.foregroundColor = DesignTokens.Colors.textPrimary
+        attributed.font = baseFont
+
+        // Override per-run for bold/italic based on inline intent
+        for run in attributed.runs {
+            guard let intent = run.inlinePresentationIntent else { continue }
+            if intent.contains(.stronglyEmphasized) {
+                attributed[run.range].font = boldFont
+                attributed[run.range].foregroundColor = DesignTokens.Colors.accent
+            } else if intent.contains(.emphasized) {
+                attributed[run.range].font = italicFont
+            }
+        }
+
+        return NSAttributedString(attributed)
     }
 
     // MARK: - Header

@@ -141,10 +141,13 @@ extension SpeakViewController {
 
     /// Pro voice flow: transcription completes -> auto-send to AI
     func proHandleTranscription(_ text: String) {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            print("[Speak] proHandleTranscription: empty text, returning to idle")
             proSetState(.idle)
             return
         }
+        print("[Speak] proHandleTranscription: text chars: \(text.count), handing off to sendMessage")
         proSetState(.idle)
         sendMessage(text)
     }

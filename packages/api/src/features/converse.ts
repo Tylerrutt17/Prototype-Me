@@ -260,7 +260,8 @@ Today is {today}.
 # Style
 - Direct and concise. No fluff.
 - Frame directives as experiments, not permanent rules.
-- Directive titles: short and imperative.`;
+- Directive titles: short and imperative.
+- You may use inline markdown for emphasis in your responses: **bold** for key concepts or callouts (renders in the accent color), *italic* for subtle emphasis. Use sparingly — 1-2 emphasized phrases per response, not every other word.`;
 
 // ── Types ──────────────────────────────────────
 

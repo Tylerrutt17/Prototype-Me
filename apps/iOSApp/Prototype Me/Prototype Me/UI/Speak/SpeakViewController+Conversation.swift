@@ -27,6 +27,8 @@ extension SpeakViewController {
             ? String(rawText.prefix(FieldLimits.AI.speakMessage))
             : rawText
 
+        print("[Speak] sendMessage called — text length: \(text.count) (raw: \(rawText.count))")
+
         isProcessing = true
         hideEmptyState()
         updateControlsForProcessing()
@@ -58,11 +60,17 @@ extension SpeakViewController {
                 }
                 let conversationMessages = Array(allHistory.suffix(historyLimit))
 
+                print("[Speak] POST /v1/ai/converse — \(conversationMessages.count) messages in payload")
+                let postedAt = Date()
+
                 let response: SpeakConverseResponse = try await apiClient.post(
                     "/v1/ai/converse",
                     body: ["messages": conversationMessages],
                     timeout: APIClient.Timeout.ai
                 )
+
+                let elapsed = Date().timeIntervalSince(postedAt)
+                print("[Speak] Converse response received in \(String(format: "%.2f", elapsed))s — message chars: \(response.message.count), tool calls: \(response.toolCalls.count), quota: \(response.remainingQuota)")
 
                 await MainActor.run {
                     // Handle tool calls
@@ -116,13 +124,55 @@ extension SpeakViewController {
                     self.quotaLabel.text = "\(response.remainingQuota) AI left"
                 }
             } catch {
+                print("[Speak] Converse failed: \(Self.describeError(error))")
                 await MainActor.run {
-                    self.showError("Something went wrong. Try again.")
+                    if Self.isQuotaExceeded(error) {
+                        let msg = self.isPro
+                            ? "You've hit today's AI limit. Resets at midnight UTC."
+                            : "You've hit today's AI limit. Upgrade to Pro for more daily messages."
+                        self.showError(msg, showUpgrade: !self.isPro)
+                    } else {
+                        self.showError("Something went wrong. Try again.")
+                    }
                     self.isProcessing = false
                     self.updateControlsForProcessing()
                 }
             }
         }
+    }
+
+    static func isQuotaExceeded(_ error: Error) -> Bool {
+        guard let apiError = error as? APIClient.APIError else { return false }
+        if case .clientError(let code, _, _) = apiError, code == 429 {
+            return true
+        }
+        return false
+    }
+
+    /// Verbose description of an error for logging. Unwraps APIError envelopes and
+    /// shows status codes + server response bodies when available.
+    static func describeError(_ error: Error) -> String {
+        if let apiError = error as? APIClient.APIError {
+            switch apiError {
+            case .unauthorized:
+                return "APIError.unauthorized"
+            case .clientError(let code, let msg, let data):
+                let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "<no body>"
+                return "APIError.clientError(\(code)) msg=\(msg ?? "nil") body=\(bodyStr.prefix(500))"
+            case .serverError(let code, let data):
+                let bodyStr = data.flatMap { String(data: $0, encoding: .utf8) } ?? "<no body>"
+                return "APIError.serverError(\(code)) body=\(bodyStr.prefix(500))"
+            case .networkError(let underlying):
+                let ns = underlying as NSError
+                return "APIError.networkError — \(ns.domain) code=\(ns.code) \(underlying.localizedDescription)"
+            case .decodingError(let underlying):
+                return "APIError.decodingError — \(underlying)"
+            case .noData:
+                return "APIError.noData"
+            }
+        }
+        let ns = error as NSError
+        return "\(type(of: error)) \(ns.domain) code=\(ns.code) — \(error.localizedDescription)"
     }
 
     // MARK: - Transcription
@@ -143,9 +193,12 @@ extension SpeakViewController {
                 let ext = fileURL.pathExtension
                 print("[Speak] Audio file (\(ext)): \(String(format: "%.2f", fileSizeMB))MB \u{2192} base64 payload: \(String(format: "%.2f", payloadSizeMB))MB")
 
+                let postedAt = Date()
                 let response = try await self.transcribeWithRetry(
                     apiClient: apiClient, base64Audio: base64Audio, maxRetries: 2
                 )
+                let elapsed = Date().timeIntervalSince(postedAt)
+                print("[Speak] Transcribe succeeded in \(String(format: "%.2f", elapsed))s — text chars: \(response.text.count)")
 
                 await MainActor.run {
                     self.micButton.cleanupAudioFile()
@@ -164,7 +217,8 @@ extension SpeakViewController {
                     }
                 }
             } catch {
-                print("[Speak] Transcribe failed: \(error.localizedDescription)")
+                print("[Speak] Transcribe failed: \(Self.describeError(error))")
+                let quotaHit = Self.isQuotaExceeded(error)
                 await MainActor.run {
                     self.micButton.cleanupAudioFile()
                     if self.isPro {
@@ -172,6 +226,12 @@ extension SpeakViewController {
                     } else {
                         self.hideTranscribing()
                         self.updateControlsForProcessing()
+                    }
+                    if quotaHit {
+                        let msg = self.isPro
+                            ? "You've hit today's AI limit. Resets at midnight UTC."
+                            : "You've hit today's AI limit. Upgrade to Pro for more daily messages."
+                        self.showError(msg)
                     }
                 }
             }
