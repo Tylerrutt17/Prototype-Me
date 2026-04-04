@@ -27,12 +27,18 @@ final class ReviewDetailViewController: BaseViewController {
 
     private func setupScrollView() {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.alwaysBounceVertical = true
         view.addSubview(scrollView)
 
         contentStack.axis = .vertical
-        contentStack.spacing = DesignTokens.Spacing.lg
+        contentStack.spacing = DesignTokens.Spacing.md
+        contentStack.alignment = .fill
         contentStack.translatesAutoresizingMaskIntoConstraints = false
         scrollView.addSubview(contentStack)
+
+        let frameGuide = scrollView.frameLayoutGuide
+        let contentGuide = scrollView.contentLayoutGuide
+        let pad = DesignTokens.Spacing.lg
 
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: contentTopAnchor),
@@ -40,78 +46,98 @@ final class ReviewDetailViewController: BaseViewController {
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            contentStack.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: DesignTokens.Spacing.lg),
-            contentStack.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor, constant: DesignTokens.Spacing.lg),
-            contentStack.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: -DesignTokens.Spacing.lg),
-            contentStack.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: -DesignTokens.Spacing.xxl),
-            contentStack.widthAnchor.constraint(equalTo: scrollView.widthAnchor, constant: -DesignTokens.Spacing.lg * 2),
+            contentStack.topAnchor.constraint(equalTo: contentGuide.topAnchor, constant: pad),
+            contentStack.leadingAnchor.constraint(equalTo: contentGuide.leadingAnchor, constant: pad),
+            contentStack.trailingAnchor.constraint(equalTo: contentGuide.trailingAnchor, constant: -pad),
+            contentStack.bottomAnchor.constraint(equalTo: contentGuide.bottomAnchor, constant: -DesignTokens.Spacing.xxl),
+            // Lock width to frame so subviews fill correctly
+            contentStack.widthAnchor.constraint(equalTo: frameGuide.widthAnchor, constant: -pad * 2),
         ])
     }
 
     private func populateContent() {
-        // Stats header
-        if let summary {
-            let entryCount = review?.entryCount ?? summary.entryCount
-            let avgRating = review?.avgRating ?? summary.averageRating
-            contentStack.addArrangedSubview(makeStatsRow(entryCount: entryCount, avgRating: avgRating, topTags: summary.topTags))
-        } else if let review {
-            contentStack.addArrangedSubview(makeStatsRow(entryCount: review.entryCount, avgRating: review.avgRating, topTags: []))
-        }
+        // Period label
+        contentStack.addArrangedSubview(makePeriodHeader())
+
+        // Stats row
+        let entryCount = review?.entryCount ?? summary?.entryCount ?? 0
+        let avgRating = review?.avgRating ?? summary?.averageRating
+        let topTags = summary?.topTags ?? []
+        contentStack.addArrangedSubview(makeStatsCard(entryCount: entryCount, avgRating: avgRating, topTags: topTags))
 
         guard let review else {
-            let empty = UILabel()
-            empty.text = "No AI review available yet for this period."
-            empty.font = DesignTokens.Typography.body
-            empty.textColor = DesignTokens.Colors.textTertiary
-            empty.numberOfLines = 0
-            empty.textAlignment = .center
-            contentStack.addArrangedSubview(empty)
+            contentStack.addArrangedSubview(makeEmptyState())
             return
         }
 
-        // Summary
-        contentStack.addArrangedSubview(makeSection(title: "Summary", body: review.summary, accentColor: DesignTokens.Colors.textPrimary))
+        // Summary (prominent, first piece of AI content)
+        contentStack.addArrangedSubview(makeSummaryCard(text: review.summary))
 
-        // Best Day
-        if let bestNote = review.bestDayNote {
-            let bestTitle = review.bestDay.map { "Best Day • \(HistoryDateFormat.shortDate($0))" } ?? "Best Day"
-            contentStack.addArrangedSubview(makeSection(title: bestTitle, body: bestNote, accentColor: DesignTokens.Colors.success))
+        // Best/Lowest day cards side by side
+        if review.bestDayNote != nil || review.lowestDayNote != nil {
+            contentStack.addArrangedSubview(makeDayCards(review: review))
         }
 
-        // Lowest Day
-        if let lowestNote = review.lowestDayNote {
-            let lowestTitle = review.lowestDay.map { "Lowest Day • \(HistoryDateFormat.shortDate($0))" } ?? "Lowest Day"
-            contentStack.addArrangedSubview(makeSection(title: lowestTitle, body: lowestNote, accentColor: DesignTokens.Colors.warning))
-        }
-
-        // Suggestion
+        // Suggestion — accented card
         if let suggestion = review.suggestion, !suggestion.isEmpty {
-            contentStack.addArrangedSubview(makeSection(title: "💡 Suggestion", body: suggestion, accentColor: DesignTokens.Colors.accent))
+            contentStack.addArrangedSubview(makeSuggestionCard(text: suggestion))
         }
 
-        // Directive Insights
+        // Directive insights
         if let insights = review.directiveInsights, !insights.isEmpty {
-            contentStack.addArrangedSubview(makeSection(title: "Habit Insights", body: insights, accentColor: DesignTokens.Colors.accent))
+            contentStack.addArrangedSubview(makeInsightsCard(text: insights))
         }
     }
 
     // MARK: - Builders
 
-    private func makeStatsRow(entryCount: Int, avgRating: Double?, topTags: [String]) -> UIView {
+    private func makePeriodHeader() -> UIView {
+        let label = UILabel()
+        label.font = DesignTokens.Typography.caption1
+        label.textColor = DesignTokens.Colors.textTertiary
+        if let r = review {
+            let fmt = r.period == "monthly" ? "MONTHLY REVIEW" : "WEEKLY REVIEW"
+            label.text = fmt
+        } else if summary != nil {
+            label.text = "MONTH SUMMARY"
+        }
+        label.font = DesignTokens.Typography.rounded(style: .caption2, weight: .bold)
+
         let container = UIView()
-        container.backgroundColor = DesignTokens.Colors.surfacePrimary
-        container.layer.cornerRadius = DesignTokens.Radii.lg
+        label.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: container.topAnchor),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 4),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
+        ])
+        return container
+    }
+
+    private func makeStatsCard(entryCount: Int, avgRating: Double?, topTags: [String]) -> UIView {
+        let card = UIView()
+        card.backgroundColor = DesignTokens.Colors.surfacePrimary
+        card.layer.cornerRadius = DesignTokens.Radii.lg
+        card.translatesAutoresizingMaskIntoConstraints = false
 
         let entryStat = makeStat(value: "\(entryCount)", label: entryCount == 1 ? "Entry" : "Entries")
         let ratingStat = makeStat(value: avgRating.map { String(format: "%.1f", $0) } ?? "—", label: "Avg Rating")
 
-        let statsRow = UIStackView(arrangedSubviews: [entryStat, ratingStat])
+        let divider = UIView()
+        divider.backgroundColor = DesignTokens.Colors.separator.withAlphaComponent(0.3)
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        divider.widthAnchor.constraint(equalToConstant: 1).isActive = true
+
+        let statsRow = UIStackView(arrangedSubviews: [entryStat, divider, ratingStat])
         statsRow.axis = .horizontal
         statsRow.distribution = .fillEqually
+        statsRow.alignment = .center
         statsRow.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(statsRow)
+        card.addSubview(statsRow)
 
         var bottomAnchor: NSLayoutYAxisAnchor = statsRow.bottomAnchor
+        let pad = DesignTokens.Spacing.lg
 
         if !topTags.isEmpty {
             let tagsLabel = UILabel()
@@ -119,77 +145,221 @@ final class ReviewDetailViewController: BaseViewController {
             tagsLabel.font = DesignTokens.Typography.caption1
             tagsLabel.textColor = DesignTokens.Colors.textSecondary
             tagsLabel.textAlignment = .center
+            tagsLabel.numberOfLines = 0
             tagsLabel.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(tagsLabel)
+            card.addSubview(tagsLabel)
+
+            let separator = UIView()
+            separator.backgroundColor = DesignTokens.Colors.separator.withAlphaComponent(0.3)
+            separator.translatesAutoresizingMaskIntoConstraints = false
+            card.addSubview(separator)
+
             NSLayoutConstraint.activate([
-                tagsLabel.topAnchor.constraint(equalTo: statsRow.bottomAnchor, constant: DesignTokens.Spacing.md),
-                tagsLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.lg),
-                tagsLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.lg),
+                separator.topAnchor.constraint(equalTo: statsRow.bottomAnchor, constant: DesignTokens.Spacing.md),
+                separator.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
+                separator.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
+                separator.heightAnchor.constraint(equalToConstant: 1),
+
+                tagsLabel.topAnchor.constraint(equalTo: separator.bottomAnchor, constant: DesignTokens.Spacing.md),
+                tagsLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
+                tagsLabel.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
             ])
             bottomAnchor = tagsLabel.bottomAnchor
         }
 
         NSLayoutConstraint.activate([
-            statsRow.topAnchor.constraint(equalTo: container.topAnchor, constant: DesignTokens.Spacing.lg),
-            statsRow.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.lg),
-            statsRow.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.lg),
-            container.bottomAnchor.constraint(equalTo: bottomAnchor, constant: DesignTokens.Spacing.lg),
+            statsRow.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
+            statsRow.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
+            statsRow.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
+            divider.heightAnchor.constraint(equalTo: statsRow.heightAnchor, multiplier: 0.6),
+            card.bottomAnchor.constraint(equalTo: bottomAnchor, constant: pad),
         ])
 
-        return container
+        return card
     }
 
     private func makeStat(value: String, label: String) -> UIView {
         let valueLabel = UILabel()
         valueLabel.text = value
-        valueLabel.font = DesignTokens.Typography.rounded(style: .largeTitle, weight: .bold)
+        valueLabel.font = DesignTokens.Typography.rounded(style: .title1, weight: .bold)
         valueLabel.textColor = DesignTokens.Colors.accent
         valueLabel.textAlignment = .center
 
         let captionLabel = UILabel()
-        captionLabel.text = label
-        captionLabel.font = DesignTokens.Typography.caption1
+        captionLabel.text = label.uppercased()
+        captionLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .semibold)
         captionLabel.textColor = DesignTokens.Colors.textTertiary
         captionLabel.textAlignment = .center
 
         let stack = UIStackView(arrangedSubviews: [valueLabel, captionLabel])
         stack.axis = .vertical
-        stack.spacing = DesignTokens.Spacing.xxs
+        stack.spacing = 2
         return stack
     }
 
-    private func makeSection(title: String, body: String, accentColor: UIColor) -> UIView {
-        let container = UIView()
-        container.backgroundColor = DesignTokens.Colors.surfacePrimary
-        container.layer.cornerRadius = DesignTokens.Radii.lg
+    private func makeSummaryCard(text: String) -> UIView {
+        makeTextCard(
+            header: nil,
+            body: text,
+            bodyFont: DesignTokens.Typography.body,
+            bodyColor: DesignTokens.Colors.textPrimary,
+            background: DesignTokens.Colors.surfacePrimary
+        )
+    }
+
+    private func makeDayCards(review: PeriodicReview) -> UIView {
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = DesignTokens.Spacing.sm
+
+        if let note = review.bestDayNote {
+            let title = review.bestDay.map { "↑ Best Day · \(HistoryDateFormat.shortDate($0))" } ?? "↑ Best Day"
+            stack.addArrangedSubview(makeDayCard(title: title, body: note, accent: DesignTokens.Colors.success))
+        }
+        if let note = review.lowestDayNote {
+            let title = review.lowestDay.map { "↓ Lowest Day · \(HistoryDateFormat.shortDate($0))" } ?? "↓ Lowest Day"
+            stack.addArrangedSubview(makeDayCard(title: title, body: note, accent: DesignTokens.Colors.warning))
+        }
+        return stack
+    }
+
+    private func makeDayCard(title: String, body: String, accent: UIColor) -> UIView {
+        let card = UIView()
+        card.backgroundColor = accent.withAlphaComponent(0.08)
+        card.layer.cornerRadius = DesignTokens.Radii.md
+        card.layer.borderWidth = 1
+        card.layer.borderColor = accent.withAlphaComponent(0.2).cgColor
 
         let titleLabel = UILabel()
         titleLabel.text = title
-        titleLabel.font = DesignTokens.Typography.rounded(style: .footnote, weight: .semibold)
-        titleLabel.textColor = accentColor
-        titleLabel.numberOfLines = 0
+        titleLabel.font = DesignTokens.Typography.rounded(style: .footnote, weight: .bold)
+        titleLabel.textColor = accent
 
         let bodyLabel = UILabel()
         bodyLabel.text = body
-        bodyLabel.font = DesignTokens.Typography.body
+        bodyLabel.font = DesignTokens.Typography.subheadline
         bodyLabel.textColor = DesignTokens.Colors.textPrimary
         bodyLabel.numberOfLines = 0
 
         let stack = UIStackView(arrangedSubviews: [titleLabel, bodyLabel])
         stack.axis = .vertical
-        stack.spacing = DesignTokens.Spacing.sm
+        stack.spacing = DesignTokens.Spacing.xs
         stack.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(stack)
+        card.addSubview(stack)
+
+        let pad = DesignTokens.Spacing.md
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -pad),
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
+        ])
+        return card
+    }
+
+    private func makeSuggestionCard(text: String) -> UIView {
+        makeTextCard(
+            header: "💡 SUGGESTION",
+            body: text,
+            bodyFont: DesignTokens.Typography.subheadline,
+            bodyColor: DesignTokens.Colors.textPrimary,
+            background: DesignTokens.Colors.accent.withAlphaComponent(0.08),
+            headerColor: DesignTokens.Colors.accent,
+            borderColor: DesignTokens.Colors.accent.withAlphaComponent(0.2)
+        )
+    }
+
+    private func makeInsightsCard(text: String) -> UIView {
+        makeTextCard(
+            header: "HABIT INSIGHTS",
+            body: text,
+            bodyFont: DesignTokens.Typography.subheadline,
+            bodyColor: DesignTokens.Colors.textSecondary,
+            background: DesignTokens.Colors.surfacePrimary,
+            headerColor: DesignTokens.Colors.textTertiary
+        )
+    }
+
+    private func makeTextCard(
+        header: String?,
+        body: String,
+        bodyFont: UIFont,
+        bodyColor: UIColor,
+        background: UIColor,
+        headerColor: UIColor = DesignTokens.Colors.textTertiary,
+        borderColor: UIColor? = nil
+    ) -> UIView {
+        let card = UIView()
+        card.backgroundColor = background
+        card.layer.cornerRadius = DesignTokens.Radii.lg
+        if let borderColor {
+            card.layer.borderWidth = 1
+            card.layer.borderColor = borderColor.cgColor
+        }
+
+        let bodyLabel = UILabel()
+        bodyLabel.text = body
+        bodyLabel.font = bodyFont
+        bodyLabel.textColor = bodyColor
+        bodyLabel.numberOfLines = 0
+
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = DesignTokens.Spacing.xs
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        if let header {
+            let headerLabel = UILabel()
+            headerLabel.text = header
+            headerLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .bold)
+            headerLabel.textColor = headerColor
+            stack.addArrangedSubview(headerLabel)
+        }
+        stack.addArrangedSubview(bodyLabel)
+        card.addSubview(stack)
 
         let pad = DesignTokens.Spacing.lg
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: pad),
-            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -pad),
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: pad),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -pad),
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -pad),
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
         ])
+        return card
+    }
 
-        return container
+    private func makeEmptyState() -> UIView {
+        let card = UIView()
+        card.backgroundColor = DesignTokens.Colors.surfacePrimary
+        card.layer.cornerRadius = DesignTokens.Radii.lg
+
+        let icon = UIImageView(image: UIImage(systemName: "sparkles"))
+        icon.tintColor = DesignTokens.Colors.textTertiary
+        icon.contentMode = .scaleAspectFit
+
+        let label = UILabel()
+        label.text = "No AI review for this period yet."
+        label.font = DesignTokens.Typography.subheadline
+        label.textColor = DesignTokens.Colors.textTertiary
+        label.textAlignment = .center
+        label.numberOfLines = 0
+
+        let stack = UIStackView(arrangedSubviews: [icon, label])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = DesignTokens.Spacing.sm
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(stack)
+
+        let pad = DesignTokens.Spacing.xl
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -pad),
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
+            icon.heightAnchor.constraint(equalToConstant: 28),
+        ])
+        return card
     }
 
     // MARK: - Title

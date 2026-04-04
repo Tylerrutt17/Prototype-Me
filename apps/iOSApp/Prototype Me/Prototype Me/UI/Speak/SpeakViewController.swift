@@ -321,9 +321,10 @@ class SpeakViewController: BaseViewController {
 
     // MARK: - Markdown Rendering
 
-    /// Renders inline markdown (**bold**, *italic*) with bold text in the accent color.
-    /// Walks attributed runs and applies fonts per-run since `.font =` on the whole
-    /// string would overwrite the markdown's `inlinePresentationIntent`.
+    /// Renders inline formatting:
+    ///   - `**bold**` → bold + accent color
+    ///   - `*italic*` → italic
+    ///   - `<u>text</u>` → underline (custom extension, since markdown has no underline)
     static func renderSpeakMarkdown(_ text: String) -> NSAttributedString {
         let baseFont = DesignTokens.Typography.rounded(style: .body, weight: .regular)
         let boldFont = DesignTokens.Typography.rounded(style: .body, weight: .bold)
@@ -334,8 +335,17 @@ class SpeakViewController: BaseViewController {
             return baseFont
         }()
 
+        // Replace <u>/</u> with Unicode Private Use Area sentinels so the markdown
+        // parser ignores them. We find these in the final string to apply underline,
+        // then strip them out.
+        let openMarker = "\u{E000}"
+        let closeMarker = "\u{E001}"
+        let preprocessed = text
+            .replacingOccurrences(of: "<u>", with: openMarker)
+            .replacingOccurrences(of: "</u>", with: closeMarker)
+
         guard var attributed = try? AttributedString(
-            markdown: text,
+            markdown: preprocessed,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         ) else {
             return NSAttributedString(
@@ -359,7 +369,26 @@ class SpeakViewController: BaseViewController {
             }
         }
 
-        return NSAttributedString(attributed)
+        // Convert to NSMutableAttributedString to handle underline sentinels
+        let mutable = NSMutableAttributedString(attributedString: NSAttributedString(attributed))
+
+        // Apply underline between sentinel pairs, then strip the sentinels.
+        var searchStart = mutable.string.startIndex
+        while let openRange = mutable.string.range(of: openMarker, range: searchStart..<mutable.string.endIndex),
+              let closeRange = mutable.string.range(of: closeMarker, range: openRange.upperBound..<mutable.string.endIndex) {
+            let underlineNSRange = NSRange(openRange.upperBound..<closeRange.lowerBound, in: mutable.string)
+            mutable.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: underlineNSRange)
+            searchStart = closeRange.upperBound
+        }
+        // Strip sentinels (attribute ranges shift automatically with NSMutableAttributedString)
+        while let range = mutable.string.range(of: openMarker) {
+            mutable.deleteCharacters(in: NSRange(range, in: mutable.string))
+        }
+        while let range = mutable.string.range(of: closeMarker) {
+            mutable.deleteCharacters(in: NSRange(range, in: mutable.string))
+        }
+
+        return mutable
     }
 
     // MARK: - Header

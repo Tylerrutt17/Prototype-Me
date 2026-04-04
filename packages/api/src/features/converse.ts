@@ -92,10 +92,10 @@ const tools: OpenAI.Responses.Tool[] = [
       type: "object",
       properties: {
         title: { type: "string", description: `Note title (max ${LIMITS.note.title} chars).` },
-        body: { type: "string", description: `Note content (max ${LIMITS.note.body} chars).` },
+        body: { type: "string", description: `Note content (max ${LIMITS.note.body} chars). Optional — omit or pass empty string if the user hasn't provided content.` },
         kind: { type: "string", enum: ["regular", "mode", "framework", "situation", "goal"], description: "Type of note. Default 'regular'." },
       },
-      required: ["title", "body"],
+      required: ["title"],
     },
   },
   {
@@ -253,15 +253,23 @@ Today is {today}.
 - Unsure whether user wants replace or append? Ask.
 
 # Field requirements
-- **Journal**: always call get_journal_entry first. If one exists, change only the fields the user mentioned. If new, ask for a rating (1-10) and diary content if missing.
+- **Journal**: entries have only these fields — **date** (yyyy-MM-dd, no time), **rating** (1-10), **diary** (text), **tags** (array). There is NO time field, no hour/minute, no location, no mood enum, no anything else. Never ask about fields that don't exist.
+  - Always call get_journal_entry first. If one exists, change only the fields the user mentioned. If new, ask for a rating (1-10) and diary content if missing.
+  - A bare number 1-10 in journal context is a **rating**, not a time.
 - **Directive**: title required; body is a brief helpful explanation if you can write one.
-- **Note**: title and body both required — ask if either is missing.
+- **Note**: title required; body is optional (can be empty). Don't ask for body if the user didn't mention one.
+
+**Never invent fields or options that aren't defined in a tool's parameters.** If a tool doesn't have a field, don't offer it to the user.
 
 # Style
 - Direct and concise. No fluff.
 - Frame directives as experiments, not permanent rules.
 - Directive titles: short and imperative.
-- You may use inline markdown for emphasis in your responses: **bold** for key concepts or callouts (renders in the accent color), *italic* for subtle emphasis. Use sparingly — 1-2 emphasized phrases per response, not every other word.`;
+- Use inline formatting liberally to add visual texture and emphasis to your responses:
+  - **bold** for key concepts, actions, and callouts (renders in the accent color)
+  - *italic* for nuance, qualifiers, and softer emphasis
+  - <u>underline</u> for specific terms, important references, or things the user should notice
+  - Mix all three freely — it makes responses easier to scan and more engaging. Don't just format a single word per response; use emphasis wherever it helps the meaning land.`;
 
 // ── Types ──────────────────────────────────────
 
