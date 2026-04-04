@@ -6,6 +6,7 @@ import * as noteQueries from "../db/queries/notes.js";
 import * as modeQueries from "../db/queries/modes.js";
 import * as dayEntryQueries from "../db/queries/dayEntries.js";
 import * as folderQueries from "../db/queries/folders.js";
+import * as searchQueries from "../db/queries/search.js";
 import type OpenAI from "openai";
 
 // ── Quota ──────────────────────────────────────
@@ -197,6 +198,19 @@ const tools: OpenAI.Responses.Tool[] = [
   {
     type: "function",
     strict: false,
+    name: "search",
+    description: "Fuzzy search across directives, notes, and folders by name. Returns the closest matches ranked by similarity. Use this instead of listing everything when the user references something by name.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "The name or partial name to search for." },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    type: "function",
+    strict: false,
     name: "rename_folder",
     description: "Rename an existing folder. Use list_folders first to find the ID.",
     parameters: {
@@ -236,9 +250,19 @@ Guidelines:
 - Only use create/update tools when the user explicitly wants to make a change.
 
 Field requirements by action:
-- Journal entries: ALWAYS ask for a rating (1-10) if the user didn't provide one. The rating is important for tracking trends. Also ask for the diary content if not provided.
+- Journal entries: Before creating or updating, ALWAYS use get_journal_entry to check if one already exists for that date.
+  - If an entry ALREADY EXISTS: only change the fields the user asked to change. Keep the existing rating, diary, and tags unless the user specifically wants to change them.
+  - If NO entry exists: ask for a rating (1-10) if the user didn't provide one — the rating is important for tracking trends. Also ask for the diary content if not provided.
 - Directives: title is required. Body is optional but helpful — add a brief explanation if you can.
 - Notes: title and body are both required. Ask if either is missing.
+
+Matching and lookup behavior:
+- When the user references something by name (e.g. "rename morning routines"), use the **search** tool with their name as the query. This does a fuzzy search across directives, notes, AND folders and returns the closest matches ranked by similarity. Prefer search over listing everything.
+- Only use list_directives/list_notes/list_folders when you need the FULL list (e.g. "show me all my directives" or "what modes do I have").
+- If there is exactly ONE close match across all types, proceed with it.
+- If there are MULTIPLE possible matches, list them and ask the user which one they mean.
+- If there are ZERO matches, tell the user you couldn't find anything matching that name.
+- NEVER act on a weak or ambiguous match. When in doubt, confirm.
 
 Update behavior:
 - When the user says "rename", "change the name", or "update" a directive/note/folder without specifying WHICH field (title vs body), ask them: "Do you want to change the title, the description, or both?"
@@ -271,7 +295,7 @@ export interface ConverseResult {
 
 // ── Converse ───────────────────────────────────
 
-const READ_TOOLS = new Set(["list_directives", "list_modes", "get_journal_entry", "list_notes", "list_folders"]);
+const READ_TOOLS = new Set(["list_directives", "list_modes", "get_journal_entry", "list_notes", "list_folders", "search"]);
 const MAX_TOOL_ROUNDS = 3;
 
 export async function converse(
@@ -420,6 +444,19 @@ async function executeReadCall(userId: string, name: string, argsJson: string): 
         kind: n.kind,
       })),
     );
+  }
+
+  if (name === "search") {
+    const results = await searchQueries.fuzzySearch(userId, args.query, 10);
+    return JSON.stringify(results.map((r) => ({
+      id: r.id,
+      type: r.type,
+      title: r.title,
+      body: r.body,
+      kind: r.kind,
+      status: r.status,
+      similarity: Math.round(r.similarity * 100) + "%",
+    })));
   }
 
   if (name === "list_folders") {
