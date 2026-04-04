@@ -469,8 +469,18 @@ export async function triggerTestReview(userId: string, period: Period): Promise
     );
 
   try {
+    // Check entry count first for a better error message
+    const entryCount = await db
+      .select({ id: dayEntry.id })
+      .from(dayEntry)
+      .where(and(eq(dayEntry.userId, userId), gte(dayEntry.date, start), lte(dayEntry.date, end)))
+      .then((r) => r.length);
+    if (entryCount === 0) {
+      return { success: false, message: `No journal entries in ${start} to ${end}. Nothing to summarize.` };
+    }
+
     await generateReviewForUser(userId, period, start, end);
-    return { success: true, message: `Generated ${period} review for ${start} to ${end}` };
+    return { success: true, message: `Generated ${period} review for ${start} to ${end} (${entryCount} entries)` };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { success: false, message };

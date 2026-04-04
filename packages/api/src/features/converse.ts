@@ -239,6 +239,19 @@ const tools: OpenAI.Responses.Tool[] = [
       required: ["id", "name"],
     },
   },
+  {
+    type: "function",
+    strict: false,
+    name: "ask_confirmation",
+    description: "Call this when you need a simple YES/NO answer from the user before proceeding with a write action. The client will show Yes/No buttons so the user can tap instead of typing. ONLY use this for strictly binary questions — if the answer could be more than yes/no (which field? what title? pick from these options?), ask in plain text instead. Do NOT combine this with any write tools in the same response.",
+    parameters: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "The yes/no question to display. Be specific: e.g. 'Change the title from \"Morning\" to \"Morning routine\"?'" },
+      },
+      required: ["question"],
+    },
+  },
 ];
 
 // ── System Prompt ──────────────────────────────
@@ -261,6 +274,7 @@ Today is {today}.
 - If essential info is missing, ask. If you have enough, act — don't over-ask.
 - Ambiguous "update X" (title vs body unclear)? Ask which field. "Rename" = title. "Update the description" = body.
 - If a tool call fails or returns empty/unexpected data, explain briefly and ask the user how to proceed. Do not retry blindly.
+- **When you need a binary yes/no answer before acting, use the ask_confirmation tool** instead of asking "are you sure?" in plain text. The client will show Yes/No buttons the user can tap. Only use it for true binary questions — if the answer could have more than two options, ask in text.
 
 # Update semantics
 - update_directive and update_note REPLACE the body entirely — they do NOT append.

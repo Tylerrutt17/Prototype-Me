@@ -85,6 +85,7 @@ class SpeakViewController: BaseViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        setupBackgroundGlows()
         setupQuota()
         setupVoiceInput()
         setupResponseArea()
@@ -109,11 +110,28 @@ class SpeakViewController: BaseViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        layoutBackgroundGlows()
         guard isPro else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         proRecordingGradient.frame = proMicButton.bounds
         proRecordingGradient.cornerRadius = proMicButton.bounds.height / 2
+        CATransaction.commit()
+    }
+
+    private func layoutBackgroundGlows() {
+        guard backgroundGlows.count == 4, view.bounds.width > 0 else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let w = view.bounds.width
+        let h = view.bounds.height
+        let glowSize = w * 1.2
+
+        // Half the glow extends beyond each corner so you only see the inner fade-in
+        backgroundGlows[0].frame = CGRect(x: -glowSize * 0.5, y: -glowSize * 0.3, width: glowSize, height: glowSize)          // top-left
+        backgroundGlows[1].frame = CGRect(x: w - glowSize * 0.5, y: -glowSize * 0.3, width: glowSize, height: glowSize)      // top-right
+        backgroundGlows[2].frame = CGRect(x: -glowSize * 0.5, y: h - glowSize * 0.7, width: glowSize, height: glowSize)      // bottom-left
+        backgroundGlows[3].frame = CGRect(x: w - glowSize * 0.5, y: h - glowSize * 0.7, width: glowSize, height: glowSize)   // bottom-right
         CATransaction.commit()
     }
 
@@ -169,10 +187,9 @@ class SpeakViewController: BaseViewController {
         upgradeRow.tag = 9001 // identify later for show/hide
         responseContentStack.addArrangedSubview(upgradeRow)
 
-        // Thinking dots (near top of response area)
+        // Thinking dots
         thinkingDotsView.isHidden = true
         thinkingDotsView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(thinkingDotsView)
 
         // Thinking context pill (shown above thinking dots for externally-triggered prompts)
         thinkingContextPill.backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.12)
@@ -180,7 +197,6 @@ class SpeakViewController: BaseViewController {
         thinkingContextPill.clipsToBounds = true
         thinkingContextPill.isHidden = true
         thinkingContextPill.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(thinkingContextPill)
 
         let contextIcon = UIImageView(image: UIImage(systemName: "sparkles"))
         contextIcon.tintColor = DesignTokens.Colors.accent
@@ -201,6 +217,14 @@ class SpeakViewController: BaseViewController {
         contextStack.translatesAutoresizingMaskIntoConstraints = false
         thinkingContextPill.addSubview(contextStack)
 
+        // Vertical stack: pill (optional) above dots. Stack collapses pill when hidden.
+        let thinkingAreaStack = UIStackView(arrangedSubviews: [thinkingContextPill, thinkingDotsView])
+        thinkingAreaStack.axis = .vertical
+        thinkingAreaStack.alignment = .center
+        thinkingAreaStack.spacing = DesignTokens.Spacing.md
+        thinkingAreaStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(thinkingAreaStack)
+
         let pad = DesignTokens.Spacing.xl
 
         NSLayoutConstraint.activate([
@@ -214,8 +238,6 @@ class SpeakViewController: BaseViewController {
             responseContentStack.leadingAnchor.constraint(equalTo: responseScrollView.frameLayoutGuide.leadingAnchor, constant: pad),
             responseContentStack.trailingAnchor.constraint(equalTo: responseScrollView.frameLayoutGuide.trailingAnchor, constant: -pad),
 
-            thinkingDotsView.centerXAnchor.constraint(equalTo: responseScrollView.centerXAnchor),
-            thinkingDotsView.topAnchor.constraint(equalTo: responseScrollView.topAnchor, constant: pad * 2),
             thinkingDotsView.widthAnchor.constraint(equalToConstant: 80),
             thinkingDotsView.heightAnchor.constraint(equalToConstant: 40),
 
@@ -227,10 +249,10 @@ class SpeakViewController: BaseViewController {
             contextStack.leadingAnchor.constraint(equalTo: thinkingContextPill.leadingAnchor, constant: DesignTokens.Spacing.md),
             contextStack.trailingAnchor.constraint(equalTo: thinkingContextPill.trailingAnchor, constant: -DesignTokens.Spacing.md),
 
-            thinkingContextPill.centerXAnchor.constraint(equalTo: responseScrollView.centerXAnchor),
-            thinkingContextPill.bottomAnchor.constraint(equalTo: thinkingDotsView.topAnchor, constant: -DesignTokens.Spacing.sm),
-            thinkingContextPill.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: pad),
-            thinkingContextPill.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -pad),
+            thinkingAreaStack.centerXAnchor.constraint(equalTo: responseScrollView.centerXAnchor),
+            thinkingAreaStack.topAnchor.constraint(equalTo: responseScrollView.topAnchor, constant: pad * 2),
+            thinkingAreaStack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: pad),
+            thinkingAreaStack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -pad),
         ])
     }
 
@@ -572,22 +594,45 @@ class SpeakViewController: BaseViewController {
     // MARK: - Empty State
 
     let emptyStateView = UIView()
+    private var backgroundGlows: [CAGradientLayer] = []
+
+    /// Soft radial gradient for corner glows — transparent at edges, tinted at center.
+    /// `intensity` scales the alpha; 1.0 = strong, 0.5 = ambient background wash.
+    static func makeCornerGlow(color: UIColor, intensity: CGFloat = 1.0) -> CAGradientLayer {
+        let layer = CAGradientLayer()
+        layer.type = .radial
+        layer.colors = [
+            color.withAlphaComponent(0.28 * intensity).cgColor,
+            color.withAlphaComponent(0.14 * intensity).cgColor,
+            UIColor.clear.cgColor,
+        ]
+        layer.locations = [0.0, 0.4, 1.0]
+        layer.startPoint = CGPoint(x: 0.5, y: 0.5)
+        layer.endPoint = CGPoint(x: 1.0, y: 1.0)
+        return layer
+    }
+
+    /// Four persistent radial glows in each corner, behind all content.
+    private func setupBackgroundGlows() {
+        let colors: [UIColor] = [
+            DesignTokens.Colors.accent,  // top-left
+            .systemPink,                 // top-right
+            .systemTeal,                 // bottom-left
+            .systemPurple,               // bottom-right
+        ]
+        for color in colors {
+            let glow = Self.makeCornerGlow(color: color, intensity: 0.55)
+            view.layer.insertSublayer(glow, at: 0)
+            backgroundGlows.append(glow)
+        }
+    }
 
     private func setupEmptyState() {
         emptyStateView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(emptyStateView)
 
-        // Floating color orbs in the background for ambient motion
-        let orbsView = BackgroundOrbsView()
-        orbsView.translatesAutoresizingMaskIntoConstraints = false
-        emptyStateView.addSubview(orbsView)
-
-        NSLayoutConstraint.activate([
-            orbsView.topAnchor.constraint(equalTo: emptyStateView.topAnchor),
-            orbsView.leadingAnchor.constraint(equalTo: emptyStateView.leadingAnchor),
-            orbsView.trailingAnchor.constraint(equalTo: emptyStateView.trailingAnchor),
-            orbsView.bottomAnchor.constraint(equalTo: emptyStateView.bottomAnchor),
-        ])
+        // Background glows live on the main view (see setupBackgroundGlows)
+        // so they remain visible throughout the whole Speak tab.
 
         let titleLabel = UILabel()
         titleLabel.text = "What can I help with?"

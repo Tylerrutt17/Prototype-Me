@@ -496,7 +496,24 @@ nonisolated struct PeriodicReview: Identifiable, Hashable, Sendable, Codable, Fe
         let directiveTitle: String
         let missedCount: Int
         let missedDates: [String]
-        let scheduledDates: [String]
+        var scheduledDates: [String] = []
+
+        private enum CodingKeys: String, CodingKey {
+            case directiveTitle, missedCount, missedDates, scheduledDates
+        }
+        init(directiveTitle: String, missedCount: Int, missedDates: [String], scheduledDates: [String]) {
+            self.directiveTitle = directiveTitle
+            self.missedCount = missedCount
+            self.missedDates = missedDates
+            self.scheduledDates = scheduledDates
+        }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            directiveTitle = try c.decode(String.self, forKey: .directiveTitle)
+            missedCount = try c.decode(Int.self, forKey: .missedCount)
+            missedDates = try c.decode([String].self, forKey: .missedDates)
+            scheduledDates = (try? c.decode([String].self, forKey: .scheduledDates)) ?? []
+        }
     }
 
     let id: UUID

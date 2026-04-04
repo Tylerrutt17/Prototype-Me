@@ -9,6 +9,7 @@ final class MissedCalendarSheet: BaseViewController {
     private let periodEnd: String
 
     private let titleLabel = UILabel()
+    private let scheduleLabel = UILabel()
     private let summaryLabel = UILabel()
     private let legendView = UIView()
     private let gridView = UIView()
@@ -40,6 +41,12 @@ final class MissedCalendarSheet: BaseViewController {
         titleLabel.textColor = DesignTokens.Colors.textPrimary
         titleLabel.numberOfLines = 0
 
+        // Schedule label derived from which weekdays appear in scheduledDates
+        scheduleLabel.text = Self.scheduleDescription(from: item.scheduledDates)
+        scheduleLabel.font = DesignTokens.Typography.rounded(style: .caption1, weight: .medium)
+        scheduleLabel.textColor = DesignTokens.Colors.accent
+        scheduleLabel.numberOfLines = 0
+
         let missed = item.missedDates.count
         let total = item.scheduledDates.count
         let completed = total - missed
@@ -47,9 +54,10 @@ final class MissedCalendarSheet: BaseViewController {
         summaryLabel.font = DesignTokens.Typography.footnote
         summaryLabel.textColor = DesignTokens.Colors.textSecondary
 
-        let headerStack = UIStackView(arrangedSubviews: [titleLabel, summaryLabel])
+        let headerStack = UIStackView(arrangedSubviews: [titleLabel, scheduleLabel, summaryLabel])
         headerStack.axis = .vertical
         headerStack.spacing = 4
+        headerStack.setCustomSpacing(2, after: scheduleLabel)
         headerStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(headerStack)
 
@@ -222,6 +230,38 @@ final class MissedCalendarSheet: BaseViewController {
         let v = UIView()
         v.heightAnchor.constraint(equalTo: v.widthAnchor).isActive = true
         return v
+    }
+
+    // MARK: - Schedule label derivation
+
+    /// Inspect which weekdays or month-days appear in scheduledDates and return
+    /// a human-readable description like "Mon · Wed · Fri" or "Every day".
+    private static func scheduleDescription(from scheduledDates: [String]) -> String {
+        guard !scheduledDates.isEmpty else { return "" }
+
+        let parser = DateFormatter()
+        parser.dateFormat = "yyyy-MM-dd"
+        let cal = Calendar(identifier: .gregorian)
+
+        var weekdaysSeen = Set<Int>() // 1=Sun ... 7=Sat
+        var daysOfMonth = Set<Int>()
+        for dateStr in scheduledDates {
+            guard let date = parser.date(from: dateStr) else { continue }
+            weekdaysSeen.insert(cal.component(.weekday, from: date))
+            daysOfMonth.insert(cal.component(.day, from: date))
+        }
+
+        // If it fires every day across the period, call it that
+        if weekdaysSeen.count == 7 { return "Every day" }
+        if weekdaysSeen == [2, 3, 4, 5, 6] { return "Weekdays" }
+        if weekdaysSeen == [1, 7] { return "Weekends" }
+
+        // Heuristic: if the same number of month-days keeps repeating, it's monthly.
+        // Otherwise assume weekly and show weekday abbreviations.
+        let shortSymbols = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        let ordered = Array(weekdaysSeen).sorted()
+        let weekdayLabel = ordered.map { shortSymbols[$0 - 1] }.joined(separator: " · ")
+        return weekdayLabel
     }
 }
 

@@ -111,8 +111,15 @@ final class OnboardingStoryViewController: UIViewController {
             visualType: .journal,
             particleIntensity: 0.8
         ),
+        // 11. Philosophy — not a rulebook
+        PageConfig(
+            title: "This isn't a rulebook",
+            subtitle: "It's not about perfection or following rules. It's about figuring out what actually works for you — and finding small ways to optimize your life.",
+            visualType: .relaxed,
+            particleIntensity: 0.5
+        ),
         // ── The Close ──────────────────────────────
-        // 11. CTA
+        // 12. CTA
         PageConfig(
             title: "Let's build your system",
             subtitle: "Skip days. Change your mind. The system adapts to how you actually live. We'll help you set up a starter plan — you can change everything later.",
