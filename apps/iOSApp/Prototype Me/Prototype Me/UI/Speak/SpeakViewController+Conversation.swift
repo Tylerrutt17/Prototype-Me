@@ -71,6 +71,7 @@ extension SpeakViewController {
 
                 let elapsed = Date().timeIntervalSince(postedAt)
                 print("[Speak] Converse response received in \(String(format: "%.2f", elapsed))s — message chars: \(response.message.count), tool calls: \(response.toolCalls.count), quota: \(response.remainingQuota)")
+                print("[Speak] Response text: \(response.message)")
 
                 await MainActor.run {
                     // Handle tool calls

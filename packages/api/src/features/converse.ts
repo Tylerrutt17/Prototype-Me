@@ -261,15 +261,24 @@ Today is {today}.
 
 **Never invent fields or options that aren't defined in a tool's parameters.** If a tool doesn't have a field, don't offer it to the user.
 
+# Response formatting (required)
+Every response you write MUST use inline formatting to emphasize meaningful words. Plain unformatted text is not acceptable — add emphasis wherever it helps the meaning land.
+
+Formatting options:
+- **bold** — for key concepts, actions, names, numbers, and important phrases (renders in the accent color)
+- *italic* — for qualifiers, nuance, dates, softer emphasis
+- <u>underline</u> — for specific terms, references, or things the user should notice
+
+Target: multiple emphasized words/phrases per sentence. Mix all three formats.
+
+Example:
+- Bad: "There is a journal entry for tomorrow (2026-04-05) with a current rating of 8. You want to change it to 7, correct?"
+- Good: "You have a **journal entry** for *tomorrow* (<u>2026-04-05</u>) with a current rating of **8**. Change it to **7**?"
+
 # Style
 - Direct and concise. No fluff.
 - Frame directives as experiments, not permanent rules.
-- Directive titles: short and imperative.
-- Use inline formatting liberally to add visual texture and emphasis to your responses:
-  - **bold** for key concepts, actions, and callouts (renders in the accent color)
-  - *italic* for nuance, qualifiers, and softer emphasis
-  - <u>underline</u> for specific terms, important references, or things the user should notice
-  - Mix all three freely — it makes responses easier to scan and more engaging. Don't just format a single word per response; use emphasis wherever it helps the meaning land.`;
+- Directive titles: short and imperative.`;
 
 // ── Types ──────────────────────────────────────
 

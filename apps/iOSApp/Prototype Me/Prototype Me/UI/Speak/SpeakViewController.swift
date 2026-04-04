@@ -358,6 +358,19 @@ class SpeakViewController: BaseViewController {
         attributed.foregroundColor = DesignTokens.Colors.textPrimary
         attributed.font = baseFont
 
+        // Log the runs so we can see what intents markdown produced
+        var runCount = 0
+        var boldCount = 0
+        var italicCount = 0
+        for run in attributed.runs {
+            runCount += 1
+            if let intent = run.inlinePresentationIntent {
+                if intent.contains(.stronglyEmphasized) { boldCount += 1 }
+                if intent.contains(.emphasized) { italicCount += 1 }
+            }
+        }
+        print("[Speak] Markdown parsed: \(runCount) runs, \(boldCount) bold, \(italicCount) italic")
+
         // Override per-run for bold/italic based on inline intent
         for run in attributed.runs {
             guard let intent = run.inlinePresentationIntent else { continue }
