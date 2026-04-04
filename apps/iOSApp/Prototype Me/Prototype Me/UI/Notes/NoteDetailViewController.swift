@@ -19,6 +19,7 @@ class NoteDetailViewController: BaseViewController {
     var onDirectiveSelected: ((UUID) -> Void)?
     var onEditTapped: ((UUID) -> Void)?
     var onLinkDirectiveTapped: ((UUID) -> Void)?
+    var onAskAIForDirective: ((UUID) -> Void)?
 
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<NoteDetailSection, NoteDetailItem>!
@@ -80,17 +81,27 @@ class NoteDetailViewController: BaseViewController {
                 var config = UICollectionLayoutListConfiguration(appearance: .plain)
                 config.backgroundColor = .clear
                 config.showsSeparators = false
-                config.trailingSwipeActionsConfigurationProvider = { indexPath in
+                config.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
                     guard let self,
                           let item = self.dataSource.itemIdentifier(for: indexPath),
                           case .directive(let data) = item else { return nil }
-                    let unlink = UIContextualAction(style: .destructive, title: "Unlink") { _, _, completion in
-                        self.unlinkDirective(directiveId: data.directive.id)
+                    let unlink = UIContextualAction(style: .normal, title: "Unlink") { [weak self] _, _, completion in
+                        self?.confirmUnlink(directiveId: data.directive.id)
                         completion(true)
                     }
-                    unlink.backgroundColor = DesignTokens.Colors.warning
+                    unlink.backgroundColor = DesignTokens.Colors.destructive
                     unlink.image = UIImage(systemName: "link.badge.minus")
-                    return UISwipeActionsConfiguration(actions: [unlink])
+
+                    let askAI = UIContextualAction(style: .normal, title: "Not Working?") { [weak self] _, _, completion in
+                        self?.onAskAIForDirective?(data.directive.id)
+                        completion(true)
+                    }
+                    askAI.backgroundColor = DesignTokens.Colors.warning
+                    askAI.image = UIImage(systemName: "lightbulb.slash")
+
+                    let swipeConfig = UISwipeActionsConfiguration(actions: [unlink, askAI])
+                    swipeConfig.performsFirstActionWithFullSwipe = false
+                    return swipeConfig
                 }
                 let layoutSection = NSCollectionLayoutSection.list(using: config, layoutEnvironment: layoutEnv)
                 layoutSection.interGroupSpacing = DesignTokens.Spacing.sm
@@ -114,54 +125,17 @@ class NoteDetailViewController: BaseViewController {
         }
     }
 
-    private func showUnlinkConfirmation(for directiveId: UUID, in cell: UICollectionViewCell) {
-        // Check if unlink button already showing
-        if cell.contentView.viewWithTag(999) != nil { return }
-
-        let unlinkBtn = UIButton(type: .system)
-        unlinkBtn.tag = 999
-        var config = UIButton.Configuration.filled()
-        config.title = "Unlink"
-        config.image = UIImage(systemName: "link.badge.minus")
-        config.imagePadding = DesignTokens.Spacing.xs
-        config.baseBackgroundColor = DesignTokens.Colors.warning
-        config.baseForegroundColor = .white
-        config.cornerStyle = .medium
-        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12)
-        config.titleTextAttributesTransformer = .init { attr in
-            var a = attr; a.font = DesignTokens.Typography.rounded(style: .caption1, weight: .bold); return a
-        }
-        unlinkBtn.configuration = config
-        unlinkBtn.translatesAutoresizingMaskIntoConstraints = false
-        cell.contentView.addSubview(unlinkBtn)
-
-        NSLayoutConstraint.activate([
-            unlinkBtn.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -DesignTokens.Spacing.md),
-            unlinkBtn.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-        ])
-
-        // Slide in from right
-        unlinkBtn.transform = CGAffineTransform(translationX: 80, y: 0)
-        unlinkBtn.alpha = 0
-        UIView.animate(withDuration: 0.25, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0) {
-            unlinkBtn.transform = .identity
-            unlinkBtn.alpha = 1
-        }
-
-        unlinkBtn.addAction(UIAction { [weak self] _ in
+    private func confirmUnlink(directiveId: UUID) {
+        let alert = UIAlertController(
+            title: "Unlink Directive?",
+            message: "This removes it from this note. The directive itself won't be deleted.",
+            preferredStyle: .actionSheet
+        )
+        alert.addAction(UIAlertAction(title: "Unlink", style: .destructive) { [weak self] _ in
             self?.unlinkDirective(directiveId: directiveId)
-        }, for: .touchUpInside)
-
-        // Auto-dismiss after 3 seconds if not tapped
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak unlinkBtn] in
-            guard let btn = unlinkBtn, btn.superview != nil else { return }
-            UIView.animate(withDuration: 0.2) {
-                btn.alpha = 0
-                btn.transform = CGAffineTransform(translationX: 80, y: 0)
-            } completion: { _ in
-                btn.removeFromSuperview()
-            }
-        }
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(alert, animated: true)
     }
 
     private func unlinkDirective(directiveId: UUID) {
@@ -198,19 +172,9 @@ class NoteDetailViewController: BaseViewController {
             }
         }
 
-        // Directive cell with swipe-to-unlink
-        let directiveReg = UICollectionView.CellRegistration<DirectiveCell, DirectiveRowData> { [weak self] cell, _, data in
+        // Directive cell (swipe + long-press unlink handled by list config / context menu)
+        let directiveReg = UICollectionView.CellRegistration<DirectiveCell, DirectiveRowData> { cell, _, data in
             cell.configure(with: data)
-
-            // Remove any existing swipe recognizers (cell reuse)
-            cell.gestureRecognizers?.filter { $0 is UISwipeGestureRecognizer }.forEach { cell.removeGestureRecognizer($0) }
-
-            let directiveId = data.directive.id
-            let swipe = BlockSwipeGesture(direction: .left) { [weak self, weak cell] in
-                guard let self, let cell else { return }
-                self.showUnlinkConfirmation(for: directiveId, in: cell)
-            }
-            cell.addGestureRecognizer(swipe)
         }
 
         // Link button cell
@@ -318,6 +282,27 @@ extension NoteDetailViewController: UICollectionViewDelegate {
             onLinkDirectiveTapped?(noteId)
         case .header:
             break
+        }
+    }
+
+    func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        guard let item = dataSource.itemIdentifier(for: indexPath),
+              case .directive(let data) = item else { return nil }
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            let askAI = UIAction(
+                title: "Not Working?",
+                image: UIImage(systemName: "lightbulb.slash")
+            ) { _ in
+                self?.onAskAIForDirective?(data.directive.id)
+            }
+            let unlink = UIAction(
+                title: "Unlink from Note",
+                image: UIImage(systemName: "link.badge.minus"),
+                attributes: .destructive
+            ) { _ in
+                self?.confirmUnlink(directiveId: data.directive.id)
+            }
+            return UIMenu(children: [askAI, unlink])
         }
     }
 }

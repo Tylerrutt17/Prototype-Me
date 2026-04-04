@@ -1,5 +1,5 @@
 import { db } from "../db/client.js";
-import { dayEntry, periodicReview, directive, directiveHistory, scheduleRule } from "../db/schema.js";
+import { dayEntry, periodicReview, directive, directiveHistory, scheduleRule, notePage, noteDirective } from "../db/schema.js";
 import { eq, and, gte, lte, desc, inArray } from "drizzle-orm";
 import { callLLMJson } from "../lib/llm.js";
 
@@ -131,6 +131,40 @@ async function generateReviewForUser(userId: string, period: Period, periodStart
     .from(directive)
     .where(and(eq(directive.userId, userId), eq(directive.status, "active")))
     .limit(30);
+
+  // Modes (notes with kind="mode") and their linked directives.
+  // These are intentional directive clusters the user cares about.
+  const modes = await db
+    .select({ id: notePage.id, title: notePage.title })
+    .from(notePage)
+    .where(and(eq(notePage.userId, userId), eq(notePage.kind, "mode")))
+    .limit(20);
+  const modesById = new Map(modes.map((m) => [m.id, m.title] as const));
+
+  // Fetch all note_directive links for those modes
+  let modeDirectiveLinks: { modeId: string; modeTitle: string; directiveId: string }[] = [];
+  if (modes.length > 0) {
+    const links = await db
+      .select({ noteId: noteDirective.noteId, directiveId: noteDirective.directiveId })
+      .from(noteDirective)
+      .where(inArray(noteDirective.noteId, modes.map((m) => m.id)));
+    modeDirectiveLinks = links.map((l) => ({
+      modeId: l.noteId,
+      modeTitle: modesById.get(l.noteId) ?? "",
+      directiveId: l.directiveId,
+    }));
+  }
+
+  // Group directive titles by mode for prompt building
+  const directiveIdToTitle = new Map(directives.map((d) => [d.id, d.title] as const));
+  const directivesByMode = new Map<string, string[]>();
+  for (const link of modeDirectiveLinks) {
+    const directiveTitle = directiveIdToTitle.get(link.directiveId);
+    if (!directiveTitle) continue; // directive may be archived
+    const list = directivesByMode.get(link.modeTitle) ?? [];
+    list.push(directiveTitle);
+    directivesByMode.set(link.modeTitle, list);
+  }
 
   // Schedule-based completion stats for the period.
   // For each directive with a schedule rule, compute which dates were *expected*
@@ -292,14 +326,9 @@ async function generateReviewForUser(userId: string, period: Period, periodStart
             const parts: string[] = [`- ${d.title}`];
             if (stats?.hasSchedule && stats.scheduled > 0) {
               const pct = Math.round((stats.completed / stats.scheduled) * 100);
-              parts.push(`(${stats.completed}/${stats.scheduled} scheduled days completed, ${pct}%)`);
-              if (stats.missedDates.length > 0) {
-                parts.push(`(missed: ${stats.missedDates.join(", ")})`);
-              }
+              parts.push(`(${pct}% this ${periodLabel})`);
             } else if (stats && !stats.hasSchedule && stats.completed > 0) {
-              parts.push(`(no schedule, ${stats.completed} check-in${stats.completed === 1 ? "" : "s"})`);
-            } else if (stats?.hasSchedule && stats.scheduled === 0) {
-              parts.push(`(scheduled but not this ${periodLabel})`);
+              parts.push(`(${stats.completed} check-in${stats.completed === 1 ? "" : "s"})`);
             }
             return parts.join(" ");
           })
@@ -308,24 +337,25 @@ async function generateReviewForUser(userId: string, period: Period, periodStart
 
   const tagsText = topTags.length > 0 ? `\n\nMost used tags: ${topTags.map(([t, c]) => `${t} (${c}x)`).join(", ")}` : "";
 
-  const system = `You analyze someone's ${periodLabel} from their journal and map it to their directives (habits/intentions they've set for themselves).
+  const modesText =
+    directivesByMode.size > 0
+      ? "\n\nModes (intentional directive clusters):\n" +
+        [...directivesByMode.entries()]
+          .map(([modeTitle, directiveTitles]) => `- "${modeTitle}": ${directiveTitles.join(", ")}`)
+          .join("\n")
+      : "";
 
-Core method: find themes in the journal, then EVERY directive insight must be causally linked to a specific theme you extracted.
+  const system = `You analyze someone's ${periodLabel} from their journal and map it to their directives (habits/intentions they've set for themselves) and modes (intentional directive clusters).
+
+Your job is JOURNAL-DRIVEN insight. Missed-schedule data is handled separately (surfaced mechanically). Do NOT list directives just because their completion is low. Every insight you produce must be anchored to something the user wrote about.
 
 Process:
-1. Read the journal entries. Identify recurring themes — what are they actually writing about? (tiredness, sleep, work stress, loneliness, focus, exercise, diet, etc.)
-2. For each theme, check the directive list for directives that address that theme.
-   - If a directive addresses the theme AND has low completion (many missed days) OR the journal shows struggle with it → directiveFocus.
-   - If a directive addresses the theme AND the journal shows evidence it's helping → directiveWin.
-   - If a theme has NO directive addressing it → directiveGap.
-3. Completion % alone is never enough. A directive with many missed days is only a focus area if the journal shows they need it. A directive completed every scheduled day is only a win if the journal mentions it helping.
-
-Directive completion data format:
-- "X/Y scheduled days completed, Z%" means this directive was scheduled Y times; the user checked off X of them.
-- "(missed: yyyy-MM-dd, yyyy-MM-dd, ...)" lists specific dates the user skipped the scheduled directive.
-- "(no schedule, N check-ins)" means the user has no recurring schedule for this but checked in N times anyway.
-- "(scheduled but not this ${periodLabel})" means the schedule doesn't land on any day in this period.
-- Use missed dates to cross-reference journal entries. If the user complains about tiredness on a day they missed their "Go for a run" directive, that's a causal link.
+1. Read the journal entries, focusing on lows and struggles. Identify recurring themes — what are they actually writing about? (tiredness, sleep, work stress, loneliness, focus, exercise, diet, etc.)
+2. For each theme, check the directive list (and modes) for something that addresses it:
+   - Journal shows struggle with a theme AND an existing directive addresses it → directiveFocus.
+   - Journal shows evidence a directive is helping → directiveWin.
+   - Theme recurs AND no directive (or mode) addresses it → directiveGap.
+3. You may reference modes in reasons when relevant (e.g. "journal mentions work stress, which 'Deep Work' mode addresses but its directives are being skipped").
 
 Tone rules:
 - Direct and declarative. State observations as facts.
@@ -333,14 +363,14 @@ Tone rules:
 - Never start with "You" or "Your".
 - Drop filler phrases: "it seems", "overall", "great job", "you're doing well".
 - No emojis, no exclamation marks.
-- Reference specific days, tags, or directive titles by name.
-- Return empty arrays when there's no causal link to make. Never list a directive just because its completion is low.
+- Reference specific days, tags, directive titles, or mode titles by name.
+- Return empty arrays when there's no journal-driven link to make.
 
 Return a JSON object with these fields:
 - "themes": array of {name, mentions}. Top 3-5 recurring topics in the journal. name = short phrase ("tiredness", "work stress"). mentions = rough count of entries referencing it.
-- "directiveWins": array of {directiveTitle, evidence}. directiveTitle = exact title from the list. evidence = one sentence quoting or paraphrasing what in the journal shows this directive helping. Must reference a theme.
-- "directiveFocus": array of {directiveTitle, reason}. directiveTitle = exact title. reason = one sentence connecting a journal theme to this directive and why it needs attention. Format: "[theme] appears in journal but [directive] is [completion status / evidence of struggle]."
-- "directiveGaps": array of {theme, suggestedTitle}. Only for themes that recurred but have NO matching directive in the list. suggestedTitle = concise directive title they could add.
+- "directiveWins": array of {directiveTitle, evidence}. directiveTitle = exact title from the list. evidence = one sentence quoting or paraphrasing journal content that shows this directive helping. Must reference a theme.
+- "directiveFocus": array of {directiveTitle, reason}. directiveTitle = exact title. reason = one sentence connecting a journal theme to why this directive needs attention. Journal evidence required — NOT just low completion.
+- "directiveGaps": array of {theme, suggestedTitle}. Only for themes that recurred in the journal but have NO matching directive. suggestedTitle = concise directive title they could add.
 - "suggestion": one concrete action for next ${periodLabel}. Imperative voice. Tied to the most important focus area or gap. Null if no clear pattern.
 - "summary": 1-3 sentences of context. What happened, in plain terms.
 - "bestDay": yyyy-MM-dd of highest-rated day, or null.
@@ -354,6 +384,7 @@ Return ONLY valid JSON. No markdown.`;
 
 ${entriesText}
 ${directivesText}
+${modesText}
 ${tagsText}
 ${weeklyContext}
 
@@ -364,6 +395,17 @@ ${entries.length} total entries.`;
     { system, prompt, maxTokens: period === "monthly" ? 1200 : 900 },
     { ...REVIEW_FALLBACK, summary: `Logged ${entries.length} journal ${entries.length === 1 ? "entry" : "entries"} this ${periodLabel}.` },
   );
+
+  // ── Compute missedScheduled server-side (pure schedule math, no LLM) ──
+  const missedScheduled = completionStats
+    .filter((s) => s.hasSchedule && s.missedDates.length > 0)
+    .map((s) => ({
+      directiveTitle: directiveIdToTitle.get(s.directiveId) ?? "Unknown",
+      missedCount: s.missedDates.length,
+      missedDates: s.missedDates,
+    }))
+    // Sort by most-missed first
+    .sort((a, b) => b.missedCount - a.missedCount);
 
   // ── Insert ──
 
@@ -376,6 +418,7 @@ ${entries.length} total entries.`;
     directiveWins: data.directiveWins ?? [],
     directiveFocus: data.directiveFocus ?? [],
     directiveGaps: data.directiveGaps ?? [],
+    missedScheduled,
     suggestion: data.suggestion,
     summary: data.summary,
     bestDay: data.bestDay,

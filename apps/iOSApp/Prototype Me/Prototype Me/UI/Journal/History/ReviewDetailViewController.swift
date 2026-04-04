@@ -69,12 +69,26 @@ final class ReviewDetailViewController: BaseViewController {
             return
         }
 
+        // Missed scheduled items (mechanical accountability — goes first)
+        if !review.missedScheduled.isEmpty {
+            contentStack.addArrangedSubview(makeInsightSection(
+                header: "MISSED",
+                accentColor: DesignTokens.Colors.destructive,
+                items: review.missedScheduled.map { item in
+                    let plural = item.missedCount == 1 ? "day" : "days"
+                    let dateHint = item.missedDates.prefix(3).joined(separator: ", ")
+                    let extra = item.missedDates.count > 3 ? " +\(item.missedDates.count - 3) more" : ""
+                    return (item.directiveTitle, "Skipped \(item.missedCount) \(plural): \(dateHint)\(extra)")
+                }
+            ))
+        }
+
         // Themes
         if !review.themes.isEmpty {
             contentStack.addArrangedSubview(makeThemesCard(review.themes))
         }
 
-        // Focus areas (most actionable — goes first)
+        // Focus areas (journal-driven)
         if !review.directiveFocus.isEmpty {
             contentStack.addArrangedSubview(makeInsightSection(
                 header: "FOCUS AREAS",

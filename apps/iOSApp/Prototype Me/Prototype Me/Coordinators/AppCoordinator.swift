@@ -1,4 +1,5 @@
 import UIKit
+import GRDB
 
 class AppCoordinator: Coordinator {
 
@@ -8,6 +9,7 @@ class AppCoordinator: Coordinator {
     private let environment: AppEnvironment
     private let tabBarController: UITabBarController
     private var focusCoordinator: FocusCoordinator?
+    private var speakCoordinator: SpeakCoordinator?
 
     init(window: UIWindow, environment: AppEnvironment) {
         self.window = window
@@ -123,11 +125,15 @@ class AppCoordinator: Coordinator {
         self.focusCoordinator = focusCoordinator
         let notesCoordinator = NotesCoordinator(environment: environment)
         let speakCoordinator = SpeakCoordinator(environment: environment)
+        self.speakCoordinator = speakCoordinator
         let journalCoordinator = JournalCoordinator(environment: environment)
         let settingsCoordinator = SettingsCoordinator(environment: environment)
 
         focusCoordinator.onFreshStartRequested = { [weak self] in
             self?.showWelcome()
+        }
+        notesCoordinator.onAskAIForDirective = { [weak self] directiveId in
+            self?.askAIAboutDirective(directiveId: directiveId)
         }
         settingsCoordinator.onReplayTourRequested = { [weak self] in
             self?.startGuidedTour()
@@ -181,6 +187,35 @@ class AppCoordinator: Coordinator {
         tabBarController.selectedIndex = 0
         focusCoordinator.navigationController.popToRootViewController(animated: false)
         focusCoordinator.showDirectiveDetail(directiveId: directiveId, fromNotification: true)
+    }
+
+    // MARK: - Ask AI About Directive
+
+    private func askAIAboutDirective(directiveId: UUID) {
+        guard let speakCoordinator,
+              let speakVC = speakCoordinator.navigationController.viewControllers.first as? SpeakViewController
+        else { return }
+
+        // Fetch directive title (double-optional: try? + optional chain)
+        let titleOpt = (try? environment.db.dbQueue.read { db in
+            try Directive.fetchOne(db, key: directiveId)?.title
+        }) ?? nil
+        guard let title = titleOpt, !title.isEmpty else { return }
+
+        // Dismiss any presented modal, pop Speak to root, switch tabs
+        if let presented = tabBarController.presentedViewController {
+            presented.dismiss(animated: false)
+        }
+        speakCoordinator.navigationController.popToRootViewController(animated: false)
+        tabBarController.selectedIndex = 2
+
+        let prompt = "The directive \"\(title)\" isn't working for me. Can you help me figure out what's going wrong and suggest an alternative approach?"
+
+        // Wait one runloop tick so the Speak tab's view is loaded before sending
+        DispatchQueue.main.async {
+            guard !speakVC.isProcessing else { return }
+            speakVC.sendMessage(prompt)
+        }
     }
 
     // MARK: - Guided Tour

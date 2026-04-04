@@ -492,6 +492,11 @@ nonisolated struct PeriodicReview: Identifiable, Hashable, Sendable, Codable, Fe
         let theme: String
         let suggestedTitle: String
     }
+    struct MissedScheduled: Codable, Hashable, Sendable {
+        let directiveTitle: String
+        let missedCount: Int
+        let missedDates: [String]
+    }
 
     let id: UUID
     let period: String           // "weekly" | "monthly"
@@ -503,6 +508,7 @@ nonisolated struct PeriodicReview: Identifiable, Hashable, Sendable, Codable, Fe
     var directiveWins: [DirectiveWin]
     var directiveFocus: [DirectiveFocus]
     var directiveGaps: [DirectiveGap]
+    var missedScheduled: [MissedScheduled]
     let suggestion: String?
 
     // Context
@@ -523,6 +529,7 @@ nonisolated struct PeriodicReview: Identifiable, Hashable, Sendable, Codable, Fe
         id: UUID, period: String, periodStart: String, periodEnd: String,
         themes: [Theme], directiveWins: [DirectiveWin],
         directiveFocus: [DirectiveFocus], directiveGaps: [DirectiveGap],
+        missedScheduled: [MissedScheduled],
         suggestion: String?, summary: String,
         bestDay: String?, bestDayNote: String?,
         lowestDay: String?, lowestDayNote: String?,
@@ -536,6 +543,7 @@ nonisolated struct PeriodicReview: Identifiable, Hashable, Sendable, Codable, Fe
         self.directiveWins = directiveWins
         self.directiveFocus = directiveFocus
         self.directiveGaps = directiveGaps
+        self.missedScheduled = missedScheduled
         self.suggestion = suggestion
         self.summary = summary
         self.bestDay = bestDay
@@ -566,6 +574,7 @@ nonisolated struct PeriodicReview: Identifiable, Hashable, Sendable, Codable, Fe
         directiveWins = Self.decodeJSON(row["directiveWinsJSON"]) ?? []
         directiveFocus = Self.decodeJSON(row["directiveFocusJSON"]) ?? []
         directiveGaps = Self.decodeJSON(row["directiveGapsJSON"]) ?? []
+        missedScheduled = Self.decodeJSON(row["missedScheduledJSON"]) ?? []
     }
 
     // GRDB row encoding
@@ -587,6 +596,7 @@ nonisolated struct PeriodicReview: Identifiable, Hashable, Sendable, Codable, Fe
         container["directiveWinsJSON"] = Self.encodeJSON(directiveWins)
         container["directiveFocusJSON"] = Self.encodeJSON(directiveFocus)
         container["directiveGapsJSON"] = Self.encodeJSON(directiveGaps)
+        container["missedScheduledJSON"] = Self.encodeJSON(missedScheduled)
     }
 
     private static func encodeJSON<T: Encodable>(_ value: T) -> String {

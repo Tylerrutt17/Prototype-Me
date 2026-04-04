@@ -4,6 +4,7 @@ import GRDB
 class NotesCoordinator: Coordinator {
 
     var childCoordinators: [Coordinator] = []
+    var onAskAIForDirective: ((UUID) -> Void)?
     let navigationController: UINavigationController
     private let environment: AppEnvironment
 
@@ -59,6 +60,9 @@ class NotesCoordinator: Coordinator {
         }
         vc.onAddTapped = { [weak self] in
             self?.presentDirectiveEditor(directiveId: nil)
+        }
+        vc.onAskAIForDirective = { [weak self] directiveId in
+            self?.onAskAIForDirective?(directiveId)
         }
         return vc
     }
@@ -144,6 +148,9 @@ class NotesCoordinator: Coordinator {
         }
         vc.onLinkDirectiveTapped = { [weak self] noteId in
             self?.presentDirectivePicker(forNoteId: noteId)
+        }
+        vc.onAskAIForDirective = { [weak self] directiveId in
+            self?.onAskAIForDirective?(directiveId)
         }
         navigationController.pushViewController(vc, animated: true)
     }

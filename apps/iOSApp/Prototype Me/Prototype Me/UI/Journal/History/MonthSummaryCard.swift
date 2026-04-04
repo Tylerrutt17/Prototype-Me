@@ -18,6 +18,9 @@ final class MonthSummaryCard: UICollectionViewCell {
     private let aiBadge = PaddedLabel()
     private let themesChipStack = WrappingChipStack()
 
+    // Mechanical: directives the user scheduled but skipped
+    private let missedSection = InsightSection()
+
     // AI: directive insights
     private let focusSection = InsightSection()
     private let winsSection = InsightSection()
@@ -97,6 +100,9 @@ final class MonthSummaryCard: UICollectionViewCell {
         // ── AI: themes chips ──
         themesChipStack.translatesAutoresizingMaskIntoConstraints = false
 
+        // ── Mechanical: missed checklists ──
+        missedSection.configureLabel("MISSED", color: DesignTokens.Colors.destructive)
+
         // ── AI: directive sections ──
         focusSection.configureLabel("FOCUS AREAS", color: DesignTokens.Colors.warning)
         winsSection.configureLabel("WORKING", color: DesignTokens.Colors.success)
@@ -120,7 +126,7 @@ final class MonthSummaryCard: UICollectionViewCell {
 
         // ── Main stack ──
         mainStack = UIStackView(arrangedSubviews: [
-            headerStack, statsRow, aiBadgeRow, themesChipStack,
+            headerStack, statsRow, missedSection, aiBadgeRow, themesChipStack,
             focusSection, winsSection, gapsSection, aiSuggestionContainer,
         ])
         mainStack.axis = .vertical
@@ -177,7 +183,9 @@ final class MonthSummaryCard: UICollectionViewCell {
         }
 
         // AI content — hide everything by default
-        let badgeRow = mainStack.arrangedSubviews[2]
+        // mainStack order: header(0), statsRow(1), missed(2), aiBadgeRow(3), themes(4), ...
+        missedSection.isHidden = true
+        let badgeRow = mainStack.arrangedSubviews[3]
         badgeRow.isHidden = !hasReview
         themesChipStack.isHidden = true
         focusSection.isHidden = true
@@ -186,6 +194,15 @@ final class MonthSummaryCard: UICollectionViewCell {
         aiSuggestionContainer.isHidden = true
 
         guard let review else { return }
+
+        // Missed (mechanical — show even without AI insights)
+        if !review.missedScheduled.isEmpty {
+            missedSection.setItems(review.missedScheduled.map { item in
+                let plural = item.missedCount == 1 ? "day" : "days"
+                return (item.directiveTitle, "Skipped \(item.missedCount) \(plural)")
+            })
+            missedSection.isHidden = false
+        }
 
         // Themes
         if !review.themes.isEmpty {

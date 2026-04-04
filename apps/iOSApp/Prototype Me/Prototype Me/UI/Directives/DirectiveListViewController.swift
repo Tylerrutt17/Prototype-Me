@@ -19,6 +19,7 @@ class DirectiveListViewController: BaseViewController {
     var directiveService: DirectiveService?
     var onDirectiveSelected: ((UUID) -> Void)?
     var onAddTapped: (() -> Void)?
+    var onAskAIForDirective: ((UUID) -> Void)?
     var isEmbedded = false
 
     private var searchBar: UISearchBar!
@@ -269,12 +270,23 @@ class DirectiveListViewController: BaseViewController {
         config.showsSeparators = false
         config.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
             guard let self, let item = self.dataSource.itemIdentifier(for: indexPath) else { return nil }
-            let deleteAction = UIContextualAction(style: .destructive, title: "Delete") { _, _, completion in
-                self.confirmDelete(directiveId: item.directive.id)
+            let deleteAction = UIContextualAction(style: .destructive, title: "Delete") { [weak self] _, _, completion in
+                self?.confirmDelete(directiveId: item.directive.id)
                 completion(true)
             }
             deleteAction.backgroundColor = DesignTokens.Colors.destructive
-            return UISwipeActionsConfiguration(actions: [deleteAction])
+            deleteAction.image = UIImage(systemName: "trash")
+
+            let askAction = UIContextualAction(style: .normal, title: "Not Working?") { [weak self] _, _, completion in
+                self?.onAskAIForDirective?(item.directive.id)
+                completion(true)
+            }
+            askAction.backgroundColor = DesignTokens.Colors.warning
+            askAction.image = UIImage(systemName: "lightbulb.slash")
+
+            let swipeConfig = UISwipeActionsConfiguration(actions: [deleteAction, askAction])
+            swipeConfig.performsFirstActionWithFullSwipe = false
+            return swipeConfig
         }
         return UICollectionViewCompositionalLayout { _, layoutEnv in
             let sectionConfig = config
@@ -402,5 +414,25 @@ extension DirectiveListViewController: UICollectionViewDelegate {
         collectionView.deselectItem(at: indexPath, animated: true)
         guard let item = dataSource.itemIdentifier(for: indexPath) else { return }
         onDirectiveSelected?(item.directive.id)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        guard let item = dataSource.itemIdentifier(for: indexPath) else { return nil }
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            let askAI = UIAction(
+                title: "Not Working?",
+                image: UIImage(systemName: "lightbulb.slash")
+            ) { _ in
+                self?.onAskAIForDirective?(item.directive.id)
+            }
+            let delete = UIAction(
+                title: "Delete",
+                image: UIImage(systemName: "trash"),
+                attributes: .destructive
+            ) { _ in
+                self?.confirmDelete(directiveId: item.directive.id)
+            }
+            return UIMenu(children: [askAI, delete])
+        }
     }
 }

@@ -216,6 +216,14 @@ final class DatabaseManager: Sendable {
             try db.create(indexOn: "speakHistory", columns: ["timestamp"])
         }
 
+        migrator.registerMigration("v10_missedScheduled") { db in
+            try db.alter(table: "periodicReview") { t in
+                t.add(column: "missedScheduledJSON", .text).notNull().defaults(to: "[]")
+            }
+            // Clear cached reviews — they're missing the new field.
+            try db.execute(sql: "DELETE FROM periodicReview")
+        }
+
         try migrator.migrate(dbQueue)
     }
 }
