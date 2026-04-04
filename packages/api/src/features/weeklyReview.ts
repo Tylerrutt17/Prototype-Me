@@ -272,6 +272,33 @@ export async function getReviews(userId: string, period?: Period, limit = 12) {
     .limit(limit);
 }
 
+/**
+ * TEST ONLY: Force-generate a review for the current user for the current week or month.
+ * Deletes any existing review for that period first, then regenerates.
+ */
+export async function triggerTestReview(userId: string, period: Period): Promise<{ success: boolean; message: string }> {
+  const { start, end } = period === "weekly" ? getCurrentWeekRange() : getCurrentMonthRange();
+
+  // Delete any existing review for this period
+  await db
+    .delete(periodicReview)
+    .where(
+      and(
+        eq(periodicReview.userId, userId),
+        eq(periodicReview.period, period),
+        eq(periodicReview.periodStart, start),
+      ),
+    );
+
+  try {
+    await generateReviewForUser(userId, period, start, end);
+    return { success: true, message: `Generated ${period} review for ${start} to ${end}` };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, message };
+  }
+}
+
 /** Get a specific review by period and start date. */
 export async function getReview(userId: string, period: Period, periodStartDate: string) {
   const rows = await db
@@ -292,6 +319,31 @@ export async function getReview(userId: string, period: Period, periodStartDate:
 
 function toDateStr(d: Date): string {
   return d.toISOString().split("T")[0];
+}
+
+/** Current week (Monday → today), for test triggers. */
+function getCurrentWeekRange(): { start: string; end: string } {
+  const now = new Date();
+  const day = now.getUTCDay(); // 0=Sun, 1=Mon, ...
+  // Monday of this week
+  const start = new Date(now);
+  const daysFromMonday = day === 0 ? 6 : day - 1;
+  start.setUTCDate(now.getUTCDate() - daysFromMonday);
+  start.setUTCHours(0, 0, 0, 0);
+
+  const end = new Date(now);
+  end.setUTCHours(0, 0, 0, 0);
+
+  return { start: toDateStr(start), end: toDateStr(end) };
+}
+
+/** Current month (1st → today), for test triggers. */
+function getCurrentMonthRange(): { start: string; end: string } {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const end = new Date(now);
+  end.setUTCHours(0, 0, 0, 0);
+  return { start: toDateStr(start), end: toDateStr(end) };
 }
 
 function getWeekRange(): { start: string; end: string } {

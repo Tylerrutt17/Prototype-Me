@@ -51,6 +51,13 @@ export async function aiRoutes(app: FastifyInstance) {
     return ok(reply, reviews);
   });
 
+  // TEST: force-generate a review for the current week/month
+  app.post("/reviews/test-trigger", async (req, reply) => {
+    const { period } = (req.body ?? {}) as { period?: "weekly" | "monthly" };
+    const result = await reviewFeature.triggerTestReview(req.userId, period ?? "weekly");
+    return ok(reply, result);
+  });
+
   app.get("/reviews/:period/:periodStart", async (req, reply) => {
     const { period, periodStart } = req.params as { period: "weekly" | "monthly"; periodStart: string };
     const review = await reviewFeature.getReview(req.userId, period, periodStart);

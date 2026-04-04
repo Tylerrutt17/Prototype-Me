@@ -39,6 +39,59 @@ class HistoryViewController: BaseViewController {
         loadLocalData()
         if AuthService.isPro {
             fetchAIReviews()
+            // Test trigger button (pro only for now)
+            navBar.setRightButtons([
+                NavBarButton(systemImage: "sparkles") { [weak self] in
+                    self?.triggerTestReview()
+                }
+            ])
+        }
+    }
+
+    // MARK: - Test Trigger
+
+    private func triggerTestReview() {
+        guard let apiClient else { return }
+
+        let alert = UIAlertController(title: "Generate Review", message: "Create an AI review for the current period?", preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "Weekly (this week)", style: .default) { [weak self] _ in
+            self?.runTestTrigger(period: "weekly")
+        })
+        alert.addAction(UIAlertAction(title: "Monthly (this month)", style: .default) { [weak self] _ in
+            self?.runTestTrigger(period: "monthly")
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(alert, animated: true)
+    }
+
+    private func runTestTrigger(period: String) {
+        guard let apiClient else { return }
+
+        let loading = UIAlertController(title: "Generating...", message: nil, preferredStyle: .alert)
+        present(loading, animated: true)
+
+        Task {
+            struct TriggerResult: Decodable { let success: Bool; let message: String }
+            do {
+                let result: TriggerResult = try await apiClient.post("/v1/ai/reviews/test-trigger", body: ["period": period])
+                await MainActor.run {
+                    loading.dismiss(animated: true) {
+                        let done = UIAlertController(title: result.success ? "Done" : "Failed", message: result.message, preferredStyle: .alert)
+                        done.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
+                            self?.fetchAIReviews()
+                        })
+                        self.present(done, animated: true)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    loading.dismiss(animated: true) {
+                        let err = UIAlertController(title: "Error", message: "\(error)", preferredStyle: .alert)
+                        err.addAction(UIAlertAction(title: "OK", style: .default))
+                        self.present(err, animated: true)
+                    }
+                }
+            }
         }
     }
 
