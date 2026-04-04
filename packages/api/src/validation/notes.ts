@@ -5,7 +5,7 @@ import { LIMITS } from "./limits.js";
 export const createNote = z.object({
   id: uuid.optional(),
   title: z.string().min(1).max(LIMITS.note.title),
-  body: z.string().max(LIMITS.note.body),
+  body: z.string().max(LIMITS.note.body).default(""),
   kind: noteKind,
   folderId: uuid.nullable().optional(),
   sortIndex: z.int().default(0),
