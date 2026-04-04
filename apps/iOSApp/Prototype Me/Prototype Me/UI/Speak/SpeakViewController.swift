@@ -669,7 +669,7 @@ class SpeakViewController: BaseViewController {
             }
         case "rename_folder":
             break // No detail view for folders
-        case "create_journal_entry":
+        case "create_journal_entry", "update_journal_entry":
             if let date = args["date"] as? String {
                 onNavigateToJournal?(date)
             }

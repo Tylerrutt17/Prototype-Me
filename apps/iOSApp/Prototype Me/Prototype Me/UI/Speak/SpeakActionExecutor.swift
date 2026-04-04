@@ -42,6 +42,8 @@ final class SpeakActionExecutor {
             return "Retire directive"
         case "create_journal_entry":
             return "Log journal entry for \(args["date"] as? String ?? "today")"
+        case "update_journal_entry":
+            return "Update journal entry for \(args["date"] as? String ?? "today")"
         case "create_note":
             return "Create \(args["kind"] as? String ?? "regular") note: \(args["title"] as? String ?? "Untitled")"
         case "activate_mode":
@@ -112,6 +114,46 @@ final class SpeakActionExecutor {
                 }
                 if let rating = args["rating"] as? Int {
                     tc.changes.append(SpeakActionChange(field: "rating", oldValue: nil, newValue: "\(rating)/10"))
+                }
+
+            case "update_journal_entry":
+                tc.actionType = .update
+                tc.itemType = "journal"
+                let date = args["date"] as? String ?? "today"
+                tc.itemName = date
+                let existing = try? await dayEntryService?.fetch(date: date)
+                if let newDiary = args["diary"] as? String {
+                    let clamped = newDiary.capped(to: FieldLimits.Journal.diary)
+                    let oldDiary = existing?.diary ?? ""
+                    if clamped != oldDiary {
+                        tc.changes.append(SpeakActionChange(
+                            field: "diary",
+                            oldValue: oldDiary.isEmpty ? nil : String(oldDiary.prefix(80)),
+                            newValue: String(clamped.prefix(80))
+                        ))
+                    }
+                }
+                if let newRating = args["rating"] as? Int {
+                    let oldRatingStr = existing?.rating.map { "\($0)/10" }
+                    let newRatingStr = "\(newRating)/10"
+                    if oldRatingStr != newRatingStr {
+                        tc.changes.append(SpeakActionChange(
+                            field: "rating",
+                            oldValue: oldRatingStr,
+                            newValue: newRatingStr
+                        ))
+                    }
+                }
+                if let newTags = args["tags"] as? [String] {
+                    let clamped = newTags.prefix(FieldLimits.Journal.tagCount).map { $0.capped(to: FieldLimits.Journal.tag) }
+                    let oldTags = existing?.tags ?? []
+                    if clamped != oldTags {
+                        tc.changes.append(SpeakActionChange(
+                            field: "tags",
+                            oldValue: oldTags.isEmpty ? nil : oldTags.joined(separator: ", "),
+                            newValue: clamped.joined(separator: ", ")
+                        ))
+                    }
                 }
 
             case "create_note":
@@ -211,17 +253,23 @@ final class SpeakActionExecutor {
                 try await directiveService?.archive(id: id)
                 return "Retired directive"
 
-            case "create_journal_entry":
+            case "create_journal_entry", "update_journal_entry":
                 let date = toolCall.arguments["date"] as? String ?? {
                     let f = DateFormatter()
                     f.dateFormat = "yyyy-MM-dd"
                     return f.string(from: Date())
                 }()
-                let diary = (toolCall.arguments["diary"] as? String ?? "").capped(to: FieldLimits.Journal.diary)
-                let rating = toolCall.arguments["rating"] as? Int
-                let tags = truncatedTags(toolCall.arguments["tags"] as? [String] ?? [])
+                // Preserve existing fields for any the AI didn't provide (partial update).
+                let existing = try? await dayEntryService?.fetch(date: date)
+                let providedDiary = toolCall.arguments["diary"] as? String
+                let providedRating = toolCall.arguments["rating"] as? Int
+                let providedTags = toolCall.arguments["tags"] as? [String]
+
+                let diary = providedDiary?.capped(to: FieldLimits.Journal.diary) ?? existing?.diary ?? ""
+                let rating = providedRating ?? existing?.rating
+                let tags = providedTags.map(truncatedTags) ?? existing?.tags ?? []
                 _ = try await dayEntryService?.createOrUpdate(date: date, rating: rating, diary: diary, tags: tags)
-                return "Saved journal entry for \(date)"
+                return existing == nil ? "Created journal entry for \(date)" : "Updated journal entry for \(date)"
 
             case "create_note":
                 let title = (toolCall.arguments["title"] as? String ?? "Untitled").capped(to: FieldLimits.Note.title)

@@ -71,7 +71,7 @@ const tools: OpenAI.Responses.Tool[] = [
     type: "function",
     strict: false,
     name: "create_journal_entry",
-    description: "Create or update a journal/diary entry for a given date.",
+    description: "Create a NEW journal entry for a date that doesn't have one yet. Use get_journal_entry first to confirm no entry exists. If an entry already exists for that date, use update_journal_entry instead.",
     parameters: {
       type: "object",
       properties: {
@@ -81,6 +81,22 @@ const tools: OpenAI.Responses.Tool[] = [
         tags: { type: "array", items: { type: "string" }, description: `Optional tags for the entry (max ${LIMITS.journal.tagCount} tags, each max ${LIMITS.journal.tag} chars).` },
       },
       required: ["date", "diary"],
+    },
+  },
+  {
+    type: "function",
+    strict: false,
+    name: "update_journal_entry",
+    description: "Update specific fields of an EXISTING journal entry. Use get_journal_entry first to confirm an entry exists and see current values. Pass ONLY the fields the user wants to change — omitted fields keep their existing values.",
+    parameters: {
+      type: "object",
+      properties: {
+        date: { type: "string", description: "ISO date string yyyy-MM-dd of the entry to update." },
+        diary: { type: "string", description: `New diary text (max ${LIMITS.journal.diary} chars). Omit to keep current.` },
+        rating: { type: "integer", description: "New day rating 1-10. Omit to keep current.", minimum: 1, maximum: 10 },
+        tags: { type: "array", items: { type: "string" }, description: `New tags (max ${LIMITS.journal.tagCount} tags, each max ${LIMITS.journal.tag} chars). Omit to keep current.` },
+      },
+      required: ["date"],
     },
   },
   {
@@ -254,7 +270,9 @@ Today is {today}.
 
 # Field requirements
 - **Journal**: entries have only these fields — **date** (yyyy-MM-dd, no time), **rating** (1-10), **diary** (text), **tags** (array). There is NO time field, no hour/minute, no location, no mood enum, no anything else. Never ask about fields that don't exist.
-  - Always call get_journal_entry first. If one exists, change only the fields the user mentioned. If new, ask for a rating (1-10) and diary content if missing.
+  - Always call **get_journal_entry** first to check if an entry exists for that date.
+  - If an entry EXISTS → use **update_journal_entry** with only the fields the user wants to change. Unspecified fields keep their existing values.
+  - If NO entry exists → use **create_journal_entry** with diary content (ask for rating and diary if missing).
   - A bare number 1-10 in journal context is a **rating**, not a time.
 - **Directive**: title required; body is a brief helpful explanation if you can write one.
 - **Note**: title required; body is optional (can be empty). Don't ask for body if the user didn't mention one.
