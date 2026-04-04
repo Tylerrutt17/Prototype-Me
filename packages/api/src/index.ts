@@ -101,6 +101,7 @@ await app.register(cleanupRoutes, { prefix: "/v1/cleanup" });
 // ── Scheduled Jobs ─────────────────────────
 import cron from "node-cron";
 import { purgeExpired } from "./features/cleanup.js";
+import { generateWeeklyReviews, generateMonthlyReviews } from "./features/weeklyReview.js";
 
 // Run cleanup daily at 3:00 AM UTC
 cron.schedule("0 3 * * *", async () => {
@@ -109,6 +110,26 @@ cron.schedule("0 3 * * *", async () => {
     app.log.info(`[Cleanup] Purged ${result.syncOpLogsDeleted} op logs, ${result.tombstonesDeleted} tombstones`);
   } catch (err) {
     app.log.error("[Cleanup] Failed: %s", err);
+  }
+});
+
+// Run weekly reviews every Sunday at 11 PM UTC
+cron.schedule("0 23 * * 0", async () => {
+  try {
+    const result = await generateWeeklyReviews();
+    app.log.info(`[Review/weekly] Processed ${result.processed}, skipped ${result.skipped}, errors ${result.errors}`);
+  } catch (err) {
+    app.log.error("[Review/weekly] Failed: %s", err);
+  }
+});
+
+// Run monthly reviews on the 1st at 2 AM UTC
+cron.schedule("0 2 1 * *", async () => {
+  try {
+    const result = await generateMonthlyReviews();
+    app.log.info(`[Review/monthly] Processed ${result.processed}, skipped ${result.skipped}, errors ${result.errors}`);
+  } catch (err) {
+    app.log.error("[Review/monthly] Failed: %s", err);
   }
 });
 

@@ -59,6 +59,28 @@ class DirectiveDetailViewController: BaseViewController {
         onEditTapped?(directiveId)
     }
 
+    private func saveInlineEdit(title: String, body: String?) {
+        guard let directiveId else { return }
+        Task {
+            do {
+                try await dbQueue.write { db in
+                    guard var directive = try Directive.fetchOne(db, key: directiveId) else { return }
+                    let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmedTitle.isEmpty else { return }
+                    directive.title = trimmedTitle
+                    let trimmedBody = body?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    directive.body = (trimmedBody?.isEmpty ?? true) ? nil : trimmedBody
+                    directive.updatedAt = Date()
+                    directive.version += 1
+                    try directive.update(db)
+                    try OutboxOp.enqueue(entityType: "directive", entityId: directive.id.uuidString, op: "update", patch: directive.syncPatch(), baseUpdatedAt: directive.updatedAt, in: db)
+                }
+            } catch {
+                print("Inline edit save failed: \(error)")
+            }
+        }
+    }
+
     // MARK: - Collection View
 
     private func configureCollectionView() {
@@ -111,8 +133,11 @@ class DirectiveDetailViewController: BaseViewController {
     // MARK: - Data Source
 
     private func configureDataSource() {
-        let headerReg = UICollectionView.CellRegistration<DirectiveHeaderCell, Directive> { cell, _, directive in
+        let headerReg = UICollectionView.CellRegistration<DirectiveHeaderCell, Directive> { [weak self] cell, _, directive in
             cell.configure(with: directive)
+            cell.onFieldEdited = { title, body in
+                self?.saveInlineEdit(title: title, body: body)
+            }
         }
 
         let balloonReg = UICollectionView.CellRegistration<BalloonCard, DirectiveRowData> { [weak self] cell, _, data in
@@ -304,14 +329,18 @@ extension DirectiveDetailViewController: UICollectionViewDelegate {
 
 // MARK: - DirectiveHeaderCell
 
-private final class DirectiveHeaderCell: UICollectionViewCell {
+private final class DirectiveHeaderCell: UICollectionViewCell, UITextFieldDelegate, UITextViewDelegate {
+
+    var onFieldEdited: ((String, String?) -> Void)?
 
     private let accentBar = UIView()
-    private let iconView = UIImageView()
     private let statusBadge = UIButton(type: .system)
-    private let titleLabel = UILabel()
-    private let bodyLabel = UILabel()
+    private let titleField = UITextField()
+    private let bodyView = UITextView()
+    private let bodyPlaceholder = UILabel()
     private let metaLabel = UILabel()
+
+    private var currentDirectiveId: UUID?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -340,21 +369,39 @@ private final class DirectiveHeaderCell: UICollectionViewCell {
         statusBadge.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(statusBadge)
 
-        // Title
-        titleLabel.font = DesignTokens.Typography.rounded(style: .title2, weight: .bold)
-        titleLabel.textColor = DesignTokens.Colors.textPrimary
-        titleLabel.numberOfLines = 0
+        // Title (editable)
+        titleField.font = DesignTokens.Typography.rounded(style: .title2, weight: .bold)
+        titleField.textColor = DesignTokens.Colors.textPrimary
+        titleField.returnKeyType = .done
+        titleField.delegate = self
+        titleField.backgroundColor = .clear
+        titleField.borderStyle = .none
 
-        // Body
-        bodyLabel.font = DesignTokens.Typography.body
-        bodyLabel.textColor = DesignTokens.Colors.textSecondary
-        bodyLabel.numberOfLines = 0
+        // Body (editable)
+        bodyView.font = DesignTokens.Typography.body
+        bodyView.textColor = DesignTokens.Colors.textSecondary
+        bodyView.backgroundColor = .clear
+        bodyView.isScrollEnabled = false
+        bodyView.textContainerInset = .zero
+        bodyView.textContainer.lineFragmentPadding = 0
+        bodyView.delegate = self
+
+        // Placeholder for body
+        bodyPlaceholder.text = "Add a description…"
+        bodyPlaceholder.font = DesignTokens.Typography.body
+        bodyPlaceholder.textColor = DesignTokens.Colors.textTertiary
+        bodyPlaceholder.translatesAutoresizingMaskIntoConstraints = false
+        bodyView.addSubview(bodyPlaceholder)
+        NSLayoutConstraint.activate([
+            bodyPlaceholder.topAnchor.constraint(equalTo: bodyView.topAnchor),
+            bodyPlaceholder.leadingAnchor.constraint(equalTo: bodyView.leadingAnchor),
+        ])
 
         // Meta label (created date)
         metaLabel.font = DesignTokens.Typography.caption1
         metaLabel.textColor = DesignTokens.Colors.textTertiary
 
-        let stack = UIStackView(arrangedSubviews: [titleLabel, bodyLabel, metaLabel])
+        let stack = UIStackView(arrangedSubviews: [titleField, bodyView, metaLabel])
         stack.axis = .vertical
         stack.spacing = DesignTokens.Spacing.md
         stack.alignment = .fill
@@ -379,6 +426,8 @@ private final class DirectiveHeaderCell: UICollectionViewCell {
     }
 
     func configure(with directive: Directive) {
+        currentDirectiveId = directive.id
+
         // Status color
         let color: UIColor = switch directive.status {
         case .active:   DesignTokens.Colors.success
@@ -400,17 +449,51 @@ private final class DirectiveHeaderCell: UICollectionViewCell {
         }
         statusBadge.configuration = badgeCfg
 
-        // Title
-        titleLabel.text = directive.title
+        // Title — only update if not currently being edited
+        if !titleField.isFirstResponder {
+            titleField.text = directive.title
+        }
 
-        // Body
-        bodyLabel.text = directive.body
-        bodyLabel.isHidden = directive.body == nil
+        // Body — only update if not currently being edited
+        if !bodyView.isFirstResponder {
+            bodyView.text = directive.body
+            bodyPlaceholder.isHidden = !(directive.body ?? "").isEmpty
+        }
 
         // Meta
         let fmt = RelativeDateTimeFormatter()
         fmt.unitsStyle = .abbreviated
         metaLabel.text = "Created " + fmt.localizedString(for: directive.createdAt, relativeTo: .now)
+    }
+
+    // MARK: - UITextFieldDelegate
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        textField.resignFirstResponder()
+        return true
+    }
+
+    func textFieldDidEndEditing(_ textField: UITextField) {
+        commitEdit()
+    }
+
+    // MARK: - UITextViewDelegate
+
+    func textViewDidChange(_ textView: UITextView) {
+        bodyPlaceholder.isHidden = !textView.text.isEmpty
+        // Invalidate layout so the cell resizes
+        invalidateIntrinsicContentSize()
+    }
+
+    func textViewDidEndEditing(_ textView: UITextView) {
+        bodyPlaceholder.isHidden = !textView.text.isEmpty
+        commitEdit()
+    }
+
+    private func commitEdit() {
+        let title = titleField.text ?? ""
+        let body = bodyView.text
+        onFieldEdited?(title, body)
     }
 }
 

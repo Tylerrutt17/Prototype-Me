@@ -253,6 +253,34 @@ export const friendship = pgTable(
   ],
 );
 
+// ── Periodic Reviews ───────────────────────
+export const reviewPeriodEnum = pgEnum("review_period", ["weekly", "monthly"]);
+
+export const periodicReview = pgTable(
+  "periodic_review",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    period: reviewPeriodEnum("period").notNull(),
+    periodStart: date("period_start").notNull(),
+    periodEnd: date("period_end").notNull(),
+    summary: text("summary").notNull(),
+    bestDay: date("best_day"),
+    bestDayNote: text("best_day_note"),
+    lowestDay: date("lowest_day"),
+    lowestDayNote: text("lowest_day_note"),
+    suggestion: text("suggestion"),
+    directiveInsights: text("directive_insights"),
+    avgRating: doublePrecision("avg_rating"),
+    entryCount: integer("entry_count").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("periodic_review_user_period_idx").on(t.userId, t.period, t.periodStart),
+    index("periodic_review_user_idx").on(t.userId),
+  ],
+);
+
 // ── AI Usage ────────────────────────────────
 export const aiUsage = pgTable(
   "ai_usage",

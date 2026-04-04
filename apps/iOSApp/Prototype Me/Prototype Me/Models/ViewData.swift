@@ -99,6 +99,26 @@ nonisolated struct HistoryMonthSummary: Hashable, Sendable {
     }
 }
 
+// MARK: - PeriodicReview
+
+/// AI-generated periodic review (weekly or monthly) fetched from the backend.
+struct PeriodicReview: Codable, Hashable, Sendable {
+    let id: UUID
+    let period: String          // "weekly" | "monthly"
+    let periodStart: String     // yyyy-MM-dd
+    let periodEnd: String       // yyyy-MM-dd
+    let summary: String
+    let bestDay: String?
+    let bestDayNote: String?
+    let lowestDay: String?
+    let lowestDayNote: String?
+    let suggestion: String?
+    let directiveInsights: String?
+    let avgRating: Double?
+    let entryCount: Int
+    let createdAt: String
+}
+
 // MARK: - SeedPlanCard
 
 enum SeedCardType: String, Codable, Sendable { case directive, folder }

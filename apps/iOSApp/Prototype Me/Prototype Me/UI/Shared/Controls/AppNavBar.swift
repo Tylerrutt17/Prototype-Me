@@ -124,9 +124,11 @@ final class AppNavBar: UIView {
 
         let padding: CGFloat = DesignTokens.Spacing.lg
 
+        let safeAreaTop = contentView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor)
+        safeAreaTop.priority = .defaultHigh // Yields to the minimum padding constraint
+
         NSLayoutConstraint.activate([
-            // Content view pinned below safe area, 44pt tall
-            contentView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor),
+            safeAreaTop,
             // Ensure minimum top padding for modals where safe area is zero
             contentView.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: DesignTokens.Spacing.lg),
             contentView.leadingAnchor.constraint(equalTo: leadingAnchor),

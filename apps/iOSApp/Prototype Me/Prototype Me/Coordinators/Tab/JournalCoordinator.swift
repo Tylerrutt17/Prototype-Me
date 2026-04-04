@@ -42,6 +42,7 @@ class JournalCoordinator: Coordinator {
     private func showHistory() {
         let vc = HistoryViewController()
         vc.dbQueue = environment.db.dbQueue
+        vc.apiClient = environment.apiClient
         navigationController.pushViewController(vc, animated: true)
     }
 
