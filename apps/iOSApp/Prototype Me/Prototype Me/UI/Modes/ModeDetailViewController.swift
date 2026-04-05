@@ -33,9 +33,11 @@ class ModeDetailViewController: BaseViewController {
 
     var noteId: UUID?
     var modeService: ModeService?
+    var noteService: NoteService?
     var onDirectiveSelected: ((UUID) -> Void)?
     var onEditTapped: ((UUID) -> Void)?
     var onLinkDirectiveTapped: ((UUID) -> Void)?
+    var onAskAIForDirective: ((UUID) -> Void)?
 
     private var isBodyExpanded = false
     private var collectionView: UICollectionView!
@@ -77,7 +79,7 @@ class ModeDetailViewController: BaseViewController {
     }
 
     private func createLayout() -> UICollectionViewCompositionalLayout {
-        UICollectionViewCompositionalLayout { sectionIndex, layoutEnv in
+        UICollectionViewCompositionalLayout { [weak self] sectionIndex, layoutEnv in
             let section = ModeDetailSection(rawValue: sectionIndex)
             switch section {
             case .header:
@@ -94,10 +96,32 @@ class ModeDetailViewController: BaseViewController {
                 return layoutSection
 
             default:
-                let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .estimated(60))
-                let item = NSCollectionLayoutItem(layoutSize: itemSize)
-                let group = NSCollectionLayoutGroup.vertical(layoutSize: itemSize, subitems: [item])
-                let layoutSection = NSCollectionLayoutSection(group: group)
+                var config = UICollectionLayoutListConfiguration(appearance: .plain)
+                config.backgroundColor = .clear
+                config.showsSeparators = false
+                config.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
+                    guard let self,
+                          let item = self.dataSource.itemIdentifier(for: indexPath),
+                          case .directive(let data) = item else { return nil }
+                    let unlink = UIContextualAction(style: .normal, title: "Unlink") { [weak self] _, _, completion in
+                        self?.confirmUnlink(directiveId: data.directive.id)
+                        completion(true)
+                    }
+                    unlink.backgroundColor = DesignTokens.Colors.destructive
+                    unlink.image = UIImage(systemName: "link.badge.minus")
+
+                    let askAI = UIContextualAction(style: .normal, title: "Not Working?") { [weak self] _, _, completion in
+                        self?.confirmAskAI(directiveId: data.directive.id)
+                        completion(true)
+                    }
+                    askAI.backgroundColor = DesignTokens.Colors.warning
+                    askAI.image = UIImage(systemName: "lightbulb.slash")
+
+                    let swipeConfig = UISwipeActionsConfiguration(actions: [unlink, askAI])
+                    swipeConfig.performsFirstActionWithFullSwipe = false
+                    return swipeConfig
+                }
+                let layoutSection = NSCollectionLayoutSection.list(using: config, layoutEnvironment: layoutEnv)
                 layoutSection.interGroupSpacing = DesignTokens.Spacing.sm
                 layoutSection.contentInsets = NSDirectionalEdgeInsets(
                     top: DesignTokens.Spacing.sm,
@@ -114,6 +138,46 @@ class ModeDetailViewController: BaseViewController {
                 )
                 layoutSection.boundarySupplementaryItems = [sectionHeader]
                 return layoutSection
+            }
+        }
+    }
+
+    // MARK: - Unlink
+
+    private func confirmAskAI(directiveId: UUID) {
+        let alert = UIAlertController(
+            title: "Ask AI for an alternative?",
+            message: "This opens the Speak tab and asks the AI to help figure out what's not working with this directive and suggest alternatives you could try.",
+            preferredStyle: .actionSheet
+        )
+        alert.addAction(UIAlertAction(title: "Ask AI", style: .default) { [weak self] _ in
+            self?.onAskAIForDirective?(directiveId)
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(alert, animated: true)
+    }
+
+    private func confirmUnlink(directiveId: UUID) {
+        let alert = UIAlertController(
+            title: "Unlink Directive?",
+            message: "This removes it from this mode. The directive itself won't be deleted.",
+            preferredStyle: .actionSheet
+        )
+        alert.addAction(UIAlertAction(title: "Unlink", style: .destructive) { [weak self] _ in
+            self?.unlinkDirective(directiveId: directiveId)
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(alert, animated: true)
+    }
+
+    private func unlinkDirective(directiveId: UUID) {
+        guard let noteId else { return }
+        Task {
+            do {
+                try await noteService?.unlinkDirective(noteId: noteId, directiveId: directiveId)
+                await MainActor.run { Haptics.success() }
+            } catch {
+                await MainActor.run { Haptics.error() }
             }
         }
     }
@@ -149,7 +213,7 @@ class ModeDetailViewController: BaseViewController {
         }
 
         let linkBtnReg = UICollectionView.CellRegistration<LinkButtonCell, String> { cell, _, title in
-            cell.configure(title: title, systemImage: "link.badge.plus")
+            cell.configure(title: title, systemImage: "plus.circle.fill")
         }
 
         dataSource = UICollectionViewDiffableDataSource(collectionView: collectionView) { cv, indexPath, item in
@@ -255,6 +319,27 @@ extension ModeDetailViewController: UICollectionViewDelegate {
             onLinkDirectiveTapped?(noteId)
         }
     }
+
+    func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        guard let item = dataSource.itemIdentifier(for: indexPath),
+              case .directive(let data) = item else { return nil }
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            let askAI = UIAction(
+                title: "Not Working?",
+                image: UIImage(systemName: "lightbulb.slash")
+            ) { _ in
+                self?.confirmAskAI(directiveId: data.directive.id)
+            }
+            let unlink = UIAction(
+                title: "Unlink from Mode",
+                image: UIImage(systemName: "link.badge.minus"),
+                attributes: .destructive
+            ) { _ in
+                self?.confirmUnlink(directiveId: data.directive.id)
+            }
+            return UIMenu(children: [askAI, unlink])
+        }
+    }
 }
 
 // MARK: - UICollectionViewDragDelegate
@@ -299,7 +384,13 @@ extension ModeDetailViewController: UICollectionViewDropDelegate {
         guard let sourceIndex = sectionItems.firstIndex(of: sourceRow) else { return }
 
         sectionItems.remove(at: sourceIndex)
-        let destIndex = min(destinationIndexPath.item, sectionItems.count)
+        // Keep the link button pinned at the end — never allow a directive past it
+        let linkButtonIndex = sectionItems.firstIndex {
+            if case .linkDirectiveButton = $0 { return true }
+            return false
+        }
+        let maxIndex = linkButtonIndex ?? sectionItems.count
+        let destIndex = min(destinationIndexPath.item, maxIndex)
         sectionItems.insert(sourceRow, at: destIndex)
 
         snapshot.deleteItems(snapshot.itemIdentifiers(inSection: section))
@@ -765,16 +856,14 @@ final class LinkButtonCell: UICollectionViewCell {
     required init?(coder: NSCoder) { super.init(coder: coder); setupCell() }
 
     private func setupCell() {
-        contentView.backgroundColor = DesignTokens.Colors.surfacePrimary.withAlphaComponent(0.5)
-        contentView.layer.cornerRadius = DesignTokens.Radii.md
+        contentView.backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.12)
+        contentView.layer.cornerRadius = DesignTokens.Radii.lg
         contentView.clipsToBounds = true
-        contentView.layer.borderWidth = 1
-        contentView.layer.borderColor = DesignTokens.Colors.accent.withAlphaComponent(0.3).cgColor
 
         iconView.tintColor = DesignTokens.Colors.accent
         iconView.contentMode = .scaleAspectFit
 
-        label.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium)
+        label.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
         label.textColor = DesignTokens.Colors.accent
 
         let stack = UIStackView(arrangedSubviews: [iconView, label])
@@ -793,7 +882,7 @@ final class LinkButtonCell: UICollectionViewCell {
 
     func configure(title: String, systemImage: String) {
         label.text = title
-        let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)
+        let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
         iconView.image = UIImage(systemName: systemImage, withConfiguration: config)
     }
 }

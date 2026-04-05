@@ -40,12 +40,14 @@ final class DirectiveEditorViewController: BaseViewController {
     private let statusPicker = DirectiveStatusPicker()
     private let scheduleSection = ScheduleEditorSection()
     private let balloonSection = BalloonEditorSection()
+    private let colorPicker = DirectiveColorPicker()
 
     // MARK: - State
 
     private var selectedStatus: DirectiveStatus = .active
     private var balloonEnabled = false
     private var durationHours: Double = 24
+    private var selectedColor: String?
 
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
@@ -465,6 +467,7 @@ final class DirectiveEditorViewController: BaseViewController {
 
         stackView.addArrangedSubview(titleField)
         stackView.addArrangedSubview(bodyField)
+        stackView.addArrangedSubview(colorPicker)
         stackView.addArrangedSubview(statusPicker)
         stackView.addArrangedSubview(balloonSection)
         stackView.addArrangedSubview(scheduleSection)
@@ -500,6 +503,9 @@ final class DirectiveEditorViewController: BaseViewController {
         balloonSection.onDurationChanged = { [weak self] hours in
             self?.durationHours = hours
         }
+        colorPicker.onColorChanged = { [weak self] hex in
+            self?.selectedColor = hex
+        }
     }
 
     // MARK: - Data Loading
@@ -515,8 +521,10 @@ final class DirectiveEditorViewController: BaseViewController {
             bodyField.textView.text = directive.body
             selectedStatus = directive.status
             balloonEnabled = directive.balloonEnabled
+            selectedColor = directive.color
 
             statusPicker.setStatus(directive.status)
+            colorPicker.setColor(directive.color)
             durationHours = directive.balloonDurationSec / 3600
             balloonSection.configure(isEnabled: directive.balloonEnabled, durationHours: durationHours)
 
@@ -550,6 +558,7 @@ final class DirectiveEditorViewController: BaseViewController {
                 if let directiveId, var existing = try await directiveService?.fetch(id: directiveId) {
                     existing.title = title
                     existing.body = body
+                    existing.color = selectedColor
                     existing.status = selectedStatus
                     existing.balloonEnabled = balloonEnabled
                     if existing.balloonDurationSec != durationSec || (!existing.balloonEnabled && balloonEnabled) {
@@ -560,6 +569,7 @@ final class DirectiveEditorViewController: BaseViewController {
                 } else {
                     let newDir = try await directiveService?.create(
                         title: title, body: body,
+                        color: selectedColor,
                         balloonEnabled: balloonEnabled,
                         balloonDurationSec: durationSec
                     )

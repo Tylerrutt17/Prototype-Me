@@ -159,6 +159,7 @@ class NotesCoordinator: Coordinator {
         let vc = ModeDetailViewController()
         vc.dbQueue = environment.db.dbQueue
         vc.modeService = environment.modeService
+        vc.noteService = environment.noteService
         vc.noteId = noteId
         vc.onDirectiveSelected = { [weak self] directiveId in
             self?.showDirectiveDetail(directiveId: directiveId)
@@ -168,6 +169,9 @@ class NotesCoordinator: Coordinator {
         }
         vc.onLinkDirectiveTapped = { [weak self] noteId in
             self?.presentDirectivePicker(forNoteId: noteId)
+        }
+        vc.onAskAIForDirective = { [weak self] directiveId in
+            self?.onAskAIForDirective?(directiveId)
         }
         navigationController.pushViewController(vc, animated: true)
     }

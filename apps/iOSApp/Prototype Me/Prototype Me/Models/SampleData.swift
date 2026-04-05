@@ -161,37 +161,37 @@ enum SampleData {
 
     static let directives: [Directive] = [
         // Foundation tier — always‑on habits
-        Directive(id: IDs.dirMeditate, title: "Meditate 10 min", body: "Sit quietly, focus on breath. Use Headspace if needed.", status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonSnapshotSec: 72000, snoozedUntil: nil, version: 3, createdAt: daysAgo(60), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirMeditate, title: "Meditate 10 min", body: "Sit quietly, focus on breath. Use Headspace if needed.", color: nil, status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonSnapshotSec: 72000, snoozedUntil: nil, version: 3, createdAt: daysAgo(60), updatedAt: daysAgo(0)),
 
-        Directive(id: IDs.dirHydrate, title: "Drink 2L water", body: "Track with water bottle marks. Front-load morning.", status: .active, balloonEnabled: true, balloonDurationSec: 43200, balloonSnapshotSec: 10000, snoozedUntil: nil, version: 2, createdAt: daysAgo(55), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirHydrate, title: "Drink 2L water", body: "Track with water bottle marks. Front-load morning.", color: nil, status: .active, balloonEnabled: true, balloonDurationSec: 43200, balloonSnapshotSec: 10000, snoozedUntil: nil, version: 2, createdAt: daysAgo(55), updatedAt: daysAgo(0)),
 
-        Directive(id: IDs.dirSleep, title: "Lights out by 10:30 PM", body: "No screens after 10 PM. Set alarm. Wind-down routine.", status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: nil, version: 1, createdAt: daysAgo(50), updatedAt: daysAgo(5)),
+        Directive(id: IDs.dirSleep, title: "Lights out by 10:30 PM", body: "No screens after 10 PM. Set alarm. Wind-down routine.", color: nil, status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: nil, version: 1, createdAt: daysAgo(50), updatedAt: daysAgo(5)),
 
-        Directive(id: IDs.dirGratitude, title: "Write 3 gratitudes", body: nil, status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonSnapshotSec: 60000, snoozedUntil: nil, version: 1, createdAt: daysAgo(45), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirGratitude, title: "Write 3 gratitudes", body: nil, color: nil, status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonSnapshotSec: 60000, snoozedUntil: nil, version: 1, createdAt: daysAgo(45), updatedAt: daysAgo(0)),
 
         // Support tier
-        Directive(id: IDs.dirExercise, title: "30-min workout", body: "Alternate: strength / cardio / yoga. Log in fitness app.", status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonSnapshotSec: 5400, snoozedUntil: nil, version: 5, createdAt: daysAgo(60), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirExercise, title: "30-min workout", body: "Alternate: strength / cardio / yoga. Log in fitness app.", color: nil, status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonSnapshotSec: 5400, snoozedUntil: nil, version: 5, createdAt: daysAgo(60), updatedAt: daysAgo(0)),
 
-        Directive(id: IDs.dirStretch, title: "Morning stretch routine", body: "10 min. Hamstrings, shoulders, spine.", status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: nil, version: 1, createdAt: daysAgo(40), updatedAt: daysAgo(3)),
+        Directive(id: IDs.dirStretch, title: "Morning stretch routine", body: "10 min. Hamstrings, shoulders, spine.", color: nil, status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: nil, version: 1, createdAt: daysAgo(40), updatedAt: daysAgo(3)),
 
-        Directive(id: IDs.dirMealPrep, title: "Sunday meal prep", body: "Prep protein, veggies, and overnight oats for the week.", status: .active, balloonEnabled: true, balloonDurationSec: 604800, balloonSnapshotSec: 172800, snoozedUntil: nil, version: 2, createdAt: daysAgo(35), updatedAt: daysAgo(1)),
+        Directive(id: IDs.dirMealPrep, title: "Sunday meal prep", body: "Prep protein, veggies, and overnight oats for the week.", color: nil, status: .active, balloonEnabled: true, balloonDurationSec: 604800, balloonSnapshotSec: 172800, snoozedUntil: nil, version: 2, createdAt: daysAgo(35), updatedAt: daysAgo(1)),
 
-        Directive(id: IDs.dirWalk, title: "20-min walk after lunch", body: "Get outside. No phone.", status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: nil, version: 1, createdAt: daysAgo(30), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirWalk, title: "20-min walk after lunch", body: "Get outside. No phone.", color: nil, status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: nil, version: 1, createdAt: daysAgo(30), updatedAt: daysAgo(0)),
 
         // Active tier
-        Directive(id: IDs.dirRead30, title: "Read 30 pages", body: "Current book. No phone nearby. Take notes.", status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonSnapshotSec: 43200, snoozedUntil: nil, version: 2, createdAt: daysAgo(30), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirRead30, title: "Read 30 pages", body: "Current book. No phone nearby. Take notes.", color: nil, status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonSnapshotSec: 43200, snoozedUntil: nil, version: 2, createdAt: daysAgo(30), updatedAt: daysAgo(0)),
 
-        Directive(id: IDs.dirDeepWork, title: "2-hr deep work block", body: "Phone on DND. One task only. 50/10 split.", status: .active, balloonEnabled: true, balloonDurationSec: 28800, balloonSnapshotSec: 3600, snoozedUntil: nil, version: 3, createdAt: daysAgo(45), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirDeepWork, title: "2-hr deep work block", body: "Phone on DND. One task only. 50/10 split.", color: nil, status: .active, balloonEnabled: true, balloonDurationSec: 28800, balloonSnapshotSec: 3600, snoozedUntil: nil, version: 3, createdAt: daysAgo(45), updatedAt: daysAgo(0)),
 
-        Directive(id: IDs.dirJournal, title: "Evening journal entry", body: "Reflect on the day. What went well? What to improve?", status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonSnapshotSec: 80000, snoozedUntil: nil, version: 1, createdAt: daysAgo(20), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirJournal, title: "Evening journal entry", body: "Reflect on the day. What went well? What to improve?", color: nil, status: .active, balloonEnabled: true, balloonDurationSec: 86400, balloonSnapshotSec: 80000, snoozedUntil: nil, version: 1, createdAt: daysAgo(20), updatedAt: daysAgo(0)),
 
-        Directive(id: IDs.dirNoPhone, title: "No phone first hour", body: "Leave phone in another room until after morning routine.", status: .archived, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: nil, version: 2, createdAt: daysAgo(50), updatedAt: daysAgo(15)),
+        Directive(id: IDs.dirNoPhone, title: "No phone first hour", body: "Leave phone in another room until after morning routine.", color: nil, status: .archived, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: nil, version: 2, createdAt: daysAgo(50), updatedAt: daysAgo(15)),
 
-        Directive(id: IDs.dirColdShower, title: "Cold shower 2 min", body: "End every shower with 2 min cold. Breathe through it.", status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: daysAgo(-2), version: 1, createdAt: daysAgo(25), updatedAt: daysAgo(10)),
+        Directive(id: IDs.dirColdShower, title: "Cold shower 2 min", body: "End every shower with 2 min cold. Breathe through it.", color: nil, status: .active, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: daysAgo(-2), version: 1, createdAt: daysAgo(25), updatedAt: daysAgo(10)),
 
-        Directive(id: IDs.dirReview, title: "Weekly review", body: "Use the weekly review template. Sunday afternoon.", status: .active, balloonEnabled: true, balloonDurationSec: 604800, balloonSnapshotSec: 259200, snoozedUntil: nil, version: 2, createdAt: daysAgo(30), updatedAt: daysAgo(0)),
+        Directive(id: IDs.dirReview, title: "Weekly review", body: "Use the weekly review template. Sunday afternoon.", color: nil, status: .active, balloonEnabled: true, balloonDurationSec: 604800, balloonSnapshotSec: 259200, snoozedUntil: nil, version: 2, createdAt: daysAgo(30), updatedAt: daysAgo(0)),
 
-        Directive(id: IDs.dirVocab, title: "Learn 5 new words", body: "Use Anki deck. Review + add new cards.", status: .archived, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: nil, version: 3, createdAt: daysAgo(60), updatedAt: daysAgo(20)),
+        Directive(id: IDs.dirVocab, title: "Learn 5 new words", body: "Use Anki deck. Review + add new cards.", color: nil, status: .archived, balloonEnabled: false, balloonDurationSec: 0, balloonSnapshotSec: 0, snoozedUntil: nil, version: 3, createdAt: daysAgo(60), updatedAt: daysAgo(20)),
     ]
 
     // MARK: - NoteDirective Links

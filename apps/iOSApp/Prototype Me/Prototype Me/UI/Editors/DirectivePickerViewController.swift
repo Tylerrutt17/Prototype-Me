@@ -150,11 +150,11 @@ final class DirectivePickerViewController: BaseViewController {
                 .asRequest(of: UUID.self)
                 .fetchSet(db)
 
-            // All non-retired directives, excluding already-linked
+            // All non-retired directives, excluding already-linked — most recently touched first
             return try Directive
                 .filter(!linkedIds.contains(Column("id")))
                 .filter(Column("status") != DirectiveStatus.archived.rawValue)
-                .order(Column("title").collating(.localizedCaseInsensitiveCompare))
+                .order(Column("updatedAt").desc)
                 .fetchAll(db)
         }
 

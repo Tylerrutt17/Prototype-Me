@@ -1,0 +1,1 @@
+ALTER TABLE "directive" ADD COLUMN "color" text;

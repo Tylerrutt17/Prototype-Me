@@ -6,7 +6,6 @@ import UIKit
 final class OnboardingDirectiveTrialView: UIView, StoryAnimatable {
 
     private var cards: [UIView] = []
-    private let titleBadge = UILabel()
     private let cardsStack = UIStackView()
 
     // (text, sticks)
@@ -31,22 +30,7 @@ final class OnboardingDirectiveTrialView: UIView, StoryAnimatable {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     private func buildLayout() {
-        // "DIRECTIVES" title badge — shows first, then fades
-        titleBadge.text = "DIRECTIVES"
-        titleBadge.font = DesignTokens.Typography.rounded(style: .title1, weight: .bold)
-        titleBadge.textColor = DesignTokens.Colors.accent
-        titleBadge.textAlignment = .center
-        titleBadge.alpha = 0
-        titleBadge.transform = CGAffineTransform(scaleX: 0.7, y: 0.7)
-        titleBadge.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(titleBadge)
-
-        NSLayoutConstraint.activate([
-            titleBadge.centerXAnchor.constraint(equalTo: centerXAnchor),
-            titleBadge.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-
-        // Cards stack — hidden initially, appears after title fades
+        // Cards stack — hidden initially, cards spring in one by one
         cardsStack.axis = .vertical
         cardsStack.spacing = DesignTokens.Spacing.sm
         cardsStack.alignment = .fill
@@ -109,8 +93,6 @@ final class OnboardingDirectiveTrialView: UIView, StoryAnimatable {
 
     func playEntrance() {
         // Reset
-        titleBadge.alpha = 0
-        titleBadge.transform = CGAffineTransform(scaleX: 0.7, y: 0.7)
         cardsStack.alpha = 0
         for card in cards {
             card.alpha = 0
@@ -118,45 +100,30 @@ final class OnboardingDirectiveTrialView: UIView, StoryAnimatable {
         }
 
         guard !UIAccessibility.isReduceMotionEnabled else {
-            titleBadge.alpha = 0
             cardsStack.alpha = 1
             for card in cards { card.alpha = 1; card.transform = .identity }
             return
         }
 
-        // Phase 1: "DIRECTIVES" title scales in
-        UIView.animate(withDuration: 0.5, delay: 0.1, usingSpringWithDamping: 0.65, initialSpringVelocity: 0.3) {
-            self.titleBadge.alpha = 1
-            self.titleBadge.transform = .identity
+        // Cards drop in one by one, no title intro
+        UIView.animate(withDuration: 0.2, delay: 0.1) {
+            self.cardsStack.alpha = 1
         }
 
-        // Phase 2: Title fades out, cards appear one by one
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self else { return }
-
-            UIView.animate(withDuration: 0.3) {
-                self.titleBadge.alpha = 0
-            }
-            UIView.animate(withDuration: 0.2, delay: 0.2) {
-                self.cardsStack.alpha = 1
-            }
-
-            for (i, card) in self.cards.enumerated() {
-                UIView.animate(
-                    withDuration: 0.4,
-                    delay: 0.3 + Double(i) * 0.12,
-                    usingSpringWithDamping: 0.8,
-                    initialSpringVelocity: 0.3
-                ) {
-                    card.alpha = 1
-                    card.transform = .identity
-                }
+        for (i, card) in cards.enumerated() {
+            UIView.animate(
+                withDuration: 0.4,
+                delay: 0.2 + Double(i) * 0.12,
+                usingSpringWithDamping: 0.8,
+                initialSpringVelocity: 0.3
+            ) {
+                card.alpha = 1
+                card.transform = .identity
             }
         }
     }
 
     func stopAnimations() {
-        titleBadge.layer.removeAllAnimations()
         for card in cards { card.layer.removeAllAnimations() }
     }
 }

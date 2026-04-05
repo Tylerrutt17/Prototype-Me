@@ -5,9 +5,10 @@ final class DirectiveCell: InteractiveCell {
 
     static let reuseID = "DirectiveCell"
 
-    private let pressureIndicator = PressureIndicator()
+    private let colorDot = ColorDotView()
     private let titleLabel = UILabel()
     private let bodyLabel = UILabel()
+    private let balloonIcon = UIImageView()
     private let scheduleIcon = UIImageView()
     private let chevron = UIImageView()
 
@@ -26,7 +27,7 @@ final class DirectiveCell: InteractiveCell {
         contentView.layer.cornerRadius = DesignTokens.Radii.md
         contentView.clipsToBounds = true
 
-        pressureIndicator.size = 10
+        colorDot.size = 14
 
         titleLabel.font = DesignTokens.Typography.headline
         titleLabel.textColor = DesignTokens.Colors.textPrimary
@@ -37,6 +38,10 @@ final class DirectiveCell: InteractiveCell {
         bodyLabel.textColor = DesignTokens.Colors.textSecondary
         bodyLabel.numberOfLines = 2
 
+        balloonIcon.image = UIImage(systemName: "balloon.fill")
+        balloonIcon.contentMode = .scaleAspectFit
+        balloonIcon.setContentHuggingPriority(.required, for: .horizontal)
+
         scheduleIcon.image = UIImage(systemName: "calendar.badge.clock")
         scheduleIcon.tintColor = DesignTokens.Colors.accent
         scheduleIcon.contentMode = .scaleAspectFit
@@ -46,8 +51,8 @@ final class DirectiveCell: InteractiveCell {
         chevron.contentMode = .scaleAspectFit
         chevron.setContentHuggingPriority(.required, for: .horizontal)
 
-        // Title row: [pressure dot] title [schedule icon] chevron
-        let titleRow = UIStackView(arrangedSubviews: [pressureIndicator, titleLabel, scheduleIcon, chevron])
+        // Title row: [color dot] title [balloon icon] [schedule icon] chevron
+        let titleRow = UIStackView(arrangedSubviews: [colorDot, titleLabel, balloonIcon, scheduleIcon, chevron])
         titleRow.axis = .horizontal
         titleRow.spacing = DesignTokens.Spacing.sm
         titleRow.alignment = .center
@@ -59,8 +64,10 @@ final class DirectiveCell: InteractiveCell {
         contentView.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            pressureIndicator.widthAnchor.constraint(equalToConstant: 10),
-            pressureIndicator.heightAnchor.constraint(equalToConstant: 10),
+            colorDot.widthAnchor.constraint(equalToConstant: 14),
+            colorDot.heightAnchor.constraint(equalToConstant: 14),
+            balloonIcon.widthAnchor.constraint(equalToConstant: 18),
+            balloonIcon.heightAnchor.constraint(equalToConstant: 18),
             scheduleIcon.widthAnchor.constraint(equalToConstant: 16),
             scheduleIcon.heightAnchor.constraint(equalToConstant: 16),
             chevron.widthAnchor.constraint(equalToConstant: 12),
@@ -76,9 +83,24 @@ final class DirectiveCell: InteractiveCell {
         bodyLabel.text = data.directive.body
         bodyLabel.isHidden = data.directive.body == nil
 
-        pressureIndicator.configure(level: data.pressureLevel)
-        pressureIndicator.isHidden = !data.directive.balloonEnabled
+        colorDot.configure(hex: data.directive.color)
+        colorDot.isHidden = data.directive.color == nil
+
+        if let level = data.pressureLevel {
+            balloonIcon.tintColor = balloonTint(for: level)
+            balloonIcon.isHidden = false
+        } else {
+            balloonIcon.isHidden = true
+        }
 
         scheduleIcon.isHidden = !data.scheduledToday
+    }
+
+    private func balloonTint(for level: PressureLevel) -> UIColor {
+        switch level {
+        case .green:  return DesignTokens.Colors.success
+        case .yellow: return DesignTokens.Colors.warning
+        case .red:    return DesignTokens.Colors.destructive
+        }
     }
 }

@@ -15,6 +15,7 @@ final class DirectiveService: Sendable {
     func create(
         title: String,
         body: String? = nil,
+        color: String? = nil,
         balloonEnabled: Bool = false,
         balloonDurationSec: TimeInterval = 0
     ) async throws -> Directive {
@@ -23,6 +24,7 @@ final class DirectiveService: Sendable {
             id: UUID(),
             title: title,
             body: body,
+            color: color,
             status: .active,
             balloonEnabled: balloonEnabled,
             balloonDurationSec: balloonDurationSec,

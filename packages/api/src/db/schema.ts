@@ -66,6 +66,7 @@ export const directive = pgTable(
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     body: text("body"),
+    color: text("color"),
     status: directiveStatusEnum("status").notNull().default("active"),
     balloonEnabled: boolean("balloon_enabled").notNull().default(false),
     balloonDurationSec: doublePrecision("balloon_duration_sec").notNull().default(0),

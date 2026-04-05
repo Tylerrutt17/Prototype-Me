@@ -25,6 +25,10 @@ final class OnboardingStoryViewController: UIViewController {
             case directiveTrial
             case weakPoints
             case shortcomings
+            case counterWeakPoints
+            case directiveRefine
+            case voiceAssistant
+            case captureThoughts
             case systemEvolves
             case journal
             case aiInsights
@@ -35,11 +39,12 @@ final class OnboardingStoryViewController: UIViewController {
             case converge
             case relaxed
             case hero
+            case becomesNatural
         }
     }
 
     private let pages: [PageConfig] = [
-        // ── Narrative ──────────────────────────────
+        // ── Act I — The Problem ────────────────────
         // 1. Hook
         PageConfig(
             title: "You've done this before",
@@ -50,82 +55,138 @@ final class OnboardingStoryViewController: UIViewController {
         // 2. The Gap
         PageConfig(
             title: "Why? The hard part isn't starting",
-            subtitle: "It's sticking with it. You try building better habits, it works, then life gets in the way and it fades. Every time.",
+            subtitle: "It's sticking with it. You try building better habits, it works, then life gets in the way and you forget. Every time.",
             visualType: .buildFade,
             particleIntensity: 0.4
         ),
-        // 3. The Insight
+
+        // ── Act II — The Insight ───────────────────
+        // 3. Need to track (bridges "you forget" → "there's patterns")
         PageConfig(
-            title: "What makes your best & worst days?",
-            subtitle: "It's not random. Your worst days have patterns — the things you skipped, the habits you dropped. Fix those, and your best days happen on their own.",
+            title: "You need a way to track it",
+            subtitle: "Write down what worked, what didn't. That way you can build and improve over time — without having to remember it all.",
+            visualType: .captureThoughts,
+            particleIntensity: 0.4
+        ),
+        // 4. Pattern exists
+        PageConfig(
+            title: "Your best days aren't random",
+            subtitle: "There's patterns — the things you did, the things you skipped. Find the weaknesses, and use them to your advantage.",
             visualType: .bestWorstDays,
             particleIntensity: 0.4
         ),
-        // 4. Escalation
+        // 5. Weak points
         PageConfig(
-            title: "What's actually dragging you down?",
-            subtitle: "Low energy, bad habits, irritability. Some are always there. Some only show up in certain situations. If you've never mapped them out, how would you know what to fix?",
+            title: "Find the weak points.",
+            subtitle: "Eye strain at the computer. Can't switch off at night. Skipped meals when you're trying to recover. Each one shows up in a specific mode. If you've never mapped them out, how would you know what to fix?",
             visualType: .shortcomings,
             particleIntensity: 0.6
         ),
-//        // 5. Failed solutions
-//        PageConfig(
-//            title: "You've tried routines. They don't adapt.",
-//            subtitle: "Habits apps, rules, willpower. They work until life changes — then they break. Because they were built for a version of you that doesn't exist anymore.",
-//            visualType: nil,
-//            particleIntensity: 0.4
-//        ),
-        // 5. The Real Solution
+        // 6. Turn weak points into modes (intro to modes)
         PageConfig(
-            title: "Try things. See what sticks.",
-            subtitle: "Find the habits and practices that keep the lows from happening. Track what works, drop what doesn't. No one can figure this out for you.",
-            visualType: .wavyLine,
-            particleIntensity: 0.8
+            title: "Turn those weak points into \"modes\"",
+            subtitle: "Winding Down, Recovery, Computer Work — each one its own mode. Gamify building better habits.",
+            visualType: .modes,
+            particleIntensity: 0.6
         ),
-        // ── How It Works ───────────────────────────
-        // 7. Transition
+        // 7. Counter through trial and error (single mode, directives refine)
         PageConfig(
-            title: "So how does it work?",
-            subtitle: "",
+            title: "Figure Out What Works Best.",
+            subtitle: "It's all trial and error. You'll find what doesn't work or what works best over time.",
+            visualType: .directiveRefine,
+            particleIntensity: 0.6
+        ),
+        // Context bridge — REPLACED by counterWeakPoints slide above
+        // PageConfig(
+        //     title: "Different parts of your life need different things",
+        //     subtitle: "What keeps you sharp at the desk isn't what helps you switch off at night. What gets you through a training week isn't what gets you through a rough one.",
+        //     visualType: .framework,
+        //     particleIntensity: 0.5
+        // ),
+        // 8. Over time, it becomes second nature
+        PageConfig(
+            title: "Over time, modes become second nature",
+            subtitle: "Stay with it. Be consistent with it enough and it will start to come naturally.",
+            visualType: .becomesNatural,
+            particleIntensity: 0.6
+        ),
+
+
+        // ── Act III — The Method ───────────────────
+        // 9. Additional features — transitional beat
+        PageConfig(
+            title: "Other Main Features",
+            subtitle: "Some other features to mention.",
             visualType: nil,
             particleIntensity: 0.4
         ),
-        // 8. Directives
+        // 9. Trial and error
+        // PageConfig(
+        //     title: "Try things. See what sticks.",
+        //     subtitle: "Find what keeps you steady in each mode. Track what works, drop what doesn't. No one can figure this out for you.",
+        //     visualType: .wavyLine,
+        //     particleIntensity: 0.8
+        // ),
+        // 10. Directives
+        // PageConfig(
+        //     title: "Directives — the building blocks",
+        //     subtitle: "Small experiments you run inside a mode. Try one, keep it if it helps, drop it if not.",
+        //     visualType: .directiveTrial,
+        //     particleIntensity: 0.8
+        // ),
+        // 11. The loop
+        // PageConfig(
+        //     title: "Keep what works, drop what doesn't",
+        //     subtitle: "Some things will help, some won't. Swap what doesn't land, double down on what does. Over time you learn exactly what keeps you steady in each mode.",
+        //     visualType: .systemEvolves,
+        //     particleIntensity: 0.8
+        // ),
+        // 10. Track
         PageConfig(
-            title: "These are Directives",
-            subtitle: "The small things that keep you from hitting a low. Habits, rules, reminders — they're not always exciting, but they're what make the difference.",
-            visualType: .directiveTrial,
-            particleIntensity: 0.8
-        ),
-        // 9. System evolves
-        PageConfig(
-            title: "Figure out what works best",
-            subtitle: "Some things will help, some won't. Swap what doesn't work, double down on what does. Over time, you learn exactly what keeps you steady.",
-            visualType: .systemEvolves,
-            particleIntensity: 0.8
-        ),
-        // 10. Journal + AI
-        PageConfig(
-            title: "Track what's working",
-            subtitle: "Rate your day. Write what happened. The app finds patterns — what dragged you down, what kept you steady. So you can see what's actually making the difference.",
+            title: "Journaling.",
+            subtitle: "Rate your day on a 1-10. Write what happened. The app finds patterns — what dragged you down, what kept you steady. So you can see what's really working.",
             visualType: .journal,
             particleIntensity: 0.8
         ),
-        // 11. Philosophy — not a rulebook
+        // 11. Voice / AI assistant
+        PageConfig(
+            title: "Talk or type — it adapts",
+            subtitle: "Swap a directive, add a note, or ask what's working. The app knows your setup, so one sentence is enough.",
+            visualType: .voiceAssistant,
+            particleIntensity: 0.6
+        ),
+
+        // ── Act IV — The Frame + CTA ───────────────
+        // 13. App's role — external memory (folder structure)
+        PageConfig(
+            title: "Somewhere to hold the thread",
+            subtitle: "Organize your thoughts and directives into notes and modes — a structure that holds the thread so you don't have to.",
+            visualType: .notesFolders,
+            particleIntensity: 0.5
+        ),
+        // 14. Philosophy — not a rulebook
         PageConfig(
             title: "This isn't a rulebook",
-            subtitle: "It's not about perfection or following rules. It's about figuring out what actually works for you — and finding small ways to optimize your life.",
+            subtitle: "Don't worry about perfection - otherwise you'll get burnt out trying to follow a bunch of \"Rules.\" You'll get as much out of this as you put into it.",
             visualType: .relaxed,
             particleIntensity: 0.5
         ),
-        // ── The Close ──────────────────────────────
-        // 12. CTA
+        // 15. CTA
         PageConfig(
-            title: "Let's build your system",
-            subtitle: "Skip days. Change your mind. The system adapts to how you actually live. We'll help you set up a starter plan — you can change everything later.",
+            title: "Let's get started",
+            subtitle: "We'll ask a few questions and build you a starter plan. Skip days, change your mind, swap anything — it all adapts to how you actually live.",
             visualType: .hero,
             particleIntensity: 2.5
         ),
+
+        // ── Commented out (not used in current arc) ─
+        // Transition beat — absorbed into the Act II → Act III handoff.
+        // PageConfig(
+        //     title: "So how does it work?",
+        //     subtitle: "",
+        //     visualType: nil,
+        //     particleIntensity: 0.4
+        // ),
     ]
 
     // MARK: - UI
@@ -333,62 +394,96 @@ final class OnboardingStoryViewController: UIViewController {
         map[1] = styled {
             $0.normal("It's ")
             $0.bold("sticking with it")
-            $0.normal(". You try building better habits, it works, then life gets in the way and it fades. ")
+            $0.normal(". You try building better habits, it works, then life gets in the way and ")
+            $0.bold("you forget. ")
             $0.italic("Every time.")
         }
 
-        // 2 - Insight
+        // 2 - Need a way to track it
         map[2] = styled {
-            $0.normal("It's not random. Your worst days have patterns — the things you skipped, the habits you dropped. ")
-            $0.bold("Fix those, and your best days happen on their own.")
+            $0.normal("Write down what worked, what didn't. That way you can ")
+            $0.bold("build and improve over time")
+            $0.normal(" — ")
+            $0.italic("without having to remember it all.")
         }
 
-        // 3 - Escalation
+        // 3 - Pattern exists
         map[3] = styled {
-            $0.normal("Low energy, bad habits, irritability. Some are ")
-            $0.bold("always there")
-            $0.normal(". Some only show up in ")
-            $0.bold("certain situations")
-            $0.normal(". If you've never mapped them out, ")
+            $0.normal("There's patterns — the things you did, the things you skipped. ")
+            $0.bold("Find the weaknesses, ")
+            $0.normal("and use them to your advantage.")
+        }
+
+        // 4 - Weak points
+        map[4] = styled {
+            $0.normal("Eye strain at the computer. Can't switch off at night. Skipped meals when you're trying to recover. ")
+            $0.bold("Each one shows up in a specific mode.")
+            $0.normal(" If you've never mapped them out, ")
             $0.italic("how would you know what to fix?")
         }
 
-        // 4 - Real solution
-        map[4] = styled {
-            $0.normal("Find the habits and practices that keep the lows from happening. Track what works, drop what doesn't. ")
-            $0.italic("No one can figure this out for you.")
+        // 5 - Turn weak points into modes
+        map[5] = styled {
+            $0.bold("Winding Down, Recovery, Computer Work")
+            $0.normal(" — each one its own mode. ")
+            $0.italic("Gamify building better habits.")
         }
 
-        // 6 - Directives
+        // 6 - Counter weak points
         map[6] = styled {
-            $0.normal("The small things that keep you from hitting a low. Habits, rules, reminders — they're not always exciting, ")
-            $0.bold("but they're what make the difference")
-            $0.normal(".")
+            $0.bold("It's all trial and error. ")
+            $0.normal("You'll find what doesn't work or ")
+            $0.italic("what works best over time.")
         }
 
-        // 7 - System evolves
+        // 7 - Becomes second nature
         map[7] = styled {
-            $0.normal("Some things will help, some won't. Swap what doesn't work, double down on what does. Over time, you learn exactly what ")
-            $0.bold("keeps you steady")
-            $0.normal(".")
+            $0.normal("Stay with it. Keep tuning what's in each mode — ")
+            $0.bold("lean into what lands, let go of what doesn't.")
+            $0.normal(" Run it enough and it stops feeling like a system. ")
+            $0.italic("It's just how your day moves.")
         }
 
-        // 8 - Journal
-        map[8] = styled {
+        // 8 - Additional features is title-only (transitional), no styled subtitle
+
+        // 9 - Track
+        map[9] = styled {
             $0.normal("Rate your day. Write what happened. The app finds ")
             $0.bold("patterns")
             $0.normal(" — what dragged you down, what kept you steady. So you can see what's ")
-            $0.italic("actually")
-            $0.normal(" making the difference.")
+            $0.italic("really")
+            $0.normal(" working.")
         }
 
-        // 9 - CTA
-        map[9] = styled {
-            $0.normal("Skip days. Change your mind. ")
-            $0.italic("The system adapts to how you actually live.")
-            $0.normal(" We'll help you set up a starter plan — you can change ")
-            $0.italic("everything")
-            $0.normal(" later.")
+        // 10 - Voice / AI assistant
+        map[10] = styled {
+            $0.normal("Swap a directive, add a note, or ")
+            $0.bold("ask what's working")
+            $0.normal(". The app knows your setup, so ")
+            $0.italic("one sentence is enough.")
+        }
+
+        // 11 - App's role (folder structure)
+        map[11] = styled {
+            $0.normal("Organize your thoughts and directives into ")
+            $0.bold("notes and modes")
+            $0.normal(" — ")
+            $0.italic("a structure that holds the thread so you don't have to.")
+        }
+
+        // 12 - Philosophy (not a rulebook)
+        map[12] = styled {
+            $0.bold("Don't worry about perfection")
+            $0.normal(" - otherwise you'll get burnt out trying to follow a bunch of ")
+            $0.italic("\"Rules.\"")
+            $0.normal(" You'll get as much out of this ")
+            $0.bold("as you put into it.")
+        }
+
+        // 13 - CTA
+        map[13] = styled {
+            $0.normal("We'll ask a few questions and build you a starter plan. Skip days, change your mind, swap anything — ")
+            $0.italic("it all adapts to how you actually live.")
         }
 
         return map
@@ -456,6 +551,14 @@ final class OnboardingStoryViewController: UIViewController {
             return OnboardingWeakPointsView()
         case .shortcomings:
             return OnboardingShortcomingsView()
+        case .counterWeakPoints:
+            return OnboardingCounterWeakPointsView()
+        case .directiveRefine:
+            return OnboardingDirectiveRefineView()
+        case .voiceAssistant:
+            return OnboardingVoiceAssistantView()
+        case .captureThoughts:
+            return OnboardingCaptureThoughtsView()
         case .systemEvolves:
             return OnboardingSystemEvolvesView()
         case .journal:
@@ -476,6 +579,8 @@ final class OnboardingStoryViewController: UIViewController {
             return OnboardingRelaxedView()
         case .hero:
             return OnboardingHeroView()
+        case .becomesNatural:
+            return OnboardingBecomesNaturalView()
         }
     }
 }

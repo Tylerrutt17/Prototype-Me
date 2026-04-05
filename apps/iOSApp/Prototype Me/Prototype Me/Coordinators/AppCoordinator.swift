@@ -132,6 +132,9 @@ class AppCoordinator: Coordinator {
         focusCoordinator.onFreshStartRequested = { [weak self] in
             self?.showWelcome()
         }
+        focusCoordinator.onAskAIForDirective = { [weak self] directiveId in
+            self?.askAIAboutDirective(directiveId: directiveId)
+        }
         notesCoordinator.onAskAIForDirective = { [weak self] directiveId in
             self?.askAIAboutDirective(directiveId: directiveId)
         }

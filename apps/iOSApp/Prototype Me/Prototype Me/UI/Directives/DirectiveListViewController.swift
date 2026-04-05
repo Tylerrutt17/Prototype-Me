@@ -278,7 +278,7 @@ class DirectiveListViewController: BaseViewController {
             deleteAction.image = UIImage(systemName: "trash")
 
             let askAction = UIContextualAction(style: .normal, title: "Not Working?") { [weak self] _, _, completion in
-                self?.onAskAIForDirective?(item.directive.id)
+                self?.confirmAskAI(directiveId: item.directive.id)
                 completion(true)
             }
             askAction.backgroundColor = DesignTokens.Colors.warning
@@ -300,6 +300,19 @@ class DirectiveListViewController: BaseViewController {
             )
             return section
         }
+    }
+
+    private func confirmAskAI(directiveId: UUID) {
+        let alert = UIAlertController(
+            title: "Ask AI for an alternative?",
+            message: "This opens the Speak tab and asks the AI to help figure out what's not working with this directive and suggest alternatives you could try.",
+            preferredStyle: .actionSheet
+        )
+        alert.addAction(UIAlertAction(title: "Ask AI", style: .default) { [weak self] _ in
+            self?.onAskAIForDirective?(directiveId)
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(alert, animated: true)
     }
 
     private func confirmDelete(directiveId: UUID) {
@@ -423,7 +436,7 @@ extension DirectiveListViewController: UICollectionViewDelegate {
                 title: "Not Working?",
                 image: UIImage(systemName: "lightbulb.slash")
             ) { _ in
-                self?.onAskAIForDirective?(item.directive.id)
+                self?.confirmAskAI(directiveId: item.directive.id)
             }
             let delete = UIAction(
                 title: "Delete",

@@ -75,6 +75,18 @@ extension SpeakViewController {
                 print("[Speak] Response text: \(response.message)")
 
                 await MainActor.run {
+                    // Branch: is this a binary confirmation request? If so, show
+                    // Yes/No buttons instead of treating it as an executable action.
+                    if let confirmCall = response.toolCalls.first(where: { $0.function == "ask_confirmation" }) {
+                        let question = (confirmCall.arguments["question"] as? String) ?? response.message
+                        self.messages.append(SpeakChatMessage(role: .assistant, text: question))
+                        self.showConfirmation(question: question)
+                        self.isProcessing = false
+                        self.updateControlsForProcessing()
+                        self.quotaLabel.text = "\(response.remainingQuota) AI left"
+                        return
+                    }
+
                     // Handle tool calls
                     if !response.toolCalls.isEmpty {
                         let pending = response.toolCalls.map {

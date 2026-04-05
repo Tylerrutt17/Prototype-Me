@@ -96,6 +96,10 @@ final class DayEntryEditorViewController: BaseViewController {
         return f
     }()
 
+    private let hintContainer = UIView()
+    private let hintIcon = UIImageView()
+    private let hintLabel = UILabel()
+
     // MARK: - State
 
     private var selectedRating: Int = 0       // 0 = no rating
@@ -143,7 +147,10 @@ final class DayEntryEditorViewController: BaseViewController {
 
         stackView.addArrangedSubview(dateRow)
         stackView.addArrangedSubview(ratingRow)
+        stackView.addArrangedSubview(hintContainer)
+        configureHintContainer()
         stackView.addArrangedSubview(journalField)
+        stackView.setCustomSpacing(DesignTokens.Spacing.md, after: hintContainer)
 
         let padding = DesignTokens.Spacing.lg
 
@@ -175,6 +182,7 @@ final class DayEntryEditorViewController: BaseViewController {
             }
             selectedRating = entry.rating ?? 0
             updateRatingButtons(animated: false)
+            updateRatingHint(animated: false)
             journalField.textView.text = entry.diary
             tagsField.textField.text = entry.tags.joined(separator: ", ")
         } catch {}
@@ -191,7 +199,93 @@ final class DayEntryEditorViewController: BaseViewController {
             selectedRating = tapped
         }
         updateRatingButtons(animated: true)
+        updateRatingHint(animated: true)
         Haptics.selection()
+    }
+
+    // MARK: - Hint
+
+    private func configureHintContainer() {
+        hintContainer.layer.cornerRadius = DesignTokens.Radii.md
+        hintContainer.clipsToBounds = true
+        hintContainer.isHidden = true
+
+        let iconConfig = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+        hintIcon.image = UIImage(systemName: "lightbulb.fill", withConfiguration: iconConfig)
+        hintIcon.contentMode = .scaleAspectFit
+        hintIcon.setContentHuggingPriority(.required, for: .horizontal)
+        hintIcon.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        hintLabel.font = DesignTokens.Typography.caption1
+        hintLabel.textColor = DesignTokens.Colors.textSecondary
+        hintLabel.numberOfLines = 0
+
+        let hintStack = UIStackView(arrangedSubviews: [hintIcon, hintLabel])
+        hintStack.axis = .horizontal
+        hintStack.alignment = .top
+        hintStack.spacing = DesignTokens.Spacing.sm
+        hintStack.translatesAutoresizingMaskIntoConstraints = false
+        hintContainer.addSubview(hintStack)
+
+        NSLayoutConstraint.activate([
+            hintStack.topAnchor.constraint(equalTo: hintContainer.topAnchor, constant: DesignTokens.Spacing.sm),
+            hintStack.bottomAnchor.constraint(equalTo: hintContainer.bottomAnchor, constant: -DesignTokens.Spacing.sm),
+            hintStack.leadingAnchor.constraint(equalTo: hintContainer.leadingAnchor, constant: DesignTokens.Spacing.md),
+            hintStack.trailingAnchor.constraint(equalTo: hintContainer.trailingAnchor, constant: -DesignTokens.Spacing.md),
+            hintIcon.widthAnchor.constraint(equalToConstant: 16),
+            hintIcon.heightAnchor.constraint(equalToConstant: 16),
+        ])
+    }
+
+    private func updateRatingHint(animated: Bool) {
+        let n = selectedRating
+
+        guard n > 0 else {
+            let wasVisible = !hintContainer.isHidden
+            if wasVisible && animated {
+                UIView.animate(withDuration: 0.2, animations: {
+                    self.hintContainer.alpha = 0
+                }, completion: { _ in
+                    self.hintContainer.isHidden = true
+                    self.hintContainer.alpha = 1
+                })
+            } else {
+                hintContainer.isHidden = true
+                hintContainer.alpha = 1
+            }
+            return
+        }
+
+        let text: String
+        switch n {
+        case 1...3:
+            text = "Note why it felt like a \(n). What went wrong or dragged you down? Those details are how patterns show up later."
+        case 4...6:
+            text = "Note why it felt like a \(n). What held it back from being better? Small details add up."
+        case 7...8:
+            text = "Note why it felt like a \(n). What worked? Capture it so you can repeat it."
+        default: // 9-10
+            text = "Note why it felt like a \(n). What clicked today? Lock it in."
+        }
+
+        let color = Self.ratingColor(for: n)
+        let wasHidden = hintContainer.isHidden
+
+        hintLabel.text = text
+        hintIcon.tintColor = color
+        hintContainer.backgroundColor = color.withAlphaComponent(0.12)
+
+        if wasHidden {
+            hintContainer.isHidden = false
+            hintContainer.alpha = 0
+            if animated {
+                UIView.animate(withDuration: 0.25) {
+                    self.hintContainer.alpha = 1
+                }
+            } else {
+                hintContainer.alpha = 1
+            }
+        }
     }
 
     private func updateRatingButtons(animated: Bool) {

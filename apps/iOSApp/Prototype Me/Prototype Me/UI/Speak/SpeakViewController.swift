@@ -86,6 +86,7 @@ class SpeakViewController: BaseViewController {
         super.viewDidLoad()
 
         setupBackgroundGlows()
+        startBackgroundGlowAnimations()
         setupQuota()
         setupVoiceInput()
         setupResponseArea()
@@ -106,6 +107,12 @@ class SpeakViewController: BaseViewController {
             view.bringSubviewToFront(proMicButton)
             view.bringSubviewToFront(proStatusLabel)
         }
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // CAAnimations get removed when the view leaves the hierarchy; re-add on return.
+        startBackgroundGlowAnimations()
     }
 
     override func viewDidLayoutSubviews() {
@@ -186,6 +193,19 @@ class SpeakViewController: BaseViewController {
         upgradeRow.isHidden = true
         upgradeRow.tag = 9001 // identify later for show/hide
         responseContentStack.addArrangedSubview(upgradeRow)
+
+        // Confirm (Yes/No) buttons — shown when the AI asks a binary question
+        let yesButton = Self.makeConfirmButton(title: "Yes", filled: true)
+        yesButton.addTarget(self, action: #selector(confirmYesTapped), for: .touchUpInside)
+        let noButton = Self.makeConfirmButton(title: "No", filled: false)
+        noButton.addTarget(self, action: #selector(confirmNoTapped), for: .touchUpInside)
+        let confirmRow = UIStackView(arrangedSubviews: [UIView(), yesButton, noButton, UIView()])
+        confirmRow.axis = .horizontal
+        confirmRow.alignment = .center
+        confirmRow.spacing = DesignTokens.Spacing.sm
+        confirmRow.isHidden = true
+        confirmRow.tag = 9002
+        responseContentStack.addArrangedSubview(confirmRow)
 
         // Thinking dots
         thinkingDotsView.isHidden = true
@@ -295,8 +315,9 @@ class SpeakViewController: BaseViewController {
         emptyStateView.isHidden = true
         emptyStateView.alpha = 0
 
-        // Hide upgrade row if it was showing
+        // Hide upgrade + confirm rows if they were showing
         responseContentStack.arrangedSubviews.first { $0.tag == 9001 }?.isHidden = true
+        responseContentStack.arrangedSubviews.first { $0.tag == 9002 }?.isHidden = true
 
         // Fade out current response
         UIView.animate(withDuration: 0.2) {
@@ -426,6 +447,57 @@ class SpeakViewController: BaseViewController {
 
     @objc private func upgradeTapped() {
         onUpgradeTapped?()
+    }
+
+    // MARK: - Confirmation Buttons
+
+    static func makeConfirmButton(title: String, filled: Bool) -> UIButton {
+        let button = UIButton(type: .system)
+        var config: UIButton.Configuration = filled ? .filled() : .tinted()
+        config.title = title
+        config.baseBackgroundColor = filled ? DesignTokens.Colors.accent : DesignTokens.Colors.surfaceSecondary
+        config.baseForegroundColor = filled ? .white : DesignTokens.Colors.textPrimary
+        config.cornerStyle = .capsule
+        config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 28, bottom: 10, trailing: 28)
+        config.titleTextAttributesTransformer = .init { c in
+            var c = c; c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold); return c
+        }
+        button.configuration = config
+        return button
+    }
+
+    /// Displays the question in the response area and shows Yes/No buttons.
+    func showConfirmation(question: String) {
+        showResponse(text: question)
+        // Show the confirm row (tag 9002) with a fade
+        guard let confirmRow = responseContentStack.arrangedSubviews.first(where: { $0.tag == 9002 }) else { return }
+        confirmRow.isHidden = false
+        confirmRow.alpha = 0
+        confirmRow.transform = CGAffineTransform(translationX: 0, y: 8)
+        UIView.animate(
+            withDuration: 0.35,
+            delay: 0.15,
+            usingSpringWithDamping: 0.85,
+            initialSpringVelocity: 0,
+            options: []
+        ) {
+            confirmRow.alpha = 1
+            confirmRow.transform = .identity
+        }
+    }
+
+    private func hideConfirmationRow() {
+        responseContentStack.arrangedSubviews.first { $0.tag == 9002 }?.isHidden = true
+    }
+
+    @objc private func confirmYesTapped() {
+        hideConfirmationRow()
+        sendMessage("yes")
+    }
+
+    @objc private func confirmNoTapped() {
+        hideConfirmationRow()
+        sendMessage("no")
     }
 
     // MARK: - Markdown Rendering
@@ -621,9 +693,62 @@ class SpeakViewController: BaseViewController {
             .systemPurple,               // bottom-right
         ]
         for color in colors {
-            let glow = Self.makeCornerGlow(color: color, intensity: 0.55)
+            let glow = Self.makeCornerGlow(color: color, intensity: 0.8)
             view.layer.insertSublayer(glow, at: 0)
             backgroundGlows.append(glow)
+        }
+
+        // Restart animations on app-foreground (backgrounding removes them)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleAppDidBecomeActive() {
+        startBackgroundGlowAnimations()
+    }
+
+    /// Adds drift animations to each glow. Safe to call multiple times —
+    /// layer.add(_:forKey:) replaces any existing animation under that key.
+    /// Called from viewDidLoad, viewWillAppear, and didBecomeActive notification.
+    func startBackgroundGlowAnimations() {
+        guard backgroundGlows.count == 4 else { return }
+
+        // Per-glow drift distances + durations for uncorrelated motion
+        let xDistances: [CGFloat] = [220, -200, 230, -210]
+        let yDistances: [CGFloat] = [-180, 210, -170, 220]
+        let xDurations: [CFTimeInterval] = [5.5, 6.5, 6.0, 7.0]
+        let yDurations: [CFTimeInterval] = [7.5, 6.0, 7.0, 6.5]
+
+        // Phase-shift each animation into the middle of its cycle (set beginTime
+        // in the past) so motion is immediately visible — no slow ramp from rest.
+        let now = CACurrentMediaTime()
+        for (index, glow) in backgroundGlows.enumerated() {
+            let xPhaseShift = 2.0 + Double(index) * 1.5  // seconds into the cycle
+            let yPhaseShift = 3.0 + Double(index) * 1.2
+
+            let xAnim = CABasicAnimation(keyPath: "transform.translation.x")
+            xAnim.fromValue = 0
+            xAnim.toValue = xDistances[index]
+            xAnim.duration = xDurations[index]
+            xAnim.autoreverses = true
+            xAnim.repeatCount = .infinity
+            xAnim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            xAnim.beginTime = now - xPhaseShift
+            glow.add(xAnim, forKey: "driftX")
+
+            let yAnim = CABasicAnimation(keyPath: "transform.translation.y")
+            yAnim.fromValue = 0
+            yAnim.toValue = yDistances[index]
+            yAnim.duration = yDurations[index]
+            yAnim.autoreverses = true
+            yAnim.repeatCount = .infinity
+            yAnim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            yAnim.beginTime = now - yPhaseShift
+            glow.add(yAnim, forKey: "driftY")
         }
     }
 

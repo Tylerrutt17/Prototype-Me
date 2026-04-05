@@ -24,6 +24,25 @@ nonisolated struct NotePage: Identifiable, Hashable, Sendable, Codable, Fetchabl
     static let noteDirectives = hasMany(NoteDirective.self)
     static let directives = hasMany(Directive.self, through: noteDirectives, using: NoteDirective.directive)
     static let activeMode = hasOne(ActiveMode.self, using: ForeignKey(["noteId"]))
+
+    // MARK: - Codable (custom — encode Optionals as null so sync patches clear fields)
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, body, kind, folderId, sortIndex, version, createdAt, updatedAt
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(title, forKey: .title)
+        try c.encode(body, forKey: .body)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(folderId, forKey: .folderId)
+        try c.encode(sortIndex, forKey: .sortIndex)
+        try c.encode(version, forKey: .version)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(updatedAt, forKey: .updatedAt)
+    }
 }
 
 // MARK: - ActiveMode
@@ -49,6 +68,7 @@ nonisolated struct Directive: Identifiable, Hashable, Sendable, Codable, Fetchab
     let id: UUID
     var title: String
     var body: String?             // Optional longer description
+    var color: String?            // User-chosen hex color, e.g. "#FF6B6B"
     var status: DirectiveStatus
     var balloonEnabled: Bool
     var balloonDurationSec: TimeInterval   // Original duration in seconds
@@ -83,6 +103,29 @@ nonisolated struct Directive: Identifiable, Hashable, Sendable, Codable, Fetchab
     static let notes = hasMany(NotePage.self, through: noteDirectives, using: NoteDirective.note)
     static let scheduleRules = hasMany(ScheduleRule.self)
     static let history = hasMany(DirectiveHistory.self)
+
+    // MARK: - Codable (custom — encode Optionals as null instead of omitting, so
+    // sync patches properly clear fields like `body` and `snoozedUntil`)
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, body, color, status, balloonEnabled, balloonDurationSec, balloonSnapshotSec, snoozedUntil, version, createdAt, updatedAt
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(title, forKey: .title)
+        try c.encode(body, forKey: .body)
+        try c.encode(color, forKey: .color)
+        try c.encode(status, forKey: .status)
+        try c.encode(balloonEnabled, forKey: .balloonEnabled)
+        try c.encode(balloonDurationSec, forKey: .balloonDurationSec)
+        try c.encode(balloonSnapshotSec, forKey: .balloonSnapshotSec)
+        try c.encode(snoozedUntil, forKey: .snoozedUntil)
+        try c.encode(version, forKey: .version)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(updatedAt, forKey: .updatedAt)
+    }
 }
 
 // MARK: - NoteDirective (join)
@@ -129,6 +172,23 @@ nonisolated struct Folder: Identifiable, Hashable, Sendable, Codable, FetchableR
     static let notes = hasMany(NotePage.self, using: ForeignKey(["folderId"]))
     static let subfolders = hasMany(Folder.self, using: ForeignKey(["parentFolderId"]))
     static let parentFolder = belongsTo(Folder.self, using: ForeignKey(["parentFolderId"]))
+
+    // MARK: - Codable (custom — encode Optionals as null so sync patches clear fields)
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, parentFolderId, sortIndex, version, createdAt, updatedAt
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(parentFolderId, forKey: .parentFolderId)
+        try c.encode(sortIndex, forKey: .sortIndex)
+        try c.encode(version, forKey: .version)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(updatedAt, forKey: .updatedAt)
+    }
 }
 
 // MARK: - DayEntry
@@ -189,6 +249,24 @@ nonisolated struct DayEntry: Identifiable, Hashable, Sendable, Codable, Fetchabl
         } else {
             container["tagsJSON"] = "[]"
         }
+    }
+
+    // MARK: - Codable (custom — encode `rating` as null when nil so sync patches clear it)
+
+    private enum CodingKeys: String, CodingKey {
+        case id, date, rating, diary, tags, version, createdAt, updatedAt
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(date, forKey: .date)
+        try c.encode(rating, forKey: .rating)
+        try c.encode(diary, forKey: .diary)
+        try c.encode(tags, forKey: .tags)
+        try c.encode(version, forKey: .version)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(updatedAt, forKey: .updatedAt)
     }
 }
 
@@ -256,6 +334,25 @@ nonisolated struct ScheduleRule: Identifiable, Hashable, Sendable, Codable, Fetc
         }
     }
 
+    // MARK: - Codable (custom — use encode not encodeIfPresent for Optionals so
+    // the server gets explicit nulls for cleared fields like lastCompletedDate)
+
+    private enum CodingKeys: String, CodingKey {
+        case id, directiveId, ruleType, params, version, createdAt, updatedAt, lastCompletedDate
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(directiveId, forKey: .directiveId)
+        try c.encode(ruleType, forKey: .ruleType)
+        try c.encode(params, forKey: .params)
+        try c.encode(version, forKey: .version)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(updatedAt, forKey: .updatedAt)
+        try c.encode(lastCompletedDate, forKey: .lastCompletedDate)
+    }
+
     // MARK: - Today Matching
 
     /// Returns true if this rule applies to today's date.
@@ -294,6 +391,20 @@ nonisolated struct Tag: Identifiable, Hashable, Sendable, Codable, FetchableReco
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (lhs: Tag, rhs: Tag) -> Bool { lhs.id == rhs.id }
+
+    // MARK: - Codable (custom — encode `color` as null when nil so sync patches clear it)
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, color, version
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(color, forKey: .color)
+        try c.encode(version, forKey: .version)
+    }
 }
 
 // MARK: - DirectiveHistory

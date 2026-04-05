@@ -1,15 +1,13 @@
 import UIKit
 
-/// Shows a Framework note and two Mode notes with directives inside.
+/// Shows two Mode notes with directives inside.
 /// Each directive gets highlighted, scales up like a magnifying glass,
 /// shows a thought bubble ("that didn't work", "let's try this"), then
 /// strikethrough + replacement. Making the evolution impossible to miss.
 final class OnboardingSystemEvolvesView: UIView, StoryAnimatable {
 
     private let headerLabel = UILabel()
-    private let frameworkCard = UIView()
     private let modeStack = UIStackView()
-    private var frameworkDirectives: [UILabel] = []
     private var mode1Directives: [UILabel] = []
     private var mode2Directives: [UILabel] = []
     private let highlightOverlay = UIView()
@@ -56,44 +54,10 @@ final class OnboardingSystemEvolvesView: UIView, StoryAnimatable {
             mainStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -DesignTokens.Spacing.lg),
         ])
 
-        // Framework card
-        let fwColor = NoteKind.framework.color
-        buildNoteCard(
-            frameworkCard,
-            icon: "star.fill",
-            title: "My Framework",
-            color: fwColor,
-            directives: ["Try to wake up earlier", "Don't be negative", "Be more social"],
-            directiveLabels: &frameworkDirectives
-        )
-        mainStack.addArrangedSubview(frameworkCard)
-
-        // Situational Modes section header
-        let modesHeaderRow = UIStackView()
-        modesHeaderRow.axis = .horizontal
-        modesHeaderRow.spacing = DesignTokens.Spacing.xs
-        modesHeaderRow.alignment = .center
-
-        let modeIconConfig = UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
-        let modeIconView = UIImageView(image: UIImage(systemName: "bolt.fill", withConfiguration: modeIconConfig))
-        modeIconView.tintColor = NoteKind.mode.color
-        modeIconView.contentMode = .scaleAspectFit
-        modeIconView.setContentHuggingPriority(.required, for: .horizontal)
-
-        let modesSectionLabel = UILabel()
-        modesSectionLabel.text = "SITUATIONAL MODES"
-        modesSectionLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .bold)
-        modesSectionLabel.textColor = NoteKind.mode.color
-
-        modesHeaderRow.addArrangedSubview(modeIconView)
-        modesHeaderRow.addArrangedSubview(modesSectionLabel)
-        modesHeaderRow.addArrangedSubview(UIView())
-        mainStack.addArrangedSubview(modesHeaderRow)
-
-        // Modes row
-        modeStack.axis = .horizontal
+        // Modes stack (vertical — each card full-width so the animation reads bigger)
+        modeStack.axis = .vertical
         modeStack.spacing = DesignTokens.Spacing.sm
-        modeStack.distribution = .fillEqually
+        modeStack.distribution = .fill
         mainStack.addArrangedSubview(modeStack)
 
         let modeColor = NoteKind.mode.color
@@ -102,9 +66,10 @@ final class OnboardingSystemEvolvesView: UIView, StoryAnimatable {
         buildNoteCard(
             mode1,
             icon: "bolt.fill",
-            title: "Computer Work",
+            title: "Computer Work - MODE",
+            note: "Eyes burning, back sore by afternoon",
             color: modeColor,
-            directives: ["Take more breaks", "Try to move more"],
+            directives: ["Rest my eyes more", "Stretch when I can"],
             directiveLabels: &mode1Directives
         )
         modeStack.addArrangedSubview(mode1)
@@ -113,9 +78,10 @@ final class OnboardingSystemEvolvesView: UIView, StoryAnimatable {
         buildNoteCard(
             mode2,
             icon: "bolt.fill",
-            title: "Exhausted / Rebound",
+            title: "Winding Down - MODE",
+            note: "Can't switch off, scrolling till late",
             color: modeColor,
-            directives: ["Just relax", "Think about something else"],
+            directives: ["Try to relax", "Put my phone down"],
             directiveLabels: &mode2Directives
         )
         modeStack.addArrangedSubview(mode2)
@@ -147,8 +113,6 @@ final class OnboardingSystemEvolvesView: UIView, StoryAnimatable {
         ])
 
         // Start hidden
-        frameworkCard.alpha = 0
-        frameworkCard.transform = CGAffineTransform(translationX: 0, y: 10)
         mode1.alpha = 0
         mode1.transform = CGAffineTransform(translationX: 0, y: 10)
         mode2.alpha = 0
@@ -159,6 +123,7 @@ final class OnboardingSystemEvolvesView: UIView, StoryAnimatable {
         _ card: UIView,
         icon: String,
         title: String,
+        note: String? = nil,
         color: UIColor,
         directives: [String],
         directiveLabels: inout [UILabel]
@@ -195,6 +160,19 @@ final class OnboardingSystemEvolvesView: UIView, StoryAnimatable {
         headerRow.spacing = DesignTokens.Spacing.xs
         headerRow.alignment = .center
 
+        // Collect sections for the card stack
+        var cardSubviews: [UIView] = [headerRow]
+
+        // Optional note — labels the issues this mode tries to fix, so the directives' job is obvious
+        if let note = note {
+            let noteLabel = UILabel()
+            noteLabel.text = "Reason — \(note)"
+            noteLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .regular)
+            noteLabel.textColor = DesignTokens.Colors.textTertiary
+            noteLabel.numberOfLines = 0
+            cardSubviews.append(noteLabel)
+        }
+
         // Directives
         let dirStack = UIStackView()
         dirStack.axis = .vertical
@@ -208,8 +186,9 @@ final class OnboardingSystemEvolvesView: UIView, StoryAnimatable {
             dirStack.addArrangedSubview(label)
             directiveLabels.append(label)
         }
+        cardSubviews.append(dirStack)
 
-        let cardStack = UIStackView(arrangedSubviews: [headerRow, dirStack])
+        let cardStack = UIStackView(arrangedSubviews: cardSubviews)
         cardStack.axis = .vertical
         cardStack.spacing = DesignTokens.Spacing.sm
         cardStack.translatesAutoresizingMaskIntoConstraints = false
@@ -238,7 +217,6 @@ final class OnboardingSystemEvolvesView: UIView, StoryAnimatable {
 
         guard !UIAccessibility.isReduceMotionEnabled else {
             headerLabel.alpha = 1
-            frameworkCard.alpha = 1; frameworkCard.transform = .identity
             for v in modeStack.arrangedSubviews { v.alpha = 1; v.transform = .identity }
             return
         }
@@ -249,12 +227,8 @@ final class OnboardingSystemEvolvesView: UIView, StoryAnimatable {
         }
 
         // Cards appear
-        UIView.animate(withDuration: 0.5, delay: 0.15, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.3) {
-            self.frameworkCard.alpha = 1
-            self.frameworkCard.transform = .identity
-        }
         for (i, v) in modeStack.arrangedSubviews.enumerated() {
-            UIView.animate(withDuration: 0.5, delay: 0.35 + Double(i) * 0.12, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.3) {
+            UIView.animate(withDuration: 0.5, delay: 0.15 + Double(i) * 0.12, usingSpringWithDamping: 0.8, initialSpringVelocity: 0.3) {
                 v.alpha = 1
                 v.transform = .identity
             }
@@ -270,20 +244,14 @@ final class OnboardingSystemEvolvesView: UIView, StoryAnimatable {
         guard !isStopped, cycleID == cycle else { return }
 
         let changes: [(labels: [UILabel], index: Int, newText: String, strikeComment: String, replaceComment: String)] = [
-            (frameworkDirectives, 0, "Cold shower every morning",
-             "\"try to wake up earlier\" — I never did", "cold shower forces it, no choice"),
-            (mode1Directives, 0, "20-20-20 rule for eyes",
-             "\"take more breaks\" — too easy to skip", "20-20-20 is specific and timed"),
-            (frameworkDirectives, 1, "Only think positively about yourself",
-             "\"don't be negative\" didn't change anything", "actively choosing positive self-talk"),
-            (mode2Directives, 0, "NSDR for 10 min",
-             "\"just relax\" — yeah right", "NSDR actually resets me"),
-            (frameworkDirectives, 2, "Make someone laugh daily",
-             "\"be more social\" is useless advice", "humor connects people instantly"),
-            (mode1Directives, 1, "10 pushups every 45 min",
-             "\"try to move more\" — never happened", "10 pushups, no excuses"),
-            (mode2Directives, 1, "Find humor in whatever I'm doing",
-             "\"think about something else\" led to scrolling", "humor snaps me out of it faster"),
+            (mode1Directives, 0, "20-20-20 every 30 min",
+             "\"rest my eyes more\" — too vague to actually do", "20-20-20 is specific and timed"),
+            (mode2Directives, 0, "Read 10 pages before bed",
+             "\"try to relax\" — never knew what that meant", "a book actually settles my brain"),
+            (mode1Directives, 1, "Stand up and stretch every 45 min",
+             "\"stretch when I can\" — only when I remembered", "every 45 min, no guessing"),
+            (mode2Directives, 1, "Phone in another room after 9pm",
+             "\"put my phone down\" — picked it right back up", "phone out of reach, no choice"),
         ]
 
         let currentStep = step % changes.count
@@ -462,10 +430,9 @@ final class OnboardingSystemEvolvesView: UIView, StoryAnimatable {
         thoughtBubble.alpha = 0
         underlineSweep.alpha = 0
         underlineSweep.layer.removeAllAnimations()
-        frameworkCard.layer.removeAllAnimations()
         for v in modeStack.arrangedSubviews { v.layer.removeAllAnimations() }
         // Reset any scaled labels
-        for label in frameworkDirectives + mode1Directives + mode2Directives {
+        for label in mode1Directives + mode2Directives {
             label.transform = .identity
         }
     }

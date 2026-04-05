@@ -20,6 +20,8 @@ final class NoteEditorViewController: BaseViewController {
     var enteredBody = ""
 
     var isCreateMode: Bool { noteId == nil }
+    /// When editing an existing framework note, the type can't be changed (there can only be one framework per account).
+    var isFrameworkEdit: Bool { !isCreateMode && selectedKind == .framework }
     var currentStep = 0
     let stepLabels = ["Content", "Type"]
     var kindPageDebounce: Timer?
@@ -36,11 +38,12 @@ final class NoteEditorViewController: BaseViewController {
         super.viewDidLoad()
         selectedFolderId = preselectedFolderId
 
-        navBar.setTitle(isCreateMode ? "New Note" : "Edit Note", animated: false)
+        navBar.setTitle(isCreateMode ? "New Note or Mode" : "Edit Note", animated: false)
         navBar.setLeftButton(title: "Cancel", systemImage: nil, action: { [weak self] in self?.dismiss(animated: true) })
 
         setupLayout()
         if !isCreateMode { loadExistingNote() }
+        if isFrameworkEdit { stepIndicator.isHidden = true }
         showStep(0, animated: false)
         observeKeyboard()
     }
@@ -93,9 +96,11 @@ final class NoteEditorViewController: BaseViewController {
             })
         }
 
-        // Right nav button: Next on step 0, nothing on step 1 (has its own Save button)
+        // Right nav button: Next on step 0, nothing on step 1 (has its own Save button).
+        // Framework edit is single-step: Save directly from step 0.
         if step == 0 {
-            navBar.setRightButtons([NavBarButton(title: "Next", action: { [weak self] in self?.step1Next() })])
+            let title = isFrameworkEdit ? "Save" : "Next"
+            navBar.setRightButtons([NavBarButton(title: title, action: { [weak self] in self?.step1Next() })])
         } else {
             navBar.setRightButtons([])
         }
@@ -154,6 +159,11 @@ final class NoteEditorViewController: BaseViewController {
             return
         }
         view.endEditing(true)
+        // Framework notes can't change type — save directly from step 0.
+        if isFrameworkEdit {
+            saveNote()
+            return
+        }
         showStep(1, animated: true)
     }
 

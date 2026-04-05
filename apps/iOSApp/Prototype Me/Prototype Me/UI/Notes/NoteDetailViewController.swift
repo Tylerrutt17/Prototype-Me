@@ -93,7 +93,7 @@ class NoteDetailViewController: BaseViewController {
                     unlink.image = UIImage(systemName: "link.badge.minus")
 
                     let askAI = UIContextualAction(style: .normal, title: "Not Working?") { [weak self] _, _, completion in
-                        self?.onAskAIForDirective?(data.directive.id)
+                        self?.confirmAskAI(directiveId: data.directive.id)
                         completion(true)
                     }
                     askAI.backgroundColor = DesignTokens.Colors.warning
@@ -123,6 +123,19 @@ class NoteDetailViewController: BaseViewController {
                 return layoutSection
             }
         }
+    }
+
+    private func confirmAskAI(directiveId: UUID) {
+        let alert = UIAlertController(
+            title: "Ask AI for an alternative?",
+            message: "This opens the Speak tab and asks the AI to help figure out what's not working with this directive and suggest alternatives you could try.",
+            preferredStyle: .actionSheet
+        )
+        alert.addAction(UIAlertAction(title: "Ask AI", style: .default) { [weak self] _ in
+            self?.onAskAIForDirective?(directiveId)
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(alert, animated: true)
     }
 
     private func confirmUnlink(directiveId: UUID) {
@@ -293,7 +306,7 @@ extension NoteDetailViewController: UICollectionViewDelegate {
                 title: "Not Working?",
                 image: UIImage(systemName: "lightbulb.slash")
             ) { _ in
-                self?.onAskAIForDirective?(data.directive.id)
+                self?.confirmAskAI(directiveId: data.directive.id)
             }
             let unlink = UIAction(
                 title: "Unlink from Note",
@@ -338,7 +351,13 @@ extension NoteDetailViewController: UICollectionViewDropDelegate {
         guard let sourceIndex = sectionItems.firstIndex(of: sourceRow) else { return }
 
         sectionItems.remove(at: sourceIndex)
-        let destIndex = min(destinationIndexPath.item, sectionItems.count)
+        // Keep the link button pinned at the end — never allow a directive past it
+        let linkButtonIndex = sectionItems.firstIndex {
+            if case .linkButton = $0 { return true }
+            return false
+        }
+        let maxIndex = linkButtonIndex ?? sectionItems.count
+        let destIndex = min(destinationIndexPath.item, maxIndex)
         sectionItems.insert(sourceRow, at: destIndex)
 
         snapshot.deleteItems(snapshot.itemIdentifiers(inSection: section))

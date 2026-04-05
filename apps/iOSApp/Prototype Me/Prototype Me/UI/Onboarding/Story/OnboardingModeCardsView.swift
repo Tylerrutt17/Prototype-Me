@@ -182,23 +182,25 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
         card.layer.borderWidth = 1
         card.layer.borderColor = DesignTokens.Colors.separator.cgColor
 
-        let accentBar = UIView()
-        accentBar.backgroundColor = color
-        accentBar.layer.cornerRadius = 1.5
-        accentBar.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(accentBar)
-
-        let iconConfig = UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-        let icon = UIImageView(image: UIImage(systemName: "arrow.right.circle.fill", withConfiguration: iconConfig))
-        icon.tintColor = color
-        icon.contentMode = .scaleAspectFit
+        let dot = UIView()
+        dot.backgroundColor = color
+        dot.layer.cornerRadius = 5
+        dot.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(dot)
 
         let label = UILabel()
         label.text = title
         label.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
         label.textColor = DesignTokens.Colors.textPrimary
+        label.numberOfLines = 1
 
-        let row = UIStackView(arrangedSubviews: [icon, label, UIView()])
+        let chevronConfig = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+        let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: chevronConfig))
+        chevron.tintColor = DesignTokens.Colors.textTertiary
+        chevron.contentMode = .scaleAspectFit
+        chevron.setContentHuggingPriority(.required, for: .horizontal)
+
+        let row = UIStackView(arrangedSubviews: [label, UIView(), chevron])
         row.axis = .horizontal
         row.spacing = DesignTokens.Spacing.sm
         row.alignment = .center
@@ -207,14 +209,14 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
 
         let pad = DesignTokens.Spacing.md
         NSLayoutConstraint.activate([
-            accentBar.leadingAnchor.constraint(equalTo: card.leadingAnchor),
-            accentBar.topAnchor.constraint(equalTo: card.topAnchor, constant: DesignTokens.Spacing.sm),
-            accentBar.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -DesignTokens.Spacing.sm),
-            accentBar.widthAnchor.constraint(equalToConstant: 3),
+            dot.widthAnchor.constraint(equalToConstant: 10),
+            dot.heightAnchor.constraint(equalToConstant: 10),
+            dot.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
+            dot.centerYAnchor.constraint(equalTo: card.centerYAnchor),
 
             row.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
             row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -pad),
-            row.leadingAnchor.constraint(equalTo: accentBar.trailingAnchor, constant: DesignTokens.Spacing.sm),
+            row.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: DesignTokens.Spacing.sm),
             row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
         ])
 

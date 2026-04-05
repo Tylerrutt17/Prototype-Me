@@ -224,6 +224,12 @@ final class DatabaseManager: Sendable {
             try db.execute(sql: "DELETE FROM periodicReview")
         }
 
+        migrator.registerMigration("v11_directiveColor") { db in
+            try db.alter(table: "directive") { t in
+                t.add(column: "color", .text)  // user-chosen hex color, nullable
+            }
+        }
+
         try migrator.migrate(dbQueue)
     }
 }
