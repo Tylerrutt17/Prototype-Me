@@ -122,6 +122,16 @@ class SpeakCoordinator: Coordinator {
         navigationController.present(nav, animated: true)
     }
 
+    private var speakVC: SpeakViewController? {
+        navigationController.viewControllers.first as? SpeakViewController
+    }
+
+    private func dismissAndMarkApplied() {
+        navigationController.dismiss(animated: true) { [weak self] in
+            self?.speakVC?.markSuggestionApplied()
+        }
+    }
+
     private func presentDirectiveEditorWithSuggestion(title: String, body: String?) {
         let editor = DirectiveEditorViewController()
         editor.dbQueue = environment.db.dbQueue
@@ -130,9 +140,7 @@ class SpeakCoordinator: Coordinator {
         editor.apiClient = environment.apiClient
         editor.prefillTitle = title
         editor.prefillBody = body
-        editor.onSave = { [weak self] in
-            self?.navigationController.dismiss(animated: true)
-        }
+        editor.onSave = { [weak self] in self?.dismissAndMarkApplied() }
         let nav = UINavigationController(rootViewController: editor)
         navigationController.present(nav, animated: true)
     }
@@ -143,9 +151,7 @@ class SpeakCoordinator: Coordinator {
         editor.noteService = environment.noteService
         editor.prefillTitle = title
         editor.prefillBody = body
-        editor.onSave = { [weak self] in
-            self?.navigationController.dismiss(animated: true)
-        }
+        editor.onSave = { [weak self] in self?.dismissAndMarkApplied() }
         let nav = UINavigationController(rootViewController: editor)
         navigationController.present(nav, animated: true)
     }
@@ -157,9 +163,7 @@ class SpeakCoordinator: Coordinator {
         editor.noteId = id
         editor.prefillTitle = title
         editor.prefillBody = body
-        editor.onSave = { [weak self] in
-            self?.navigationController.dismiss(animated: true)
-        }
+        editor.onSave = { [weak self] in self?.dismissAndMarkApplied() }
         let nav = UINavigationController(rootViewController: editor)
         navigationController.present(nav, animated: true)
     }
@@ -172,15 +176,12 @@ class SpeakCoordinator: Coordinator {
         editor.prefillRating = rating
         editor.prefillDiary = diary
         editor.prefillTags = tags
-        // Check if entry already exists for this date — if so, load it for editing
         Task {
             if let existing = try? await environment.dayEntryService.fetch(date: date) {
                 await MainActor.run { editor.entryId = existing.id }
             }
             await MainActor.run {
-                editor.onSave = { [weak self] in
-                    self?.navigationController.dismiss(animated: true)
-                }
+                editor.onSave = { [weak self] in self?.dismissAndMarkApplied() }
                 let nav = UINavigationController(rootViewController: editor)
                 self.navigationController.present(nav, animated: true)
             }
@@ -196,9 +197,7 @@ class SpeakCoordinator: Coordinator {
         editor.directiveId = id
         editor.prefillTitle = title
         editor.prefillBody = body
-        editor.onSave = { [weak self] in
-            self?.navigationController.dismiss(animated: true)
-        }
+        editor.onSave = { [weak self] in self?.dismissAndMarkApplied() }
         let nav = UINavigationController(rootViewController: editor)
         navigationController.present(nav, animated: true)
     }

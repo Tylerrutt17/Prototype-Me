@@ -393,6 +393,8 @@ class SpeakViewController: BaseViewController {
     }
 
     private var currentSuggestions: [AISuggestion] = []
+    private var appliedSuggestionIndices: Set<Int> = []
+    private(set) var lastOpenedSuggestionIndex: Int?
 
     func showSuggestions(_ suggestions: [AISuggestion]) {
         currentSuggestions = suggestions
@@ -433,14 +435,17 @@ class SpeakViewController: BaseViewController {
             stack.axis = .vertical
             stack.spacing = DesignTokens.Spacing.xs
 
-            // Badge: "Unapplied changes — tap to review" for edits, subtitle for creates
+            // Badge: tells the user this isn't saved yet
+            let badgeLabel = UILabel()
+            badgeLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .medium)
             if suggestion.isUpdate {
-                let badgeLabel = UILabel()
                 badgeLabel.text = "Unapplied changes \u{2014} tap to review"
-                badgeLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .medium)
                 badgeLabel.textColor = DesignTokens.Colors.warning
-                stack.addArrangedSubview(badgeLabel)
+            } else {
+                badgeLabel.text = "Tap to review and add"
+                badgeLabel.textColor = DesignTokens.Colors.textTertiary
             }
+            stack.addArrangedSubview(badgeLabel)
 
             if let subtitle = suggestion.subtitle, !subtitle.isEmpty {
                 let bodyLabel = UILabel()
@@ -484,12 +489,68 @@ class SpeakViewController: BaseViewController {
         suggestionsStack.isHidden = true
         suggestionsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         currentSuggestions = []
+        appliedSuggestionIndices = []
+        lastOpenedSuggestionIndex = nil
+    }
+
+    /// Called by the coordinator when the user saves from an editor opened via suggestion card.
+    func markSuggestionApplied() {
+        guard let index = lastOpenedSuggestionIndex,
+              index < suggestionsStack.arrangedSubviews.count else { return }
+
+        appliedSuggestionIndices.insert(index)
+        let card = suggestionsStack.arrangedSubviews[index]
+
+        UIView.animate(withDuration: 0.3) {
+            card.backgroundColor = DesignTokens.Colors.accentSecondary.withAlphaComponent(0.1)
+            card.layer.borderColor = DesignTokens.Colors.accentSecondary.withAlphaComponent(0.4).cgColor
+        }
+
+        // Replace card content with applied state
+        for sub in card.subviews { sub.removeFromSuperview() }
+
+        let checkIcon = UIImageView(image: UIImage(systemName: "checkmark.circle.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)))
+        checkIcon.tintColor = DesignTokens.Colors.accentSecondary
+
+        let titleLabel = UILabel()
+        titleLabel.text = currentSuggestions[index].title
+        titleLabel.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
+        titleLabel.textColor = DesignTokens.Colors.textPrimary
+
+        let appliedLabel = UILabel()
+        appliedLabel.text = currentSuggestions[index].isUpdate ? "Changes applied" : "Added"
+        appliedLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .medium)
+        appliedLabel.textColor = DesignTokens.Colors.accentSecondary
+
+        let textStack = UIStackView(arrangedSubviews: [titleLabel, appliedLabel])
+        textStack.axis = .vertical
+        textStack.spacing = 2
+
+        let row = UIStackView(arrangedSubviews: [checkIcon, textStack])
+        row.axis = .horizontal
+        row.spacing = DesignTokens.Spacing.sm
+        row.alignment = .center
+        row.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(row)
+
+        let pad = DesignTokens.Spacing.md
+        NSLayoutConstraint.activate([
+            row.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
+            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -pad),
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
+        ])
+
+        Haptics.success()
     }
 
     @objc private func suggestionCardTapped(_ gesture: UITapGestureRecognizer) {
         guard let view = gesture.view, view.tag < currentSuggestions.count else { return }
+        // Don't reopen already-applied suggestions
+        guard !appliedSuggestionIndices.contains(view.tag) else { return }
         let suggestion = currentSuggestions[view.tag]
         let args = suggestion.toolCall.arguments
+        lastOpenedSuggestionIndex = view.tag
         Haptics.light()
 
         switch suggestion.toolCall.function {
