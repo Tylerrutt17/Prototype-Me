@@ -2,6 +2,10 @@ import Foundation
 import UIKit
 import GRDB
 
+extension Notification.Name {
+    static let syncDidComplete = Notification.Name("syncDidComplete")
+}
+
 /// Orchestrates push/pull sync between the local GRDB database and the remote API.
 /// Push first (maximize data safety), then pull.
 final class SyncEngine: @unchecked Sendable {
@@ -20,9 +24,20 @@ final class SyncEngine: @unchecked Sendable {
     private var lastError: Error?
 
     private static let pullPageSize = 200
-    private static let maxRetryAttempts = 5
-    private static let maxBackoffSeconds: Double = 30
     private static let pushDebounceInterval: TimeInterval = 2.0
+
+    /// Exponential backoff (seconds) for retrying a failed outbox op, keyed by attemptCount.
+    /// 1 → 30s, 2 → 2m, 3 → 10m, 4 → 30m, 5 → 2h, 6+ → 6h (capped).
+    private static func backoffSeconds(for attemptCount: Int) -> TimeInterval {
+        switch attemptCount {
+        case ..<2:  return 30
+        case 2:     return 120
+        case 3:     return 600
+        case 4:     return 1800
+        case 5:     return 7200
+        default:    return 21600
+        }
+    }
 
     private var debounceWorkItem: DispatchWorkItem?
     private let debounceQueue = DispatchQueue(label: "com.prototypeme.sync.debounce")
@@ -39,6 +54,13 @@ final class SyncEngine: @unchecked Sendable {
 
         // Initialize sync state if not present
         initializeSyncState()
+
+        // If sync is off, clear dead-weight tables (tombstones + outbox ops).
+        // They serve no purpose without sync and would accumulate forever.
+        // If the user later enables sync, seedFullPush() re-enqueues everything.
+        if !Self.isSyncEnabled {
+            clearSyncArtifacts()
+        }
 
         // Auto-sync when connectivity returns
         reachability.observe { [weak self] status in
@@ -91,10 +113,18 @@ final class SyncEngine: @unchecked Sendable {
     func sync() async throws {
         guard Self.isSyncEnabled else { return }
         guard reachability.isConnected else { return }
+
+        // Don't attempt sync if device storage is critically low — writes will fail
+        if !StorageMonitor.canSafelyWrite {
+            StorageMonitor.checkAndNotify()
+            return
+        }
+
         guard beginSync() else { return }
 
         defer {
             endSync()
+            NotificationCenter.default.post(name: .syncDidComplete, object: nil)
             // If writes arrived during sync, re-sync
             if checkAndClearDirty() {
                 Task { try? await self.sync() }
@@ -104,6 +134,7 @@ final class SyncEngine: @unchecked Sendable {
         do {
             try await push()
             try await pull()
+            try await pruneAfterSync()
             lock.lock()
             lastError = nil
             lock.unlock()
@@ -127,8 +158,8 @@ final class SyncEngine: @unchecked Sendable {
         }
     }
 
-    /// Enqueue all existing local data as create ops for a first-time full sync.
-    /// Call once after first login or when connecting to the backend for the first time.
+    /// Wipes server data and pushes all local data fresh.
+    /// Local state is authoritative — the server mirrors it exactly after this completes.
     func seedFullPush() async throws {
         // Acquire sync lock to prevent concurrent sync while seeding
         guard beginSync() else {
@@ -136,6 +167,28 @@ final class SyncEngine: @unchecked Sendable {
             return
         }
         defer { endSync() }
+
+        // Wipe all user data on the server so we start clean.
+        // This avoids needing tombstones — anything that doesn't exist locally
+        // simply won't be pushed, and the server won't have it.
+        print("[Sync] Resetting server data before full push")
+        try await api.delete("/v1/sync/reset")
+
+        // Clear local tombstones + stale outbox — we're pushing everything fresh
+        try await db.dbQueue.write { db in
+            try Tombstone.deleteAll(db)
+            try OutboxOp.deleteAll(db)
+        }
+
+        // Reset sync cursor so pull starts from the beginning after push
+        try await db.dbQueue.write { db in
+            if var state = try SyncState.current(in: db) {
+                state.lastSyncToken = nil
+                state.lastPushAt = nil
+                state.lastPullAt = nil
+                try state.update(db)
+            }
+        }
 
         let count = try await db.dbQueue.write { db -> Int in
             var total = 0
@@ -201,9 +254,13 @@ final class SyncEngine: @unchecked Sendable {
     func push() async throws {
         guard reachability.isConnected else { return }
 
+        // Clean up redundant/obsolete ops before pushing
+        try await compactOutbox()
+
+        let now = Date()
         let ops = try await db.dbQueue.read { db in
             try OutboxOp
-                .filter(Column("attemptCount") < Self.maxRetryAttempts)
+                .filter(Column("nextRetryAt") == nil || Column("nextRetryAt") <= now)
                 .order(Column("createdAt").asc)
                 .fetchAll(db)
         }
@@ -260,9 +317,11 @@ final class SyncEngine: @unchecked Sendable {
             } catch let error as APIClient.APIError {
                 print("[Sync] Batch push failed: \(error)")
                 try await db.dbQueue.write { db in
+                    let failureTime = Date()
                     for var op in batch {
                         op.attemptCount += 1
                         op.lastError = "\(error)"
+                        op.nextRetryAt = failureTime.addingTimeInterval(Self.backoffSeconds(for: op.attemptCount))
                         try op.update(db)
                     }
                 }
@@ -289,23 +348,32 @@ final class SyncEngine: @unchecked Sendable {
             let response: PullResponse = try await api.get(path, timeout: APIClient.Timeout.sync)
 
             try await db.dbQueue.write { db in
+                var lastSuccessfulToken: String?
+                var failedCount = 0
+
                 for event in response.events {
                     do {
                         try self.applyEvent(event, in: db)
+                        lastSuccessfulToken = event.token
                     } catch {
-                        // Log but don't stop the entire pull — skip malformed events
+                        failedCount += 1
                         print("[Sync] Failed to apply event \(event.entityType)/\(event.entityId): \(error)")
+                        StorageMonitor.handleWriteError(error)
                     }
                 }
 
-                // Update cursor (always advance, even if some events failed)
-                let lastToken = response.events.last?.token ?? response.nextToken
-                if let token = lastToken {
+                // Only advance cursor to the last *successfully* applied event.
+                // This ensures failed events (e.g. from disk-full) are retried on the next pull.
+                if let token = lastSuccessfulToken {
                     if var state = try SyncState.current(in: db) {
                         state.lastSyncToken = token
                         state.lastPullAt = Date()
                         try state.update(db)
                     }
+                }
+
+                if failedCount > 0 {
+                    print("[Sync] Pull page: \(failedCount)/\(response.events.count) events failed to apply")
                 }
             }
 
@@ -387,13 +455,163 @@ final class SyncEngine: @unchecked Sendable {
         }
     }
 
-    // MARK: - Private: Backoff
+    /// Clears outbox ops and tombstones when sync is disabled.
+    /// No need to keep them — seedFullPush() wipes the server and pushes
+    /// everything local when the user re-subscribes.
+    private func clearSyncArtifacts() {
+        try? db.dbQueue.write { db in
+            let ops = try OutboxOp.deleteAll(db)
+            let tombstones = try Tombstone.deleteAll(db)
+            if ops > 0 || tombstones > 0 {
+                print("[Sync] Sync disabled — cleared \(ops) outbox op(s), \(tombstones) tombstone(s)")
+            }
+        }
+    }
 
-    /// Calculate backoff delay for a given attempt count (exponential with jitter).
-    private static func backoffDelay(attempt: Int) -> TimeInterval {
-        let base = min(pow(2.0, Double(attempt)), maxBackoffSeconds)
-        let jitter = Double.random(in: 0...base * 0.3)
-        return base + jitter
+    // MARK: - Outbox Compaction
+
+    /// Cleans up the outbox before pushing by removing redundant or obsolete ops.
+    ///
+    /// Safety invariant: **delete ops are never removed.** Even if we believe the
+    /// server doesn't have the entity, we can't be certain — a prior create may
+    /// have been accepted by the server but the client never got the response.
+    /// Sending a redundant delete is harmless (server returns success or 404,
+    /// both fine). Skipping a needed delete causes permanent divergence.
+    ///
+    /// Rules:
+    /// 1. Create + Delete for same entity → remove create/updates, KEEP delete
+    /// 2. Multiple updates for same entity → keep only the newest (full snapshots)
+    /// 3. Create/Update for an entity that has a tombstone → remove (delete op already exists)
+    private func compactOutbox() async throws {
+        try await db.dbQueue.write { db in
+            let allOps = try OutboxOp.order(Column("createdAt").asc).fetchAll(db)
+            guard !allOps.isEmpty else { return }
+
+            var opsToDelete: Set<UUID> = []
+
+            // Group ops by (entityType, entityId)
+            var grouped: [String: [OutboxOp]] = [:]
+            for op in allOps {
+                let key = "\(op.entityType)|\(op.entityId)"
+                grouped[key, default: []].append(op)
+            }
+
+            for (_, ops) in grouped {
+                let hasDelete = ops.contains { $0.op == "delete" }
+
+                if hasDelete {
+                    // Rule 1: Entity was deleted — remove create/update ops but KEEP delete.
+                    // The delete must always reach the server in case the create was
+                    // partially processed (server got it, client didn't get the ACK).
+                    for op in ops where op.op != "delete" {
+                        opsToDelete.insert(op.id)
+                    }
+                    continue
+                }
+
+                // Rule 2: Multiple updates → keep only the newest (patches are full snapshots)
+                let updates = ops.filter { $0.op == "update" }
+                if updates.count > 1 {
+                    for op in updates.dropLast() {
+                        opsToDelete.insert(op.id)
+                    }
+                }
+            }
+
+            // Rule 3: Create/Update ops for tombstoned entities (where delete op may
+            // already have been sent in a prior push cycle and removed from outbox)
+            let nonDeleteOps = allOps.filter { $0.op != "delete" && !opsToDelete.contains($0.id) }
+            if !nonDeleteOps.isEmpty {
+                let entityKeys = nonDeleteOps.map { "\($0.entityType)|\($0.entityId)" }
+                let uniqueKeys = Set(entityKeys)
+
+                for key in uniqueKeys {
+                    let parts = key.split(separator: "|", maxSplits: 1)
+                    guard parts.count == 2 else { continue }
+                    let entityType = String(parts[0])
+                    let entityId = String(parts[1])
+
+                    let hasTombstone = try Tombstone
+                        .filter(Column("entityType") == entityType && Column("entityId") == entityId)
+                        .fetchCount(db) > 0
+
+                    if hasTombstone {
+                        for op in nonDeleteOps where op.entityType == entityType && op.entityId == entityId {
+                            opsToDelete.insert(op.id)
+                        }
+                    }
+                }
+            }
+
+            // Execute deletions
+            if !opsToDelete.isEmpty {
+                print("[Sync] Compaction: removing \(opsToDelete.count) obsolete outbox op(s)")
+                for id in opsToDelete {
+                    _ = try OutboxOp.deleteOne(db, key: id)
+                }
+            }
+        }
+    }
+
+    // MARK: - Post-Sync Cleanup
+
+    /// Prunes data that's no longer needed after a successful sync cycle.
+    private func pruneAfterSync() async throws {
+        try await db.dbQueue.write { db in
+            // ── Tombstone pruning ──
+            // A tombstone is only needed while its delete op is still in the outbox
+            // (server hasn't confirmed the delete yet). Once the outbox op is gone,
+            // the server knows the entity is deleted and won't resurrect it.
+            let allTombstones = try Tombstone.fetchAll(db)
+            var tombstonesPruned = 0
+
+            for tombstone in allTombstones {
+                let hasDeleteOp = try OutboxOp
+                    .filter(Column("entityType") == tombstone.entityType
+                            && Column("entityId") == tombstone.entityId
+                            && Column("op") == "delete")
+                    .fetchCount(db) > 0
+
+                if !hasDeleteOp {
+                    _ = try Tombstone.deleteOne(db, key: tombstone.id)
+                    tombstonesPruned += 1
+                }
+            }
+
+            // ── DirectiveHistory cap ──
+            // Keep at most 30 entries per directive to prevent unbounded growth.
+            let directiveIds = try UUID.fetchAll(db, sql: """
+                SELECT DISTINCT directiveId FROM directiveHistory
+                """)
+
+            let maxPerDirective = 30
+            var historyPruned = 0
+
+            for directiveId in directiveIds {
+                let count = try DirectiveHistory
+                    .filter(Column("directiveId") == directiveId)
+                    .fetchCount(db)
+
+                if count > maxPerDirective {
+                    let excess = count - maxPerDirective
+                    let oldIds = try DirectiveHistory
+                        .filter(Column("directiveId") == directiveId)
+                        .order(Column("createdAt").asc)
+                        .limit(excess)
+                        .fetchAll(db)
+                        .map(\.id)
+
+                    for id in oldIds {
+                        _ = try DirectiveHistory.deleteOne(db, key: id)
+                    }
+                    historyPruned += oldIds.count
+                }
+            }
+
+            if tombstonesPruned > 0 || historyPruned > 0 {
+                print("[Sync] Cleanup: pruned \(tombstonesPruned) tombstone(s), \(historyPruned) history row(s)")
+            }
+        }
     }
 
     // MARK: - Apply Remote Events

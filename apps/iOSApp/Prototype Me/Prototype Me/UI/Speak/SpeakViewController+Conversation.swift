@@ -83,7 +83,7 @@ extension SpeakViewController {
                         self.showConfirmation(question: question)
                         self.isProcessing = false
                         self.updateControlsForProcessing()
-                        self.quotaLabel.text = "\(response.remainingQuota) AI left"
+                        self.quotaLabel.text = "\(response.remainingQuota) Prototype left"
                         return
                     }
 
@@ -138,15 +138,15 @@ extension SpeakViewController {
 
                     self.isProcessing = false
                     self.updateControlsForProcessing()
-                    self.quotaLabel.text = "\(response.remainingQuota) AI left"
+                    self.quotaLabel.text = "\(response.remainingQuota) Prototype left"
                 }
             } catch {
                 print("[Speak] Converse failed: \(Self.describeError(error))")
                 await MainActor.run {
                     if Self.isQuotaExceeded(error) {
                         let msg = self.isPro
-                            ? "You've hit today's AI limit. Resets at midnight UTC."
-                            : "You've hit today's AI limit. Upgrade to Pro for more daily messages."
+                            ? "You've hit today's Prototype limit. Resets at midnight UTC."
+                            : "You've hit today's Prototype limit. Upgrade to Pro for more daily messages."
                         self.showError(msg, showUpgrade: !self.isPro)
                     } else {
                         self.showError("Something went wrong. Try again.")
@@ -246,8 +246,8 @@ extension SpeakViewController {
                     }
                     if quotaHit {
                         let msg = self.isPro
-                            ? "You've hit today's AI limit. Resets at midnight UTC."
-                            : "You've hit today's AI limit. Upgrade to Pro for more daily messages."
+                            ? "You've hit today's Prototype limit. Resets at midnight UTC."
+                            : "You've hit today's Prototype limit. Upgrade to Pro for more daily messages."
                         self.showError(msg)
                     }
                 }

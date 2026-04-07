@@ -342,6 +342,12 @@ final class DayEntryEditorViewController: BaseViewController {
     }
 
     private func saveTapped() {
+        guard selectedRating > 0 else {
+            Haptics.warning()
+            shakeRatingRow()
+            return
+        }
+
         let dateString = Self.dateFormatter.string(from: datePicker.date)
         let diary = journalField.textView.text ?? ""
         let tagsText = tagsField.textField.text ?? ""
@@ -349,7 +355,7 @@ final class DayEntryEditorViewController: BaseViewController {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let rating: Int? = selectedRating > 0 ? selectedRating : nil
+        let rating: Int? = selectedRating
 
         Task {
             do {
@@ -366,6 +372,36 @@ final class DayEntryEditorViewController: BaseViewController {
 
     private func cancelTapped() {
         dismiss(animated: true)
+    }
+
+    private func shakeRatingRow() {
+        let flash = UIColor.systemRed.withAlphaComponent(0.15)
+        let original = ratingHeaderLabel.textColor
+
+        ratingHeaderLabel.textColor = .systemRed
+
+        UIView.animate(withDuration: 0.08, animations: {
+            self.ratingRow.transform = CGAffineTransform(translationX: -8, y: 0)
+        }) { _ in
+            UIView.animate(withDuration: 0.08, animations: {
+                self.ratingRow.transform = CGAffineTransform(translationX: 8, y: 0)
+            }) { _ in
+                UIView.animate(withDuration: 0.08, animations: {
+                    self.ratingRow.transform = .identity
+                })
+            }
+        }
+
+        // Flash unselected buttons
+        for btn in ratingButtons where btn.tag != selectedRating {
+            btn.backgroundColor = flash
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self else { return }
+            self.ratingHeaderLabel.textColor = original
+            self.updateRatingButtons(animated: true)
+        }
     }
 
     // MARK: - Keyboard

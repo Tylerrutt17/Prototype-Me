@@ -157,7 +157,7 @@ class SubscriptionViewController: BaseViewController {
             details.append(.info("Trial", "\(days) days remaining"))
         }
         if let usageQuota {
-            details.append(.info("AI quota", "\(usageQuota.remaining) / \(usageQuota.dailyLimit) remaining today"))
+            details.append(.info("Prototype quota", "\(usageQuota.remaining) / \(usageQuota.dailyLimit) remaining today"))
         }
         snapshot.appendItems(details, toSection: .details)
 
@@ -167,16 +167,16 @@ class SubscriptionViewController: BaseViewController {
         if isPro {
             snapshot.appendItems([
                 .feature("Weekly & monthly journal summaries", true),
-                .feature("Unlimited Speak chats", true),
+                .feature("Unlimited Ask Feature chats", true),
                 .feature("Voice talk", true),
                 .feature("Cloud sync", true),
                 .feature("Priority support", true),
             ], toSection: .features)
         } else {
             snapshot.appendItems([
-                .feature("5 AI suggestions / day", true),
+                .feature("5 Prototype suggestions / day", true),
                 .feature("Weekly & monthly journal summaries", false),
-                .feature("Unlimited Speak chats", false),
+                .feature("Unlimited Ask Feature chats", false),
                 .feature("Voice talk", false),
                 .feature("Cloud sync", false),
             ], toSection: .features)

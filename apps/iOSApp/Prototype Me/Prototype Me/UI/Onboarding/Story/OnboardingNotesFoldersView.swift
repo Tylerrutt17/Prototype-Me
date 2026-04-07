@@ -50,9 +50,9 @@ final class OnboardingNotesFoldersView: UIView, StoryAnimatable {
 
         // Notes
         let notes: [(title: String, subtitle: String, kind: NoteKind)] = [
-            ("Morning routine ideas", "Regular · Health & Fitness", .regular),
-            ("Deep Work mode", "Situational Mode · 3 directives", .mode),
-            ("Weekly review", "Regular · Work", .regular),
+            ("Morning routine ideas", "Note", .regular),
+            ("Deep Work mode", "Mode · 3 directives", .mode),
+            ("Weekly review", "Note", .regular),
         ]
 
         for note in notes {

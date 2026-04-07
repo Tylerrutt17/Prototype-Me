@@ -90,22 +90,15 @@ final class PurchaseService {
         }
     }
 
-    /// Push local data up after a free→pro upgrade. Uses `seedFullPush` the
-    /// first time the user ever syncs (no `lastSyncToken`), otherwise just
-    /// triggers a normal sync to drain any ops that accumulated while on free.
+    /// Push all local data up after a free→pro upgrade.
+    /// Always uses `seedFullPush` because outbox ops from the free period were
+    /// cleared on launch (`clearSyncArtifacts`). Without a full seed, edits made
+    /// while free would never reach the server.
     private func kickoffInitialSync() async {
-        guard let syncEngine, let db else { return }
+        guard let syncEngine else { return }
         do {
-            let hasSyncedBefore = try await db.dbQueue.read { db -> Bool in
-                (try SyncState.current(in: db)?.lastSyncToken) != nil
-            }
-            if hasSyncedBefore {
-                print("[PurchaseService] Upgrade detected — flushing outbox")
-                try await syncEngine.sync()
-            } else {
-                print("[PurchaseService] Upgrade detected — seeding full push")
-                try await syncEngine.seedFullPush()
-            }
+            print("[PurchaseService] Upgrade detected — seeding full push")
+            try await syncEngine.seedFullPush()
         } catch {
             print("[PurchaseService] Initial sync after upgrade failed: \(error)")
         }

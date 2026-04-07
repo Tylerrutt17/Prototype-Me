@@ -127,11 +127,11 @@ class NoteDetailViewController: BaseViewController {
 
     private func confirmAskAI(directiveId: UUID) {
         let alert = UIAlertController(
-            title: "Ask AI for an alternative?",
-            message: "This opens the Speak tab and asks the AI to help figure out what's not working with this directive and suggest alternatives you could try.",
+            title: "Ask Feature for an alternative?",
+            message: "This opens Ask Feature to help figure out what's not working with this directive and suggest alternatives you could try.",
             preferredStyle: .actionSheet
         )
-        alert.addAction(UIAlertAction(title: "Ask AI", style: .default) { [weak self] _ in
+        alert.addAction(UIAlertAction(title: "Ask Feature", style: .default) { [weak self] _ in
             self?.onAskAIForDirective?(directiveId)
         })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
@@ -258,12 +258,12 @@ class NoteDetailViewController: BaseViewController {
             snapshot.appendItems(directiveItems, toSection: .directives)
 
             self?.dataSource.apply(snapshot, animatingDifferences: false)
-            // Force full cell reload since models use id-only equality
-            if let note {
-                var reloadSnap = self?.dataSource.snapshot() ?? snapshot
-                reloadSnap.reloadItems([.header(note)])
-                self?.dataSource.apply(reloadSnap, animatingDifferences: false)
-            }
+            // Force re-render: DirectiveRowData / header items use id-only equality,
+            // so changes to underlying content (balloon pumps, color, body edits)
+            // don't trigger cell reloads via diffing alone.
+            var reconfigSnap = self?.dataSource.snapshot() ?? snapshot
+            reconfigSnap.reconfigureItems(reconfigSnap.itemIdentifiers)
+            self?.dataSource.apply(reconfigSnap, animatingDifferences: false)
         })
     }
 }

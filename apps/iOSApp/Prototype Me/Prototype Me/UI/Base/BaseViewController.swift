@@ -26,6 +26,7 @@ class BaseViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = DesignTokens.Colors.background
         installNavBar()
+        observeStorageWarnings()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -139,7 +140,157 @@ class BaseViewController: UIViewController {
         return button
     }
 
-    // MARK: - Future Loading/Error Helpers
+    // MARK: - Storage & Error Banners
+
+    private var storageBanner: UIView?
+    private var toastView: UIView?
+    private var toastDismissWork: DispatchWorkItem?
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        NotificationCenter.default.removeObserver(self, name: StorageMonitor.storageWarningNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: StorageMonitor.writeFailedNotification, object: nil)
+    }
+
+    /// Call from subclass viewDidLoad (after super) to opt into storage/error monitoring.
+    func observeStorageWarnings() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleStorageWarning(_:)),
+            name: StorageMonitor.storageWarningNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleWriteFailed(_:)),
+            name: StorageMonitor.writeFailedNotification, object: nil
+        )
+        // Check immediately
+        if StorageMonitor.isStorageLow {
+            showStorageBanner(availableMB: StorageMonitor.availableMB)
+        }
+    }
+
+    @objc private func handleStorageWarning(_ notification: Notification) {
+        let mb = notification.userInfo?["availableMB"] as? Int ?? StorageMonitor.availableMB
+        DispatchQueue.main.async { [weak self] in
+            self?.showStorageBanner(availableMB: mb)
+        }
+    }
+
+    @objc private func handleWriteFailed(_ notification: Notification) {
+        let message = notification.userInfo?["message"] as? String ?? "Save failed"
+        DispatchQueue.main.async { [weak self] in
+            self?.showToast(message)
+        }
+    }
+
+    private func showStorageBanner(availableMB: Int) {
+        guard storageBanner == nil else { return }
+
+        let banner = UIView()
+        banner.backgroundColor = DesignTokens.Colors.warning.withAlphaComponent(0.15)
+        banner.layer.cornerRadius = DesignTokens.Radii.md
+        banner.translatesAutoresizingMaskIntoConstraints = false
+
+        let icon = UIImageView(image: UIImage(systemName: "exclamationmark.triangle.fill"))
+        icon.tintColor = DesignTokens.Colors.warning
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+
+        let label = UILabel()
+        label.font = DesignTokens.Typography.footnote
+        label.textColor = DesignTokens.Colors.textPrimary
+        label.numberOfLines = 0
+        if availableMB <= 10 {
+            label.text = "Device storage critically low (\(availableMB) MB). Saves may fail."
+        } else {
+            label.text = "Device storage is low (\(availableMB) MB free). Free up space to avoid data loss."
+        }
+
+        let stack = UIStackView(arrangedSubviews: [icon, label])
+        stack.axis = .horizontal
+        stack.spacing = DesignTokens.Spacing.sm
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        banner.addSubview(stack)
+        view.addSubview(banner)
+
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: banner.topAnchor, constant: DesignTokens.Spacing.sm),
+            stack.bottomAnchor.constraint(equalTo: banner.bottomAnchor, constant: -DesignTokens.Spacing.sm),
+            stack.leadingAnchor.constraint(equalTo: banner.leadingAnchor, constant: DesignTokens.Spacing.md),
+            stack.trailingAnchor.constraint(equalTo: banner.trailingAnchor, constant: -DesignTokens.Spacing.md),
+
+            banner.topAnchor.constraint(equalTo: contentTopAnchor, constant: DesignTokens.Spacing.sm),
+            banner.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.lg),
+            banner.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.lg),
+        ])
+
+        banner.alpha = 0
+        UIView.animate(withDuration: 0.3) { banner.alpha = 1 }
+        storageBanner = banner
+    }
+
+    func removeStorageBanner() {
+        guard let banner = storageBanner else { return }
+        UIView.animate(withDuration: 0.3, animations: { banner.alpha = 0 }) { _ in
+            banner.removeFromSuperview()
+        }
+        storageBanner = nil
+    }
+
+    private func showToast(_ message: String) {
+        // Remove existing toast
+        toastDismissWork?.cancel()
+        toastView?.removeFromSuperview()
+
+        let toast = UIView()
+        toast.backgroundColor = DesignTokens.Colors.destructive.withAlphaComponent(0.9)
+        toast.layer.cornerRadius = DesignTokens.Radii.md
+        toast.translatesAutoresizingMaskIntoConstraints = false
+
+        let label = UILabel()
+        label.text = message
+        label.font = DesignTokens.Typography.footnote
+        label.textColor = .white
+        label.numberOfLines = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        toast.addSubview(label)
+        view.addSubview(toast)
+
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: toast.topAnchor, constant: DesignTokens.Spacing.md),
+            label.bottomAnchor.constraint(equalTo: toast.bottomAnchor, constant: -DesignTokens.Spacing.md),
+            label.leadingAnchor.constraint(equalTo: toast.leadingAnchor, constant: DesignTokens.Spacing.lg),
+            label.trailingAnchor.constraint(equalTo: toast.trailingAnchor, constant: -DesignTokens.Spacing.lg),
+
+            toast.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -DesignTokens.Spacing.lg),
+            toast.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.lg),
+            toast.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.lg),
+        ])
+
+        toast.alpha = 0
+        toast.transform = CGAffineTransform(translationX: 0, y: 20)
+        UIView.animate(withDuration: 0.3) {
+            toast.alpha = 1
+            toast.transform = .identity
+        }
+        toastView = toast
+
+        let work = DispatchWorkItem { [weak self] in
+            UIView.animate(withDuration: 0.3, animations: {
+                toast.alpha = 0
+                toast.transform = CGAffineTransform(translationX: 0, y: 20)
+            }) { _ in
+                toast.removeFromSuperview()
+                if self?.toastView === toast { self?.toastView = nil }
+            }
+        }
+        toastDismissWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: work)
+    }
+
+    // MARK: - Loading Helpers
 
     func showLoadingState() {
         // TODO: Add inline spinner
@@ -150,6 +301,6 @@ class BaseViewController: UIViewController {
     }
 
     func showError(_ error: Error) {
-        // TODO: Show toast/banner
+        StorageMonitor.handleWriteError(error)
     }
 }

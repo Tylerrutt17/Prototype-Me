@@ -146,11 +146,11 @@ class ModeDetailViewController: BaseViewController {
 
     private func confirmAskAI(directiveId: UUID) {
         let alert = UIAlertController(
-            title: "Ask AI for an alternative?",
-            message: "This opens the Speak tab and asks the AI to help figure out what's not working with this directive and suggest alternatives you could try.",
+            title: "Ask Feature for an alternative?",
+            message: "This opens Ask Feature to help figure out what's not working with this directive and suggest alternatives you could try.",
             preferredStyle: .actionSheet
         )
-        alert.addAction(UIAlertAction(title: "Ask AI", style: .default) { [weak self] _ in
+        alert.addAction(UIAlertAction(title: "Ask Feature", style: .default) { [weak self] _ in
             self?.onAskAIForDirective?(directiveId)
         })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))

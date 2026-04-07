@@ -4,9 +4,10 @@ import UserNotifications
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
-    // Force-try is acceptable at app launch — if the DB can't open, the app can't function.
-    // swiftlint:disable:next force_try
-    let environment = try! AppEnvironment.live()
+    /// The app environment. Nil if database initialization failed — SceneDelegate
+    /// checks this and shows a recovery screen instead of the main app.
+    private(set) var environment: AppEnvironment!
+    private(set) var dbInitError: Error?
 
     func application(
         _ application: UIApplication,
@@ -14,16 +15,33 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     ) -> Bool {
         configureGlobalAppearance()
 
-        // Notification delegate must be set before app finishes launching
-        UNUserNotificationCenter.current().delegate = environment.balloonNotificationService
+        do {
+            let env = try AppEnvironment.live()
+            self.environment = env
 
-        // Seed sample data on first launch (no-op if DB already has data)
-        try? DatabaseSeeder.seedIfNeeded(db: environment.db)
+            // Notification delegate must be set before app finishes launching
+            UNUserNotificationCenter.current().delegate = env.balloonNotificationService
 
-        // Ensure all active balloon notifications are scheduled on launch
-        environment.balloonNotificationService.rescheduleAll(dbQueue: environment.db.dbQueue)
+            // Seed sample data on first launch (no-op if DB already has data)
+            try? DatabaseSeeder.seedIfNeeded(db: env.db)
+
+            // Ensure all active balloon notifications are scheduled on launch
+            env.balloonNotificationService.rescheduleAll(dbQueue: env.db.dbQueue)
+        } catch {
+            self.dbInitError = error
+            print("[App] Database initialization failed: \(error)")
+        }
 
         return true
+    }
+
+    /// Called by SceneDelegate when the recovery screen successfully retries initialization.
+    func setRecoveredEnvironment(_ env: AppEnvironment) {
+        self.environment = env
+        self.dbInitError = nil
+        UNUserNotificationCenter.current().delegate = env.balloonNotificationService
+        try? DatabaseSeeder.seedIfNeeded(db: env.db)
+        env.balloonNotificationService.rescheduleAll(dbQueue: env.db.dbQueue)
     }
 
     // MARK: - UISceneSession Lifecycle

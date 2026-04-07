@@ -36,17 +36,70 @@ class SettingsViewController: BaseViewController {
     var onReplayTourTapped: (() -> Void)?
     var onReplayIntroTapped: (() -> Void)?
     var onLegalTapped: ((String) -> Void)?    // passes "Terms of Service" or "Privacy Policy"
+    var syncEngine: SyncEngine?
 
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<SettingsSection, SettingsItem>!
+    private let syncBanner = SyncStatusBannerView()
 
     override func viewDidLoad() {
         super.viewDidLoad()
         navBar.setTitle("Settings", animated: false)
 
+        configureSyncBanner()
         configureCollectionView()
         configureDataSource()
         loadData()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        refreshSyncStatus()
+        NotificationCenter.default.addObserver(self, selector: #selector(syncDidComplete), name: .syncDidComplete, object: nil)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        NotificationCenter.default.removeObserver(self, name: .syncDidComplete, object: nil)
+    }
+
+    @objc private func syncDidComplete() {
+        refreshSyncStatus()
+    }
+
+    // MARK: - Sync Banner
+
+    private func configureSyncBanner() {
+        syncBanner.isHidden = !AuthService.isPro
+        syncBanner.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(syncBanner)
+
+        NSLayoutConstraint.activate([
+            syncBanner.topAnchor.constraint(equalTo: contentTopAnchor, constant: DesignTokens.Spacing.md),
+            syncBanner.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.lg),
+            syncBanner.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.lg),
+        ])
+    }
+
+    private func refreshSyncStatus() {
+        guard AuthService.isPro, let syncEngine else {
+            syncBanner.isHidden = true
+            return
+        }
+        syncBanner.isHidden = false
+        Task {
+            let info = try? await syncEngine.debugInfo()
+            await MainActor.run {
+                let outbox = info?.outboxCount ?? 0
+                if let error = info?.lastError {
+                    syncBanner.configure(state: .error(error))
+                } else if outbox > 0 {
+                    syncBanner.configure(state: .pending(outbox))
+                } else {
+                    syncBanner.configure(state: .synced)
+                }
+            }
+        }
     }
 
     // MARK: - Collection View
@@ -65,7 +118,7 @@ class SettingsViewController: BaseViewController {
         view.addSubview(collectionView)
 
         NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: contentTopAnchor),
+            collectionView.topAnchor.constraint(equalTo: syncBanner.bottomAnchor, constant: DesignTokens.Spacing.sm),
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -168,7 +221,7 @@ class SettingsViewController: BaseViewController {
         snapshot.appendItems([
             .account("Tyler Morrow"),
             .navigation("Subscription", "creditcard", 0),          // blue
-            .navigation("AI Usage", "sparkles", 0),                // blue
+            .navigation("Prototype Usage", "sparkles", 0),                // blue
             .navigation("Friends", "person.2", 0),                 // blue
         ], toSection: .account)
 
@@ -190,6 +243,7 @@ class SettingsViewController: BaseViewController {
 
         snapshot.appendSections([.about])
         snapshot.appendItems([
+            .navigation("Contact Support", "envelope", 0),         // blue
             .info("Version", "0.1.0", "info.circle", 5),          // purple
             .info("Build", "1", "hammer", 5),                      // purple
             .navigation("Terms of Service", "doc.text", 5),        // purple
@@ -214,10 +268,11 @@ extension SettingsViewController: UICollectionViewDelegate {
             switch title {
             case "Sync Debug":    onSyncDebugTapped?()
             case "Subscription":  onSubscriptionTapped?()
-            case "AI Usage":      onUsageTapped?()
+            case "Prototype Usage":   onUsageTapped?()
             case "Friends":       onFriendsTapped?()
             case "Replay Tour":       onReplayTourTapped?()
             case "Replay Intro":      onReplayIntroTapped?()
+            case "Contact Support":   SupportMailer.present(from: self)
             case "Terms of Service":  onLegalTapped?("Terms of Service")
             case "Privacy Policy":    onLegalTapped?("Privacy Policy")
             default: break

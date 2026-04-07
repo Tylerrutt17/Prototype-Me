@@ -48,16 +48,16 @@ final class BalloonStoryViewController: UIViewController {
             particleIntensity: 1.0
         ),
         PageConfig(
-            title: "How the system works",
-            subtitle: "Here's the full cycle — from things you're trying to remember, to life getting in the way, to balloons bringing them back.",
-            visualType: .brainRAM,
-            particleIntensity: 0.6
-        ),
-        PageConfig(
             title: "What are some examples?",
             subtitle: "Things you want to periodically revisit — not one-off tasks, but ongoing intentions.",
             visualType: .examples,
             particleIntensity: 0.8
+        ),
+        PageConfig(
+            title: "How the system works",
+            subtitle: "Here's the full cycle — from things you're trying to remember, to life getting in the way, to balloons bringing them back.",
+            visualType: .brainRAM,
+            particleIntensity: 0.6
         ),
         PageConfig(
             title: "Balloons live inside directives",
@@ -232,6 +232,7 @@ final class BalloonStoryViewController: UIViewController {
     }
 
     @objc private func skipTapped() {
+        guard !navigationLocked else { return }
         finish()
     }
 
@@ -245,22 +246,17 @@ final class BalloonStoryViewController: UIViewController {
         guard config.visualType == .brainRAM, !brainRAMVisited else { return }
 
         navigationLocked = true
-        nextButton.isEnabled = false
-        nextButton.alpha = 0.4
-        skipButton.isEnabled = false
-        skipButton.alpha = 0.3
+
+        // Allow navigation after 10 seconds even if animation hasn't finished
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            guard let self, self.navigationLocked else { return }
+            self.unlockNavigation()
+        }
     }
 
     private func unlockNavigation() {
         brainRAMVisited = true
         navigationLocked = false
-        nextButton.isEnabled = true
-        skipButton.isEnabled = true
-
-        UIView.animate(withDuration: 0.3) {
-            self.nextButton.alpha = 1.0
-            self.skipButton.alpha = 1.0
-        }
     }
 
     private func updateControls() {

@@ -13,7 +13,7 @@ final class DayEntryService: Sendable {
     // MARK: - CRUD
 
     func createOrUpdate(date: String, rating: Int?, diary: String, tags: [String]) async throws -> DayEntry {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             // Upsert: if entry for this date already exists, update it
             if var existing = try DayEntry.filter(Column("date") == date).fetchOne(db) {
                 existing.rating = rating
@@ -44,7 +44,7 @@ final class DayEntryService: Sendable {
     }
 
     func delete(id: UUID) async throws {
-        _ = try await db.dbQueue.write { db in
+        _ = try await db.safeWrite { db in
             try DayEntry.deleteOne(db, key: id)
             try OutboxOp.enqueueDelete(entityType: "dayEntry", entityId: id.uuidString, in: db)
         }

@@ -285,7 +285,7 @@ class FocusViewController: BaseViewController {
         let sectionHeaderReg = UICollectionView.SupplementaryRegistration<SectionHeaderView>(elementKind: UICollectionView.elementKindSectionHeader) { [weak self] supplementaryView, _, indexPath in
             let section = self?.dataSource.snapshot().sectionIdentifiers[indexPath.section]
             let title: String = switch section {
-            case .modes:      "Situational Modes"
+            case .modes:      "Modes"
             case .directives: "Directives"
             case .balloons:   "Urgent Balloons"
             case .schedule:   "Today's Schedule"
@@ -295,7 +295,7 @@ class FocusViewController: BaseViewController {
         }
 
         let modesHeaderReg = UICollectionView.SupplementaryRegistration<SectionHeaderWithActionView>(elementKind: UICollectionView.elementKindSectionHeader) { [weak self] supplementaryView, _, _ in
-            supplementaryView.configure(title: "Situational Modes", actionTitle: "See All") {
+            supplementaryView.configure(title: "Modes", actionTitle: "See All") {
                 self?.onPickModesTapped?()
             }
         }
@@ -672,7 +672,7 @@ private final class NoModeCard: UICollectionViewCell {
         iconView.contentMode = .scaleAspectFit
 
         titleLabel.font = DesignTokens.Typography.rounded(style: .headline, weight: .semibold)
-        titleLabel.text = "No Situational Mode"
+        titleLabel.text = "No Mode"
 
         let stack = UIStackView(arrangedSubviews: [iconView, titleLabel])
         stack.axis = .horizontal

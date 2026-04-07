@@ -19,6 +19,13 @@ export async function syncRoutes(app: FastifyInstance) {
     const deviceId = (req.headers["x-device-id"] as string) ?? "unknown";
     return ok(reply, await sync.pull(req.userId, deviceId, query.cursor, query.limit));
   });
+
+  // Reset: DELETE /v1/sync/reset — wipe all user data so client can push fresh.
+  // Called on free→pro upgrade so local state becomes authoritative.
+  app.delete("/reset", async (req, reply) => {
+    await requirePro(req.userId);
+    return ok(reply, await sync.reset(req.userId));
+  });
 }
 
 async function requirePro(userId: string) {

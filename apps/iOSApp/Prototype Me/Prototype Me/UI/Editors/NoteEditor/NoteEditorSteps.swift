@@ -126,12 +126,12 @@ extension NoteEditorViewController {
         let frameworkExists = existingFrameworkId != nil && existingFrameworkId != noteId
 
         let kinds: [(kind: NoteKind, icon: String, title: String, desc: String, detail: String)] = [
-            (.regular, "doc.text", "Simple",
+            (.mode, "bolt.fill", "Mode",
+             "An operating mode that filters your Focus.",
+             "Modes represent different states of working — like \"Deep Work\", \"Social\", or \"Recovery\". When you activate a mode on the Focus tab, it filters which directives and schedule items you see. Create modes that match how you actually work."),
+            (.regular, "doc.text", "Note",
              "A freeform note for anything.",
              "Use regular notes for ideas, references, learning materials, or anything you want to capture. They can be organized into folders and linked to directives."),
-            (.mode, "bolt.fill", "Situational Mode",
-             "An operating mode that filters your Focus.",
-             "Situational modes represent different states of working — like \"Deep Work\", \"Social\", or \"Recovery\". When you activate a mode on the Focus tab, it filters which directives and schedule items you see. Create modes that match how you actually work."),
             // (.situation, "cloud.sun.fill", "Situation",
             //  "A contextual scenario with linked directives.",
             //  "Situations describe recurring contexts — like \"Feeling overwhelmed\" or \"Starting a new project\". Link directives to situations so you know exactly what to do when they arise."),

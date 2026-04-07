@@ -11,51 +11,33 @@ final class DirectiveStoryViewController: UIViewController {
         let visualType: VisualType
 
         enum VisualType {
-            case wave
-            case experiment
-            case directiveTypes
+            case examples
+            case create
             case evolution
             case tools
-            case pattern
-            case framework
         }
     }
 
     private let pages: [PageConfig] = [
         PageConfig(
-            title: "Your worst days aren't random",
-            subtitle: "There's a reason some days you're off. What if you could figure out what's dragging you down — and stop it from happening?",
-            visualType: .wave
+            title: "What works is different for everyone",
+            subtitle: "Directives are small experiments — habits, rules, reminders — that help you figure out what actually works in your life.",
+            visualType: .examples
         ),
         PageConfig(
-            title: "You don't think your way there. You test your way there.",
-            subtitle: "Self-improvement isn't about planning the perfect routine. It's about trying things and seeing what actually keeps the lows away.",
-            visualType: .experiment
+            title: "Start with a problem",
+            subtitle: "Think about something you want to fix or improve — then create a directive as your first experiment.",
+            visualType: .create
         ),
         PageConfig(
-            title: "That's what directives are",
-            subtitle: "Your experiments. A habit to try, a rule to follow, a reminder to keep, a principle to test. Flexible, not rigid.",
-            visualType: .directiveTypes
-        ),
-        PageConfig(
-            title: "Some will stick. Some won't.",
-            subtitle: "And that's the whole point. Archive what doesn't work, double down on what does. No guilt, no broken streaks, no judgment.",
+            title: "Keep what works, drop what doesn't",
+            subtitle: "Archive what isn't helping, double down on what is. No guilt, no broken streaks.",
             visualType: .evolution
         ),
         PageConfig(
-            title: "The system keeps you honest",
-            subtitle: "Balloons keep things visible. Schedules build consistency. History shows what you actually did — not what you think you did.",
+            title: "Not sure what to try?",
+            subtitle: "Use Ask Feature to describe what you're struggling with and it'll suggest directives to experiment with.",
             visualType: .tools
-        ),
-        PageConfig(
-            title: "Over time, a pattern emerges",
-            subtitle: "The habits that stuck. The rules you actually follow. The things that keep working. Those aren't directives anymore — those are you.",
-            visualType: .pattern
-        ),
-        PageConfig(
-            title: "That's your Framework",
-            subtitle: "The steadiest version of you, discovered through real experience. Not guessed. Not copied. Earned.",
-            visualType: .framework
         ),
     ]
 
@@ -188,7 +170,6 @@ final class DirectiveStoryViewController: UIViewController {
         nextButton.setTitle(isLast ? "Got it!" : "Next", for: .normal)
 
         switch pages[currentIndex].visualType {
-        case .framework: Haptics.success()
         case .evolution: Haptics.warning()
         default: break
         }
@@ -221,13 +202,10 @@ final class DirectiveStoryViewController: UIViewController {
 
     private func makeVisual(for type: PageConfig.VisualType) -> UIView & StoryAnimatable {
         switch type {
-        case .wave:            return DirectiveStoryWaveView()
-        case .experiment:      return DirectiveStoryExperimentView()
-        case .directiveTypes:  return DirectiveStoryTypesView()
+        case .examples:        return DirectiveStoryExamplesView()
+        case .create:          return DirectiveStoryCreateView()
         case .evolution:       return DirectiveStoryEvolutionView()
         case .tools:           return DirectiveStoryToolsView()
-        case .pattern:         return DirectiveStoryPatternView()
-        case .framework:       return DirectiveStoryFrameworkView()
         }
     }
 }

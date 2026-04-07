@@ -13,7 +13,7 @@ final class ModeService: Sendable {
 
     /// Activate a mode note. Enforces max 3 active modes — removes the oldest if needed.
     func activate(noteId: UUID) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             // Already active?
             if try ActiveMode.fetchOne(db, key: noteId) != nil { return }
 
@@ -34,14 +34,14 @@ final class ModeService: Sendable {
     }
 
     func deactivate(noteId: UUID) async throws {
-        _ = try await db.dbQueue.write { db in
+        _ = try await db.safeWrite { db in
             try ActiveMode.deleteOne(db, key: noteId)
             try OutboxOp.enqueueDelete(entityType: "activeMode", entityId: noteId.uuidString, in: db)
         }
     }
 
     func deactivateAll() async throws {
-        _ = try await db.dbQueue.write { db in
+        _ = try await db.safeWrite { db in
             let all = try ActiveMode.fetchAll(db)
             try ActiveMode.deleteAll(db)
             for mode in all {

@@ -85,7 +85,7 @@ final class MonthSummaryCard: UICollectionViewCell {
         statsRow.spacing = 3
 
         // ── AI badge ──
-        aiBadge.text = "AI REVIEW"
+        aiBadge.text = "PROTOTYPE REVIEW"
         aiBadge.font = DesignTokens.Typography.rounded(style: .caption2, weight: .bold)
         aiBadge.textColor = DesignTokens.Colors.accent
         aiBadge.backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.12)

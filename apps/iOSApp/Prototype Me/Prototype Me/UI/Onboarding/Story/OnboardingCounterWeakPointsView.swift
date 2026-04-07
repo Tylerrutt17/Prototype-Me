@@ -16,15 +16,15 @@ final class OnboardingCounterWeakPointsView: UIView, StoryAnimatable {
     var prefersFullWidth: Bool { true }
 
     private let generalProblems: [(text: String, icon: String)] = [
-        ("I'm negative about myself", "brain.head.profile"),
-        ("I don't smile enough", "face.smiling"),
-        ("I wake up with no energy", "sunrise.fill"),
+        ("I wake up with no energy", "brain.head.profile"),
+        ("asdf", "face.smiling"),
+        ("Trouble falling asleep", "sunrise.fill"),
     ]
 
     private let situationalProblems: [(text: String, icon: String)] = [
         ("Eyes get strained at work", "eye"),
-        ("I get irritable when tired", "bolt.slash.fill"),
-        ("I sit too long without moving", "figure.stand"),
+        ("Trouble being consistent with gym", "bolt.slash.fill"),
+        ("I sit too long when working", "figure.stand"),
     ]
 
     override init(frame: CGRect) {

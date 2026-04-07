@@ -9,7 +9,7 @@ final class OnboardingToolkitView: UIView, StoryAnimatable {
 
     private let tools: [(icon: String, label: String, color: UIColor)] = [
         ("arrow.right.circle.fill", "Directives", DesignTokens.Colors.accent),
-        ("bolt.fill", "Situational Modes", NoteKind.mode.color),
+        ("bolt.fill", "Modes", NoteKind.mode.color),
         ("balloon.fill", "Balloons", DesignTokens.Colors.success),
     ]
 

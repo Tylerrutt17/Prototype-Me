@@ -1,4 +1,4 @@
-import { eq, and, gt } from "drizzle-orm";
+import { eq, and, gt, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import * as syncQueries from "../db/queries/sync.js";
 import * as schema from "../db/schema.js";
@@ -387,6 +387,33 @@ export async function pull(userId: string, deviceId: string, cursor?: string, li
     nextToken: hasMore ? nextToken : null,
     hasMore,
   };
+}
+
+// ── Reset: wipe all user data so client can push fresh ──
+
+export async function reset(userId: string): Promise<{ ok: true }> {
+  await db.transaction(async (tx) => {
+    // Delete in order that respects foreign keys (children/junctions first)
+    await tx.delete(schema.noteDirective).where(
+      eq(schema.noteDirective.noteId, sql`ANY(SELECT id FROM note_page WHERE user_id = ${userId})`),
+    );
+    await tx.delete(schema.activeMode).where(eq(schema.activeMode.userId, userId));
+    await tx.delete(schema.directiveHistory).where(
+      eq(schema.directiveHistory.directiveId, sql`ANY(SELECT id FROM directive WHERE user_id = ${userId})`),
+    );
+    await tx.delete(schema.scheduleRule).where(eq(schema.scheduleRule.userId, userId));
+    await tx.delete(schema.notePage).where(eq(schema.notePage.userId, userId));
+    await tx.delete(schema.directive).where(eq(schema.directive.userId, userId));
+    await tx.delete(schema.folder).where(eq(schema.folder.userId, userId));
+    await tx.delete(schema.dayEntry).where(eq(schema.dayEntry.userId, userId));
+    await tx.delete(schema.tag).where(eq(schema.tag.userId, userId));
+
+    // Clear sync metadata so the next pull starts fresh
+    await tx.delete(schema.tombstone).where(eq(schema.tombstone.userId, userId));
+    await tx.delete(schema.syncOpLog).where(eq(schema.syncOpLog.userId, userId));
+  });
+
+  return { ok: true };
 }
 
 // ── Helpers ──

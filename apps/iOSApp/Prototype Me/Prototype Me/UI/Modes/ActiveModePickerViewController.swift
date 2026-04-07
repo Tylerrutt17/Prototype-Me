@@ -202,7 +202,7 @@ private final class ModePickerCell: UICollectionViewCell {
     }
 
     func configureNoMode(isSelected: Bool) {
-        titleLabel.text = "No Situational Mode"
+        titleLabel.text = "No Mode"
         let iconConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)
         iconView.image = UIImage(systemName: "moon.zzz", withConfiguration: iconConfig)
         applySelectedState(isSelected)

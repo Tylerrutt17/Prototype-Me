@@ -32,8 +32,8 @@ nonisolated enum NoteKind: String, Hashable, Codable, CaseIterable, Sendable {
 
     var displayName: String {
         switch self {
-        case .regular:   "Simple"
-        case .mode:      "Situational Mode"
+        case .regular:   "Note"
+        case .mode:      "Mode"
         case .framework: "Framework"
         case .situation: "Situation"
         case .goal:      "Goal"

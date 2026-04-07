@@ -176,6 +176,10 @@ final class DirectivePickerViewController: BaseViewController {
         snapshot.appendSections([.main])
         snapshot.appendItems(filtered)
         dataSource.apply(snapshot, animatingDifferences: true)
+        // Directive uses id-only equality — reconfigure to reflect content changes.
+        var reconfigSnap = dataSource.snapshot()
+        reconfigSnap.reconfigureItems(reconfigSnap.itemIdentifiers)
+        dataSource.apply(reconfigSnap, animatingDifferences: false)
     }
 
     // MARK: - Create New Directive

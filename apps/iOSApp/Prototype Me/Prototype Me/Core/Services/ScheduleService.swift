@@ -27,7 +27,7 @@ final class ScheduleService: Sendable {
             createdAt: now,
             updatedAt: now
         )
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             try rule.insert(db)
             try OutboxOp.enqueue(entityType: "scheduleRule", entityId: rule.id.uuidString, op: "create", patch: rule.syncPatch(), in: db)
         }
@@ -35,7 +35,7 @@ final class ScheduleService: Sendable {
     }
 
     func deleteRule(id: UUID) async throws {
-        _ = try await db.dbQueue.write { db in
+        _ = try await db.safeWrite { db in
             try ScheduleRule.deleteOne(db, key: id)
             try OutboxOp.enqueueDelete(entityType: "scheduleRule", entityId: id.uuidString, in: db)
         }
@@ -44,7 +44,7 @@ final class ScheduleService: Sendable {
     // MARK: - Completion
 
     func markRuleCompleted(id: UUID, date: String) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             guard var rule = try ScheduleRule.fetchOne(db, key: id) else { return }
             rule.lastCompletedDate = date
             rule.version += 1
@@ -55,7 +55,7 @@ final class ScheduleService: Sendable {
     }
 
     func markRulePending(id: UUID) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             guard var rule = try ScheduleRule.fetchOne(db, key: id) else { return }
             rule.lastCompletedDate = nil
             rule.version += 1
@@ -68,7 +68,7 @@ final class ScheduleService: Sendable {
     // MARK: - Update (for editor)
 
     func updateRule(id: UUID, ruleType: ScheduleType, params: [String: [Int]]) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             guard var rule = try ScheduleRule.fetchOne(db, key: id) else { return }
             rule.ruleType = ruleType
             rule.params = params

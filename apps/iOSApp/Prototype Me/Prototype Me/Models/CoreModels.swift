@@ -459,6 +459,7 @@ nonisolated struct OutboxOp: Identifiable, Hashable, Sendable, Codable, Fetchabl
     let createdAt: Date
     var attemptCount: Int
     var lastError: String?
+    var nextRetryAt: Date?       // nil = eligible immediately; otherwise defer until this time
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (lhs: OutboxOp, rhs: OutboxOp) -> Bool { lhs.id == rhs.id }
@@ -554,7 +555,8 @@ extension OutboxOp {
             schemaVersion: 1,
             createdAt: Date(),
             attemptCount: 0,
-            lastError: nil
+            lastError: nil,
+            nextRetryAt: nil
         )
         try outboxOp.insert(db)
         return outboxOp

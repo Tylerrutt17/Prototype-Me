@@ -28,7 +28,7 @@ final class FolderService: Sendable {
             createdAt: now,
             updatedAt: now
         )
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             try folder.insert(db)
             try OutboxOp.enqueue(entityType: "folder", entityId: folder.id.uuidString, op: "create", patch: folder.syncPatch(), in: db)
         }
@@ -39,14 +39,14 @@ final class FolderService: Sendable {
         var updated = folder
         updated.updatedAt = Date()
         updated.version += 1
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             try updated.update(db)
             try OutboxOp.enqueue(entityType: "folder", entityId: updated.id.uuidString, op: "update", patch: updated.syncPatch(), baseUpdatedAt: updated.updatedAt, in: db)
         }
     }
 
     func delete(id: UUID) async throws {
-        _ = try await db.dbQueue.write { db in
+        _ = try await db.safeWrite { db in
             // Collect all descendant folder IDs (recursive)
             var folderIdsToDelete: [UUID] = [id]
             var queue: [UUID] = [id]
@@ -90,7 +90,7 @@ final class FolderService: Sendable {
     // MARK: - Reorder
 
     func reorderFolders(ids: [UUID]) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             for (index, id) in ids.enumerated() {
                 try db.execute(sql: "UPDATE folder SET sortIndex = ? WHERE id = ?",
                                arguments: [index, id])
@@ -103,7 +103,7 @@ final class FolderService: Sendable {
 
     /// Move a folder under a new parent (or to root if parentId is nil).
     func moveFolder(folderId: UUID, toParentId: UUID?) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             guard var folder = try Folder.fetchOne(db, key: folderId) else { return }
             folder.parentFolderId = toParentId
             folder.updatedAt = Date()
@@ -115,7 +115,7 @@ final class FolderService: Sendable {
 
     /// Move a note into a folder (or to root if folderId is nil).
     func moveNote(noteId: UUID, toFolderId: UUID?) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             guard var note = try NotePage.fetchOne(db, key: noteId) else { return }
             note.folderId = toFolderId
             note.updatedAt = Date()

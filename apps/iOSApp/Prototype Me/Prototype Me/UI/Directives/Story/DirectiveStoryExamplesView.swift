@@ -1,33 +1,31 @@
 import UIKit
 
-/// Page 3 visual: directive cards where some archive out and others strengthen,
-/// showing that not everything sticks — and that's okay.
-final class DirectiveStoryEvolutionView: UIView, StoryAnimatable {
+/// Page 1 visual: a few static example directive cards that gently fade in,
+/// giving the user an immediate sense of what directives look like.
+final class DirectiveStoryExamplesView: UIView, StoryAnimatable {
 
-    private struct Item {
+    private struct Example {
         let title: String
         let body: String
         let colorHex: String
-        let sticks: Bool
     }
+
+    private let examples: [Example] = [
+        Example(title: "No screens after 10pm", body: "Wind down and let your brain rest.", colorHex: "#5E5CE6"),
+        Example(title: "Walk after lunch", body: "Fresh air to beat the afternoon slump.", colorHex: "#34C759"),
+        Example(title: "Journal every morning", body: "Clear your head before the day starts.", colorHex: "#FF9F0A"),
+    ]
 
     private var cards: [UIView] = []
 
-    private let items: [Item] = [
-        Item(title: "No screens after 9pm", body: "Put the phone away and let your brain wind down.", colorHex: "#5E5CE6", sticks: false),
-        Item(title: "Herbal tea at 9pm", body: "A calming routine to signal bedtime.", colorHex: "#FF9F0A", sticks: false),
-        Item(title: "No screens after 10pm", body: "Adjusted — 10pm feels more realistic.", colorHex: "#5E5CE6", sticks: true),
-        Item(title: "Read for 20 min before bed", body: "Wind down with a book instead of a screen.", colorHex: "#34C759", sticks: true),
-    ]
-
     override init(frame: CGRect) {
         super.init(frame: frame)
-        buildCards()
+        buildLayout()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    private func buildCards() {
+    private func buildLayout() {
         let stack = UIStackView()
         stack.axis = .vertical
         stack.spacing = DesignTokens.Spacing.sm
@@ -36,34 +34,33 @@ final class DirectiveStoryEvolutionView: UIView, StoryAnimatable {
         addSubview(stack)
 
         NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DesignTokens.Spacing.xl),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -DesignTokens.Spacing.xl),
         ])
 
-        for item in items {
-            let card = makeCard(for: item)
+        for example in examples {
+            let card = makeCard(for: example)
             stack.addArrangedSubview(card)
             cards.append(card)
             card.alpha = 0
-            card.transform = CGAffineTransform(translationX: 0, y: 15)
+            card.transform = CGAffineTransform(translationX: 0, y: 10)
         }
     }
 
-    private func makeCard(for item: Item) -> UIView {
+    private func makeCard(for example: Example) -> UIView {
         let wrapper = UIView()
         wrapper.backgroundColor = DesignTokens.Colors.surfacePrimary
         wrapper.layer.cornerRadius = DesignTokens.Radii.md
         wrapper.clipsToBounds = true
 
         let colorBar = UIView()
-        colorBar.backgroundColor = UIColor(hex: item.colorHex) ?? .systemOrange
+        colorBar.backgroundColor = UIColor(hex: example.colorHex) ?? .systemPurple
         colorBar.translatesAutoresizingMaskIntoConstraints = false
         wrapper.addSubview(colorBar)
 
         let title = UILabel()
-        title.text = item.title
+        title.text = example.title
         title.font = DesignTokens.Typography.headline
         title.textColor = DesignTokens.Colors.textPrimary
         title.numberOfLines = 0
@@ -81,7 +78,7 @@ final class DirectiveStoryEvolutionView: UIView, StoryAnimatable {
         titleRow.alignment = .center
 
         let body = UILabel()
-        body.text = item.body
+        body.text = example.body
         body.font = DesignTokens.Typography.caption1
         body.textColor = DesignTokens.Colors.textSecondary
         body.numberOfLines = 2
@@ -111,18 +108,14 @@ final class DirectiveStoryEvolutionView: UIView, StoryAnimatable {
 
     func playEntrance() {
         guard !UIAccessibility.isReduceMotionEnabled else {
-            for (i, card) in cards.enumerated() {
-                card.alpha = items[i].sticks ? 1 : 0.3
-                card.transform = .identity
-            }
+            for card in cards { card.alpha = 1; card.transform = .identity }
             return
         }
 
-        // Phase 1: All cards appear
         for (i, card) in cards.enumerated() {
             UIView.animate(
-                withDuration: 0.4,
-                delay: 0.1 + Double(i) * 0.12,
+                withDuration: 0.5,
+                delay: 0.15 + Double(i) * 0.15,
                 usingSpringWithDamping: 0.8,
                 initialSpringVelocity: 0.3
             ) {
@@ -130,50 +123,6 @@ final class DirectiveStoryEvolutionView: UIView, StoryAnimatable {
                 card.transform = .identity
             }
         }
-
-        // Phase 2: Non-sticking cards fade/slide out, sticking ones get a green border
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
-            guard let self else { return }
-            for (i, card) in self.cards.enumerated() {
-                if self.items[i].sticks {
-                    UIView.animate(withDuration: 0.4) {
-                        card.layer.borderWidth = 1.5
-                        card.layer.borderColor = DesignTokens.Colors.success.withAlphaComponent(0.4).cgColor
-                    }
-                } else {
-                    UIView.animate(withDuration: 0.5, delay: Double(i) * 0.1, options: .curveEaseIn) {
-                        card.alpha = 0.25
-                        card.transform = CGAffineTransform(scaleX: 0.97, y: 0.97)
-                    }
-                    // Strikethrough the title
-                    if let titleLabel = self.findTitleLabel(in: card) {
-                        UIView.transition(with: titleLabel, duration: 0.3, options: .transitionCrossDissolve) {
-                            titleLabel.attributedText = NSAttributedString(string: titleLabel.text ?? "", attributes: [
-                                .strikethroughStyle: NSUnderlineStyle.single.rawValue,
-                                .foregroundColor: DesignTokens.Colors.textTertiary,
-                                .font: DesignTokens.Typography.headline,
-                            ])
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// Finds the title label (first label with headline font) inside the card hierarchy.
-    private func findTitleLabel(in view: UIView) -> UILabel? {
-        for sub in view.subviews {
-            if let stack = sub as? UIStackView {
-                for arranged in stack.arrangedSubviews {
-                    if let row = arranged as? UIStackView,
-                       let label = row.arrangedSubviews.first as? UILabel {
-                        return label
-                    }
-                }
-            }
-            if let found = findTitleLabel(in: sub) { return found }
-        }
-        return nil
     }
 
     func stopAnimations() {

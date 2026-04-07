@@ -10,7 +10,7 @@ class SpeakCoordinator: Coordinator {
         self.environment = environment
         self.navigationController = UINavigationController()
         navigationController.tabBarItem = UITabBarItem(
-            title: "Speak",
+            title: "Ask",
             image: UIImage(systemName: "waveform.circle"),
             selectedImage: UIImage(systemName: "waveform.circle.fill")
         )

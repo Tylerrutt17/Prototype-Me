@@ -11,7 +11,10 @@ final class OnboardingStoryViewController: UIViewController {
 
     private struct PageConfig {
         let title: String
-        let subtitle: String
+        /// Plain-text subtitle. Only used for pages WITHOUT a styled entry in
+        /// `attributedSubtitles`. Pages that have a styled entry should set this
+        /// to nil — the styled map is the single source of truth for those pages.
+        let subtitle: String?
         let visualType: VisualType?
         let particleIntensity: CGFloat
 
@@ -45,54 +48,54 @@ final class OnboardingStoryViewController: UIViewController {
 
     private let pages: [PageConfig] = [
         // ── Act I — The Problem ────────────────────
-        // 1. Hook
+        // 1. Hook (styled in map[0])
         PageConfig(
             title: "You've done this before",
-            subtitle: "The better habits. The goals. The fresh starts. It works for a while — then it doesn't.",
+            subtitle: nil,
             visualType: .vision,
             particleIntensity: 0.4
         ),
-        // 2. The Gap
+        // 2. The Gap (styled in map[1])
         PageConfig(
             title: "Why? The hard part isn't starting",
-            subtitle: "It's sticking with it. You try building better habits, it works, then life gets in the way and you forget. Every time.",
+            subtitle: nil,
             visualType: .buildFade,
             particleIntensity: 0.4
         ),
 
         // ── Act II — The Insight ───────────────────
-        // 3. Need to track (bridges "you forget" → "there's patterns")
+        // 3. Need to track (styled in map[2])
         PageConfig(
             title: "You need a way to track it",
-            subtitle: "Write down what worked, what didn't. That way you can build and improve over time — without having to remember it all.",
+            subtitle: nil,
             visualType: .captureThoughts,
             particleIntensity: 0.4
         ),
-        // 4. Pattern exists
+        // 4. Pattern exists (styled in map[3])
         PageConfig(
             title: "Your best days aren't random",
-            subtitle: "There's patterns — the things you did, the things you skipped. Find the weaknesses, and use them to your advantage.",
+            subtitle: nil,
             visualType: .bestWorstDays,
             particleIntensity: 0.4
         ),
-        // 5. Weak points
+        // 5. Weak points (styled in map[4])
         PageConfig(
             title: "Find the weak points.",
-            subtitle: "Eye strain at the computer. Can't switch off at night. Skipped meals when you're trying to recover. Each one shows up in a specific mode. If you've never mapped them out, how would you know what to fix?",
+            subtitle: nil,
             visualType: .shortcomings,
             particleIntensity: 0.6
         ),
-        // 6. Turn weak points into modes (intro to modes)
+        // 6. Turn weak points into modes (styled in map[5])
         PageConfig(
             title: "Turn those weak points into \"modes\"",
-            subtitle: "Winding Down, Recovery, Computer Work — each one its own mode. Gamify building better habits.",
+            subtitle: nil,
             visualType: .modes,
             particleIntensity: 0.6
         ),
-        // 7. Counter through trial and error (single mode, directives refine)
+        // 7. Counter through trial and error (styled in map[6])
         PageConfig(
             title: "Figure Out What Works Best.",
-            subtitle: "It's all trial and error. You'll find what doesn't work or what works best over time.",
+            subtitle: nil,
             visualType: .directiveRefine,
             particleIntensity: 0.6
         ),
@@ -103,10 +106,10 @@ final class OnboardingStoryViewController: UIViewController {
         //     visualType: .framework,
         //     particleIntensity: 0.5
         // ),
-        // 8. Over time, it becomes second nature
+        // 8. Over time, it becomes second nature (styled in map[7])
         PageConfig(
             title: "Over time, modes become second nature",
-            subtitle: "Stay with it. Be consistent with it enough and it will start to come naturally.",
+            subtitle: nil,
             visualType: .becomesNatural,
             particleIntensity: 0.6
         ),
@@ -141,17 +144,17 @@ final class OnboardingStoryViewController: UIViewController {
         //     visualType: .systemEvolves,
         //     particleIntensity: 0.8
         // ),
-        // 10. Track
+        // 10. Track (styled in map[9])
         PageConfig(
             title: "Journaling.",
-            subtitle: "Rate your day on a 1-10. Write what happened. The app finds patterns — what dragged you down, what kept you steady. So you can see what's really working.",
+            subtitle: nil,
             visualType: .journal,
             particleIntensity: 0.8
         ),
-        // 11. Voice / AI assistant
+        // 11. Voice / AI assistant (styled in map[10])
         PageConfig(
             title: "Talk or type — it adapts",
-            subtitle: "Swap a directive, add a note, or ask what's working. The app knows your setup, so one sentence is enough.",
+            subtitle: nil,
             visualType: .voiceAssistant,
             particleIntensity: 0.6
         ),
@@ -159,15 +162,15 @@ final class OnboardingStoryViewController: UIViewController {
         // ── Act IV — The Frame + CTA ───────────────
         // 13. App's role — external memory (folder structure)
         PageConfig(
-            title: "Somewhere to hold the thread",
-            subtitle: "Organize your thoughts and directives into notes and modes — a structure that holds the thread so you don't have to.",
+            title: "Organize with Folders",
+            subtitle: nil,
             visualType: .notesFolders,
             particleIntensity: 0.5
         ),
         // 14. Philosophy — not a rulebook
         PageConfig(
             title: "This isn't a rulebook",
-            subtitle: "Don't worry about perfection - otherwise you'll get burnt out trying to follow a bunch of \"Rules.\" You'll get as much out of this as you put into it.",
+            subtitle: nil,
             visualType: .relaxed,
             particleIntensity: 0.5
         ),
@@ -358,7 +361,7 @@ final class OnboardingStoryViewController: UIViewController {
         let config = pages[index]
         let vc = OnboardingStoryPageViewController()
         vc.titleText = config.title
-        vc.subtitleText = config.subtitle
+        vc.subtitleText = config.subtitle ?? ""
         vc.pageIndex = index
         if let visualType = config.visualType {
             vc.animationView = makeVisual(for: visualType)
@@ -402,7 +405,7 @@ final class OnboardingStoryViewController: UIViewController {
         // 2 - Need a way to track it
         map[2] = styled {
             $0.normal("Write down what worked, what didn't. That way you can ")
-            $0.bold("build and improve over time")
+            $0.bold("Improve over time")
             $0.normal(" — ")
             $0.italic("without having to remember it all.")
         }
@@ -416,9 +419,8 @@ final class OnboardingStoryViewController: UIViewController {
 
         // 4 - Weak points
         map[4] = styled {
-            $0.normal("Eye strain at the computer. Can't switch off at night. Skipped meals when you're trying to recover. ")
-            $0.bold("Each one shows up in a specific mode.")
-            $0.normal(" If you've never mapped them out, ")
+            $0.normal("Eye strain at the computer. Can't switch off at night?")
+            $0.normal(" If you've never listed them out, ")
             $0.italic("how would you know what to fix?")
         }
 
@@ -432,16 +434,16 @@ final class OnboardingStoryViewController: UIViewController {
         // 6 - Counter weak points
         map[6] = styled {
             $0.bold("It's all trial and error. ")
-            $0.normal("You'll find what doesn't work or ")
-            $0.italic("what works best over time.")
+            $0.normal("Try things, ")
+            $0.italic("see what works, ")
+            $0.normal("toss out what doesn't and ")
+            $0.bold("better systems over time.")
         }
 
         // 7 - Becomes second nature
         map[7] = styled {
-            $0.normal("Stay with it. Keep tuning what's in each mode — ")
-            $0.bold("lean into what lands, let go of what doesn't.")
-            $0.normal(" Run it enough and it stops feeling like a system. ")
-            $0.italic("It's just how your day moves.")
+            $0.normal("Be consistent with it enough and it ")
+            $0.bold("will start to come naturally.")
         }
 
         // 8 - Additional features is title-only (transitional), no styled subtitle
@@ -450,9 +452,7 @@ final class OnboardingStoryViewController: UIViewController {
         map[9] = styled {
             $0.normal("Rate your day. Write what happened. The app finds ")
             $0.bold("patterns")
-            $0.normal(" — what dragged you down, what kept you steady. So you can see what's ")
-            $0.italic("really")
-            $0.normal(" working.")
+            $0.normal(" — So you can see what makes your best and worst days.")
         }
 
         // 10 - Voice / AI assistant
@@ -465,19 +465,23 @@ final class OnboardingStoryViewController: UIViewController {
 
         // 11 - App's role (folder structure)
         map[11] = styled {
-            $0.normal("Organize your thoughts and directives into ")
-            $0.bold("notes and modes")
-            $0.normal(" — ")
-            $0.italic("a structure that holds the thread so you don't have to.")
+            $0.normal("Organize your thoughts into ")
+            $0.bold("folders and notes")
+            $0.normal(" — including ")
+            $0.bold("modes")
+            $0.normal(", which are just notes that filter your Focus.")
         }
 
         // 12 - Philosophy (not a rulebook)
         map[12] = styled {
             $0.bold("Don't worry about perfection")
-            $0.normal(" - otherwise you'll get burnt out trying to follow a bunch of ")
+            $0.normal(" - otherwise you'll get burned out trying to follow a bunch of ")
             $0.italic("\"Rules.\"")
-            $0.normal(" You'll get as much out of this ")
-            $0.bold("as you put into it.")
+            $0.normal(" You'll get ")
+            $0.bold("as much ")
+            $0.normal("or ")
+            $0.bold("as little")
+            $0.bold(" as you put into this.")
         }
 
         // 13 - CTA

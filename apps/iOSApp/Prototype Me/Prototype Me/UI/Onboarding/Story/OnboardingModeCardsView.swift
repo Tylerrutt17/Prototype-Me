@@ -14,25 +14,32 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
     private var cycleID = 0
     private var currentModeIndex = 0
 
+    // User interaction: when the user swipes the carousel, pause auto-cycling
+    // for `inactivityTimeout` seconds of no interaction, then resume.
+    private var isUserControlled = false
+    private var resumeTimer: Timer?
+    private let inactivityTimeout: TimeInterval = 7.0
+
     private struct ModeData {
         let name: String
-        let directives: [(title: String, color: UIColor)]
+        let directives: [String]
     }
 
     private let modes: [ModeData] = [
+        ModeData(name: "Winding Down", directives: [
+            "No screens after 9pm",
+            "Read 10 min before bed",
+            "Lights dim by 10",
+        ]),
+        ModeData(name: "Computer Work", directives: [
+            "Eye break every 30 min",
+            "Stand up each hour",
+            "Walk during lunch",
+        ]),
         ModeData(name: "Deep Work", directives: [
-            ("No distractions until noon", DesignTokens.Colors.accent),
-            ("2-hour focus block", DesignTokens.Colors.accentSecondary),
-            ("Phone on silent", DesignTokens.Colors.accentTertiary),
-        ]),
-        ModeData(name: "Recovery", directives: [
-            ("No screens after 9pm", DesignTokens.Colors.success),
-            ("Light stretching", DesignTokens.Colors.accentSecondary),
-            ("Journal before bed", DesignTokens.Colors.accent),
-        ]),
-        ModeData(name: "Social", directives: [
-            ("Be present — phone away", DesignTokens.Colors.warning),
-            ("Ask good questions", DesignTokens.Colors.accentTertiary),
+            "No distractions until noon",
+            "2-hour focus block",
+            "Phone on silent",
         ]),
     ]
 
@@ -62,8 +69,10 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
 
         // Horizontal scroll for mode cards
         scrollView.showsHorizontalScrollIndicator = false
-        scrollView.isPagingEnabled = false
-        scrollView.isUserInteractionEnabled = false
+        scrollView.isPagingEnabled = false // custom paging — card stride != bounds.width
+        scrollView.isUserInteractionEnabled = true
+        scrollView.decelerationRate = .fast
+        scrollView.delegate = self
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(scrollView)
 
@@ -118,8 +127,8 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
         // Build directive card groups (one set per mode, all hidden initially)
         for mode in modes {
             var group: [UIView] = []
-            for (title, color) in mode.directives {
-                let card = makeDirectiveCard(title: title, color: color)
+            for title in mode.directives {
+                let card = makeDirectiveCard(title: title)
                 card.alpha = 0
                 group.append(card)
             }
@@ -175,18 +184,21 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
         return card
     }
 
-    private func makeDirectiveCard(title: String, color: UIColor) -> UIView {
+    private func makeDirectiveCard(title: String) -> UIView {
+        // Matches DirectiveCell styling: 4pt color bar on the left, no dot.
+        // Color is intentionally neutral here so the focus stays on the titles —
+        // the per-directive colors were noise in this preview context.
         let card = UIView()
         card.backgroundColor = DesignTokens.Colors.surfacePrimary
         card.layer.cornerRadius = DesignTokens.Radii.md
         card.layer.borderWidth = 1
         card.layer.borderColor = DesignTokens.Colors.separator.cgColor
+        card.clipsToBounds = true
 
-        let dot = UIView()
-        dot.backgroundColor = color
-        dot.layer.cornerRadius = 5
-        dot.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(dot)
+        let colorBar = UIView()
+        colorBar.backgroundColor = DesignTokens.Colors.textTertiary.withAlphaComponent(0.5)
+        colorBar.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(colorBar)
 
         let label = UILabel()
         label.text = title
@@ -207,17 +219,16 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
         row.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(row)
 
-        let pad = DesignTokens.Spacing.md
         NSLayoutConstraint.activate([
-            dot.widthAnchor.constraint(equalToConstant: 10),
-            dot.heightAnchor.constraint(equalToConstant: 10),
-            dot.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
-            dot.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+            colorBar.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            colorBar.topAnchor.constraint(equalTo: card.topAnchor),
+            colorBar.bottomAnchor.constraint(equalTo: card.bottomAnchor),
+            colorBar.widthAnchor.constraint(equalToConstant: 4),
 
-            row.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
-            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -pad),
-            row.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: DesignTokens.Spacing.sm),
-            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
+            row.topAnchor.constraint(equalTo: card.topAnchor, constant: DesignTokens.Spacing.md),
+            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -DesignTokens.Spacing.md),
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: DesignTokens.Spacing.lg),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -DesignTokens.Spacing.lg),
         ])
 
         return card
@@ -260,7 +271,7 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
             self.showDirectives(for: 0, animated: true)
 
             // 3. Swipe to next mode after a pause
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
                 guard let self, !self.isStopped, self.cycleID == currentCycle else { return }
                 self.swipeToMode(1, cycle: currentCycle)
             }
@@ -268,10 +279,10 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
     }
 
     private func swipeToMode(_ index: Int, cycle: Int) {
-        guard !isStopped, cycleID == cycle, index < modes.count else {
+        guard !isStopped, !isUserControlled, cycleID == cycle, index < modes.count else {
             // Done cycling — loop back after a pause
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                guard let self, !self.isStopped, self.cycleID == cycle else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
+                guard let self, !self.isStopped, !self.isUserControlled, self.cycleID == cycle else { return }
                 self.swipeToMode(0, cycle: cycle)
             }
             return
@@ -294,15 +305,15 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
 
         // Select new mode
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard let self, !self.isStopped, self.cycleID == cycle else { return }
+            guard let self, !self.isStopped, !self.isUserControlled, self.cycleID == cycle else { return }
             self.selectMode(at: index, animated: true)
             self.showDirectives(for: index, animated: true)
             self.currentModeIndex = index
 
             // Next swipe
             let nextIndex = index + 1
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                guard let self, !self.isStopped, self.cycleID == cycle else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
+                guard let self, !self.isStopped, !self.isUserControlled, self.cycleID == cycle else { return }
                 self.swipeToMode(nextIndex >= self.modes.count ? 0 : nextIndex, cycle: cycle)
             }
         }
@@ -310,6 +321,9 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
 
     func stopAnimations() {
         isStopped = true
+        resumeTimer?.invalidate()
+        resumeTimer = nil
+        isUserControlled = false
         for card in modeCards { card.layer.removeAllAnimations() }
         for group in directiveGroups { for card in group { card.layer.removeAllAnimations() } }
         resetState()
@@ -425,5 +439,89 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
         if let header = viewWithTag(500) {
             UIView.performWithoutAnimation { header.alpha = 0 }
         }
+    }
+
+    // MARK: - User Interaction
+
+    private var cardStride: CGFloat {
+        let cardWidth = bounds.width - DesignTokens.Spacing.xl * 2
+        return cardWidth + DesignTokens.Spacing.md
+    }
+
+    private func pauseForUserControl() {
+        isUserControlled = true
+        cycleID += 1 // invalidate any pending auto callbacks
+        resumeTimer?.invalidate()
+        resumeTimer = nil
+    }
+
+    private func scheduleAutoResume() {
+        resumeTimer?.invalidate()
+        resumeTimer = Timer.scheduledTimer(withTimeInterval: inactivityTimeout, repeats: false) { [weak self] _ in
+            self?.resumeAutoCycle()
+        }
+    }
+
+    private func resumeAutoCycle() {
+        guard !isStopped else { return }
+        isUserControlled = false
+        cycleID += 1
+        let next = (currentModeIndex + 1) % modes.count
+        swipeToMode(next, cycle: cycleID)
+    }
+
+    /// Apply a mode change triggered by the user swiping (no scroll animation —
+    /// the scrollView has already moved under the user's finger).
+    private func applyUserModeChange(to index: Int) {
+        guard index != currentModeIndex, index < modes.count else { return }
+        deselectMode(at: currentModeIndex)
+        // Remove old directives immediately (no fade-out delay). Otherwise the
+        // stack view briefly holds both sets, pushing the new cards down until
+        // the old ones are removed — which reads as a jolt.
+        removeDirectivesImmediately(for: currentModeIndex)
+        currentModeIndex = index
+        selectMode(at: index, animated: true)
+        showDirectives(for: index, animated: true)
+    }
+
+    private func removeDirectivesImmediately(for modeIndex: Int) {
+        guard modeIndex < directiveGroups.count else { return }
+        for card in directiveGroups[modeIndex] {
+            card.layer.removeAllAnimations()
+            card.alpha = 0
+            card.removeFromSuperview()
+        }
+    }
+}
+
+// MARK: - UIScrollViewDelegate
+
+extension OnboardingModeCardsView: UIScrollViewDelegate {
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        pauseForUserControl()
+    }
+
+    func scrollViewWillEndDragging(
+        _ scrollView: UIScrollView,
+        withVelocity velocity: CGPoint,
+        targetContentOffset: UnsafeMutablePointer<CGPoint>
+    ) {
+        // Snap to the nearest card, biased by swipe velocity so a flick still
+        // pages forward.
+        let stride = cardStride
+        guard stride > 0 else { return }
+        let projected = targetContentOffset.pointee.x + velocity.x * 60
+        let maxIndex = CGFloat(modes.count - 1)
+        let snapped = max(0, min(maxIndex, round(projected / stride)))
+        targetContentOffset.pointee = CGPoint(x: snapped * stride, y: 0)
+        applyUserModeChange(to: Int(snapped))
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if !decelerate { scheduleAutoResume() }
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        scheduleAutoResume()
     }
 }

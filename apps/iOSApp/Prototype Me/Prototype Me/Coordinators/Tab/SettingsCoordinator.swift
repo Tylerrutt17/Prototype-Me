@@ -20,6 +20,7 @@ class SettingsCoordinator: Coordinator {
     func start() {
         let vc = SettingsViewController()
         vc.dbQueue = environment.db.dbQueue
+        vc.syncEngine = environment.syncEngine
 
         vc.onSyncDebugTapped = { [weak self] in self?.showSyncDebug() }
         vc.onProfileTapped = { [weak self] in self?.showProfile() }

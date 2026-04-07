@@ -406,9 +406,9 @@ enum SampleData {
         PaywallFeature(title: "Directives & Modes",       freeValue: "Unlimited", proValue: "Unlimited"),
         PaywallFeature(title: "Balloons & Schedules",     freeValue: "Unlimited", proValue: "Unlimited"),
         PaywallFeature(title: "Journal",                  freeValue: "checkmark", proValue: "checkmark"),
-        PaywallFeature(title: "AI suggestions per day",   freeValue: "5",         proValue: "Unlimited"),
+        PaywallFeature(title: "Prototype suggestions per day", freeValue: "5",         proValue: "Unlimited"),
         PaywallFeature(title: "Weekly & monthly summaries", freeValue: "—",       proValue: "checkmark"),
-        PaywallFeature(title: "Speak chats",              freeValue: "Limited",   proValue: "Unlimited"),
+        PaywallFeature(title: "Ask Feature chats",              freeValue: "Limited",   proValue: "Unlimited"),
         PaywallFeature(title: "Voice talk",               freeValue: "—",         proValue: "checkmark"),
         PaywallFeature(title: "Cloud sync",               freeValue: "—",         proValue: "checkmark"),
         PaywallFeature(title: "Priority support",         freeValue: "—",         proValue: "checkmark"),
@@ -486,9 +486,9 @@ enum SampleData {
             AiChip(
                 id: UUID(uuidString: "0000000D-000D-000D-000D-000000000003")!,
                 action: .activateMode,
-                title: "Activate Recovery Situational Mode",
+                title: "Activate Recovery Mode",
                 subtitle: "Your journal ratings dropped — take it easy today",
-                destination: "Situational Modes",
+                destination: "Modes",
                 status: .suggested,
                 prefillTitle: nil,
                 prefillBody: nil
@@ -513,11 +513,11 @@ enum SampleData {
     static let coachMarks: [CoachMark] = [
         // Focus tab (0)
         CoachMark(id: "focus_overview", title: "Focus", body: "Your home base. See what's active right now — your current mode, scheduled directives, and balloon timers all in one place.", pointingDirection: .down, tabIndex: 0),
-        CoachMark(id: "focus_ai", title: "AI Coach", body: "Tap the sparkle to get personalized suggestions based on your directives, journal, and patterns.", pointingDirection: .down, tabIndex: 0),
+        CoachMark(id: "focus_ai", title: "Prototype", body: "Tap the sparkle to get personalized suggestions based on your directives, journal, and patterns.", pointingDirection: .down, tabIndex: 0),
         CoachMark(id: "focus_balloons", title: "Balloons", body: "Visual timers that deflate over time. Pump them up when you follow through — they help you see consistency at a glance.", pointingDirection: .up, tabIndex: 0),
 
         // Notes tab (1)
-        CoachMark(id: "notes_overview", title: "Notes & Modes", body: "Your personal knowledge base. Write notes, create situational modes, and link directives to build your system.", pointingDirection: .down, tabIndex: 1),
+        CoachMark(id: "notes_overview", title: "Notes & Modes", body: "Your personal knowledge base. Write notes, create modes, and link directives to build your system.", pointingDirection: .down, tabIndex: 1),
 
         // Journal tab (2)
         CoachMark(id: "journal_overview", title: "Journal", body: "Rate your day, tag what happened, and write a quick reflection. Over time, patterns emerge that help you optimize.", pointingDirection: .down, tabIndex: 2),

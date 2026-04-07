@@ -6,6 +6,30 @@ final class DatabaseManager: Sendable {
 
     let dbQueue: DatabaseQueue
 
+    // MARK: - Safe Write
+
+    /// Error thrown when the device is critically low on storage and writes are blocked.
+    struct StorageFullError: LocalizedError {
+        var errorDescription: String? { "Device storage is full. Free up space to save." }
+    }
+
+    /// Wraps `dbQueue.write` with a pre-flight storage check and post-failure notification.
+    /// Use this instead of `dbQueue.write` in service methods to surface errors to the UI.
+    @discardableResult
+    func safeWrite<T>(_ updates: @Sendable @escaping (Database) throws -> T) async throws -> T {
+        guard StorageMonitor.canSafelyWrite else {
+            let error = StorageFullError()
+            StorageMonitor.handleWriteError(error)
+            throw error
+        }
+        do {
+            return try await dbQueue.write(updates)
+        } catch {
+            StorageMonitor.handleWriteError(error)
+            throw error
+        }
+    }
+
     /// Creates a DatabaseManager backed by a file in Application Support.
     init() throws {
         let fileManager = FileManager.default
@@ -228,6 +252,14 @@ final class DatabaseManager: Sendable {
             try db.alter(table: "directive") { t in
                 t.add(column: "color", .text)  // user-chosen hex color, nullable
             }
+        }
+
+        migrator.registerMigration("v12_outboxBackoff") { db in
+            try db.alter(table: "outboxOp") { t in
+                t.add(column: "nextRetryAt", .datetime)  // time-based retry gating
+            }
+            // Unstick existing failed ops — reset attemptCount so they retry on next sync.
+            try db.execute(sql: "UPDATE outboxOp SET attemptCount = 0, lastError = NULL")
         }
 
         try migrator.migrate(dbQueue)

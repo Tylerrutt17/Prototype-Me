@@ -333,7 +333,6 @@ private final class DirectiveHeaderCell: UICollectionViewCell, UITextViewDelegat
 
     var onFieldEdited: ((String, String?) -> Void)?
 
-    private let accentBar = UIView()
     private let statusBadge = UIButton(type: .system)
     private let titleView = UITextView()
     private let titlePlaceholder = UILabel()
@@ -357,18 +356,12 @@ private final class DirectiveHeaderCell: UICollectionViewCell, UITextViewDelegat
         DesignTokens.Shadows.apply(to: layer, elevation: .medium)
         clipsToBounds = false
 
-        // Accent bar
-        accentBar.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(accentBar)
-
         // Status badge pill
         var badgeConfig = UIButton.Configuration.filled()
         badgeConfig.cornerStyle = .capsule
         badgeConfig.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10)
         statusBadge.configuration = badgeConfig
         statusBadge.isUserInteractionEnabled = false
-        statusBadge.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(statusBadge)
 
         // Title (editable, multi-line)
         titleView.font = DesignTokens.Typography.rounded(style: .title2, weight: .bold)
@@ -415,24 +408,25 @@ private final class DirectiveHeaderCell: UICollectionViewCell, UITextViewDelegat
         metaLabel.font = DesignTokens.Typography.caption1
         metaLabel.textColor = DesignTokens.Colors.textTertiary
 
-        let stack = UIStackView(arrangedSubviews: [titleView, bodyView, metaLabel])
+        // Top pill row: [status badge] | spacer, so the pill stays left-aligned.
+        let pillSpacer = UIView()
+        pillSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let pillRow = UIStackView(arrangedSubviews: [statusBadge, pillSpacer])
+        pillRow.axis = .horizontal
+        pillRow.alignment = .center
+        statusBadge.setContentHuggingPriority(.required, for: .horizontal)
+
+        let stack = UIStackView(arrangedSubviews: [pillRow, titleView, bodyView, metaLabel])
         stack.axis = .vertical
         stack.spacing = DesignTokens.Spacing.md
         stack.alignment = .fill
+        stack.setCustomSpacing(DesignTokens.Spacing.lg, after: pillRow)
         stack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(stack)
 
         let padding = DesignTokens.Spacing.xl
         NSLayoutConstraint.activate([
-            accentBar.topAnchor.constraint(equalTo: contentView.topAnchor),
-            accentBar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            accentBar.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            accentBar.heightAnchor.constraint(equalToConstant: 4),
-
-            statusBadge.topAnchor.constraint(equalTo: accentBar.bottomAnchor, constant: DesignTokens.Spacing.lg),
-            statusBadge.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: padding),
-
-            stack.topAnchor.constraint(equalTo: statusBadge.bottomAnchor, constant: DesignTokens.Spacing.lg),
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: padding),
             stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: padding),
             stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -padding),
             stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -padding),
@@ -442,20 +436,15 @@ private final class DirectiveHeaderCell: UICollectionViewCell, UITextViewDelegat
     func configure(with directive: Directive) {
         currentDirectiveId = directive.id
 
-        // Status color
-        let color: UIColor = switch directive.status {
+        // Status badge: always visible; color reflects active/archived.
+        let badgeColor: UIColor = switch directive.status {
         case .active:   DesignTokens.Colors.success
         case .archived: DesignTokens.Colors.textTertiary
         }
-
-        // Accent bar
-        accentBar.backgroundColor = color
-
-        // Status badge
         var badgeCfg = statusBadge.configuration ?? .filled()
         badgeCfg.title = directive.status.rawValue.uppercased()
-        badgeCfg.baseBackgroundColor = color.withAlphaComponent(0.15)
-        badgeCfg.baseForegroundColor = color
+        badgeCfg.baseBackgroundColor = badgeColor.withAlphaComponent(0.15)
+        badgeCfg.baseForegroundColor = badgeColor
         badgeCfg.titleTextAttributesTransformer = .init { container in
             var c = container
             c.font = DesignTokens.Typography.rounded(style: .caption2, weight: .bold)

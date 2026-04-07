@@ -95,7 +95,7 @@ class AIPanelViewController: UIViewController {
     }
 
     private func setupHeader() {
-        titleLabel.text = "AI Suggestions"
+        titleLabel.text = "Prototype Suggestions"
         titleLabel.font = DesignTokens.Typography.rounded(style: .title3, weight: .bold)
         titleLabel.textColor = DesignTokens.Colors.textPrimary
 
@@ -292,7 +292,7 @@ class AIPanelViewController: UIViewController {
         icon.translatesAutoresizingMaskIntoConstraints = false
 
         let label = UILabel()
-        label.text = "You've used all your AI suggestions for today."
+        label.text = "You've used all your Prototype suggestions for today."
         label.font = DesignTokens.Typography.callout
         label.textColor = DesignTokens.Colors.textSecondary
         label.textAlignment = .center
@@ -437,7 +437,7 @@ class AIPanelViewController: UIViewController {
                     self.state = .idle
                     Haptics.error()
                     // Show error inline
-                    let alert = UIAlertController(title: "AI Error", message: "Couldn't get suggestions. Try again.", preferredStyle: .alert)
+                    let alert = UIAlertController(title: "Prototype Error", message: "Couldn't get suggestions. Try again.", preferredStyle: .alert)
                     alert.addAction(UIAlertAction(title: "OK", style: .default))
                     self.present(alert, animated: true)
                 }

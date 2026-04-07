@@ -42,8 +42,8 @@ final class OnboardingDirectiveRefineView: UIView, StoryAnimatable {
         DirectiveChange(
             oldText: "Stop using electronics",
             newText: "Screens off an hour before bed",
-            strikeComment: "\"stop\" — I always caved late",
-            replaceComment: "a clean cutoff, not willpower"
+            strikeComment: "\"stop\" — Not specific enough",
+            replaceComment: "Let's make a clean cutoff"
         ),
         DirectiveChange(
             oldText: "Go to bed earlier",

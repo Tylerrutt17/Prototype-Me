@@ -13,7 +13,7 @@ class UsageLimitViewController: BaseViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        navBar.setTitle("AI Usage", animated: false)
+        navBar.setTitle("Prototype Usage", animated: false)
         configureLayout()
         if quota != nil {
             buildContent()
@@ -115,7 +115,7 @@ class UsageLimitViewController: BaseViewController {
         countLabel.textAlignment = .center
 
         let ofLabel = UILabel()
-        ofLabel.text = "of \(quota.dailyLimit) AI suggestions remaining today"
+        ofLabel.text = "of \(quota.dailyLimit) Prototype suggestions remaining today"
         ofLabel.font = DesignTokens.Typography.subheadline
         ofLabel.textColor = DesignTokens.Colors.textSecondary
         ofLabel.textAlignment = .center
@@ -240,13 +240,13 @@ class UsageLimitViewController: BaseViewController {
             ])
 
             let upgradeTitle = UILabel()
-            upgradeTitle.text = "Need more AI suggestions?"
+            upgradeTitle.text = "Need more Prototype suggestions?"
             upgradeTitle.font = DesignTokens.Typography.rounded(style: .headline, weight: .semibold)
             upgradeTitle.textColor = DesignTokens.Colors.textPrimary
             upgradeTitle.textAlignment = .center
 
             let upgradeBody = UILabel()
-            upgradeBody.text = "Upgrade to Pro for unlimited AI suggestions and more."
+            upgradeBody.text = "Upgrade to Pro for unlimited Prototype suggestions and more."
             upgradeBody.font = DesignTokens.Typography.subheadline
             upgradeBody.textColor = DesignTokens.Colors.textSecondary
             upgradeBody.textAlignment = .center

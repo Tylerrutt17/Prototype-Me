@@ -502,7 +502,7 @@ final class ReviewDetailViewController: BaseViewController {
         icon.contentMode = .scaleAspectFit
 
         let label = UILabel()
-        label.text = "No AI review for this period yet."
+        label.text = "No Prototype review for this period yet."
         label.font = DesignTokens.Typography.subheadline
         label.textColor = DesignTokens.Colors.textTertiary
         label.textAlignment = .center

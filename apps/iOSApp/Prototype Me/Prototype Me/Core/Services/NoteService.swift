@@ -25,7 +25,7 @@ final class NoteService: Sendable {
             createdAt: now,
             updatedAt: now
         )
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             try note.insert(db)
             try OutboxOp.enqueue(entityType: "notePage", entityId: note.id.uuidString, op: "create", patch: note.syncPatch(), in: db)
         }
@@ -36,14 +36,14 @@ final class NoteService: Sendable {
         var updated = note
         updated.updatedAt = Date()
         updated.version += 1
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             try updated.update(db)
             try OutboxOp.enqueue(entityType: "notePage", entityId: updated.id.uuidString, op: "update", patch: updated.syncPatch(), baseUpdatedAt: updated.updatedAt, in: db)
         }
     }
 
     func delete(id: UUID) async throws {
-        _ = try await db.dbQueue.write { db in
+        _ = try await db.safeWrite { db in
             try NotePage.deleteOne(db, key: id)
             try OutboxOp.enqueueDelete(entityType: "notePage", entityId: id.uuidString, in: db)
         }
@@ -58,7 +58,7 @@ final class NoteService: Sendable {
     // MARK: - Directive Links
 
     func linkDirective(noteId: UUID, directiveId: UUID) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             try db.execute(sql: """
                 UPDATE noteDirective SET sortIndex = sortIndex + 1 WHERE noteId = ?
                 """, arguments: [noteId])
@@ -69,7 +69,7 @@ final class NoteService: Sendable {
     }
 
     func unlinkDirective(noteId: UUID, directiveId: UUID) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             try db.execute(sql: """
                 DELETE FROM noteDirective WHERE noteId = ? AND directiveId = ?
                 """, arguments: [noteId, directiveId])
@@ -78,7 +78,7 @@ final class NoteService: Sendable {
     }
 
     func reorderDirectives(noteId: UUID, directiveIds: [UUID]) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             for (index, dirId) in directiveIds.enumerated() {
                 try db.execute(sql: """
                     UPDATE noteDirective SET sortIndex = ? WHERE noteId = ? AND directiveId = ?
@@ -96,7 +96,7 @@ final class NoteService: Sendable {
     // MARK: - Reorder
 
     func reorderNotes(ids: [UUID]) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             for (index, id) in ids.enumerated() {
                 try db.execute(sql: "UPDATE notePage SET sortIndex = ? WHERE id = ?",
                                arguments: [index, id])
@@ -110,7 +110,7 @@ final class NoteService: Sendable {
     // MARK: - Move to Folder
 
     func moveToFolder(noteId: UUID, folderId: UUID?) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             guard var note = try NotePage.fetchOne(db, key: noteId) else { return }
             note.folderId = folderId
             note.updatedAt = Date()

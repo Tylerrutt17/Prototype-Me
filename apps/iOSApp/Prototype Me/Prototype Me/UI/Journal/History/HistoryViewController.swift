@@ -152,6 +152,11 @@ class HistoryViewController: BaseViewController {
         }
 
         dataSource.apply(snapshot, animatingDifferences: false)
+        // HistoryMonthSummary / PeriodicReview use id-only equality, so diffing
+        // alone won't re-render rows when their content changes.
+        var reconfigSnap = dataSource.snapshot()
+        reconfigSnap.reconfigureItems(reconfigSnap.itemIdentifiers)
+        dataSource.apply(reconfigSnap, animatingDifferences: false)
     }
 
     // MARK: - Summary Builder
@@ -190,7 +195,7 @@ class HistoryViewController: BaseViewController {
     // MARK: - Test Trigger (dev-only)
 
     private func triggerTestReview() {
-        let alert = UIAlertController(title: "Generate Review", message: "Create an AI review for the current period?", preferredStyle: .actionSheet)
+        let alert = UIAlertController(title: "Generate Review", message: "Create a Prototype review for the current period?", preferredStyle: .actionSheet)
         alert.addAction(UIAlertAction(title: "Weekly (this week)", style: .default) { [weak self] _ in
             self?.runTestTrigger(period: "weekly")
         })

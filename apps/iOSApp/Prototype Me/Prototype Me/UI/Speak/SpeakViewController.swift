@@ -594,7 +594,7 @@ class SpeakViewController: BaseViewController {
         titleStack.spacing = 1
 
         let titleLabel = UILabel()
-        titleLabel.text = "Speak"
+        titleLabel.text = "Ask"
         titleLabel.font = DesignTokens.Typography.rounded(style: .headline, weight: .semibold)
         titleLabel.textColor = DesignTokens.Colors.textPrimary
 
@@ -619,7 +619,7 @@ class SpeakViewController: BaseViewController {
         Task {
             if let apiClient, let quota: UsageQuota = try? await apiClient.get("/v1/usage") {
                 await MainActor.run {
-                    self.quotaLabel.text = "\(quota.remaining)/\(quota.dailyLimit) AI left"
+                    self.quotaLabel.text = "\(quota.remaining)/\(quota.dailyLimit) Prototype left"
                 }
             }
         }

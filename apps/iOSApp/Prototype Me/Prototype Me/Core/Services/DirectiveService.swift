@@ -34,7 +34,7 @@ final class DirectiveService: Sendable {
             createdAt: now,
             updatedAt: now
         )
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             try directive.insert(db)
             try DirectiveHistory(
                 id: UUID(), directiveId: directive.id,
@@ -49,7 +49,7 @@ final class DirectiveService: Sendable {
         var updated = directive
         updated.updatedAt = Date()
         updated.version += 1
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             try updated.update(db)
             try DirectiveHistory(
                 id: UUID(), directiveId: updated.id,
@@ -60,7 +60,7 @@ final class DirectiveService: Sendable {
     }
 
     func delete(id: UUID) async throws {
-        _ = try await db.dbQueue.write { db in
+        _ = try await db.safeWrite { db in
             try Directive.deleteOne(db, key: id)
             try OutboxOp.enqueueDelete(entityType: "directive", entityId: id.uuidString, in: db)
         }
@@ -75,7 +75,7 @@ final class DirectiveService: Sendable {
     // MARK: - Status Changes
 
     func archive(id: UUID) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             guard var dir = try Directive.fetchOne(db, key: id) else { return }
             let oldStatus = dir.status.rawValue
             dir.status = .archived
@@ -93,7 +93,7 @@ final class DirectiveService: Sendable {
     }
 
     func reactivate(id: UUID) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             guard var dir = try Directive.fetchOne(db, key: id) else { return }
             dir.status = .active
             dir.snoozedUntil = nil
@@ -107,7 +107,7 @@ final class DirectiveService: Sendable {
     // MARK: - Balloon Mechanics
 
     func pumpBalloon(id: UUID) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             guard var dir = try Directive.fetchOne(db, key: id), dir.balloonEnabled else { return }
             dir.balloonSnapshotSec = dir.balloonDurationSec
             dir.updatedAt = Date()
@@ -124,7 +124,7 @@ final class DirectiveService: Sendable {
     }
 
     func shrinkBalloon(id: UUID, newDurationSec: TimeInterval) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             guard var dir = try Directive.fetchOne(db, key: id), dir.balloonEnabled else { return }
             dir.balloonDurationSec = newDurationSec
             dir.balloonSnapshotSec = min(dir.balloonSnapshotSec, newDurationSec)
@@ -144,7 +144,7 @@ final class DirectiveService: Sendable {
     // MARK: - Snooze
 
     func snooze(id: UUID, until: Date) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             guard var dir = try Directive.fetchOne(db, key: id) else { return }
             dir.snoozedUntil = until
             dir.updatedAt = Date()
@@ -161,7 +161,7 @@ final class DirectiveService: Sendable {
     }
 
     func unsnooze(id: UUID) async throws {
-        try await db.dbQueue.write { db in
+        try await db.safeWrite { db in
             guard var dir = try Directive.fetchOne(db, key: id) else { return }
             dir.snoozedUntil = nil
             dir.updatedAt = Date()

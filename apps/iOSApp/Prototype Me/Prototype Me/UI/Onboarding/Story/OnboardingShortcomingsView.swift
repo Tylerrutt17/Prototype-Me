@@ -11,14 +11,14 @@ final class OnboardingShortcomingsView: UIView, StoryAnimatable {
     var prefersFullWidth: Bool { true }
 
     private let generalProblems: [(text: String, icon: String)] = [
-        ("I'm negative about myself", "brain.head.profile"),
-        ("I don't smile enough", "face.smiling"),
-        ("I wake up with no energy", "sunrise.fill"),
+        ("I feel tired a lot", "zzz"),
+        ("I don't drink enough water", "drop.fill"),
+        ("I'm always on my phone", "iphone"),
     ]
 
     private let situationalProblems: [(text: String, icon: String)] = [
         ("Eyes get strained at work", "eye"),
-        ("I get irritable when tired", "bolt.slash.fill"),
+        ("Trouble staying focused", "bolt.slash.fill"),
         ("I sit too long without moving", "figure.stand"),
     ]
 
@@ -49,6 +49,8 @@ final class OnboardingShortcomingsView: UIView, StoryAnimatable {
         let fwColor = NoteKind.framework.color
         let generalColumn = makeColumn(
             headerText: "GENERALLY",
+            subheaderText: "All the time",
+            emphasizeSubheader: false,
             headerIcon: "star.fill",
             headerColor: fwColor,
             problems: generalProblems,
@@ -61,6 +63,8 @@ final class OnboardingShortcomingsView: UIView, StoryAnimatable {
         let modeColor = NoteKind.mode.color
         let situationalColumn = makeColumn(
             headerText: "SITUATIONAL",
+            subheaderText: "- At work - example",
+            emphasizeSubheader: true,
             headerIcon: "bolt.fill",
             headerColor: modeColor,
             problems: situationalProblems,
@@ -72,6 +76,8 @@ final class OnboardingShortcomingsView: UIView, StoryAnimatable {
 
     private func makeColumn(
         headerText: String,
+        subheaderText: String,
+        emphasizeSubheader: Bool,
         headerIcon: String,
         headerColor: UIColor,
         problems: [(text: String, icon: String)],
@@ -94,6 +100,36 @@ final class OnboardingShortcomingsView: UIView, StoryAnimatable {
         headerRow.spacing = DesignTokens.Spacing.xs
         headerRow.alignment = .center
 
+        // Subheader: indented to align with the header *text* (past the icon),
+        // so it reads as a qualifier on the section title rather than a caption
+        // floating under the icon.
+        let subheaderLabel = UILabel()
+        subheaderLabel.text = subheaderText
+        if emphasizeSubheader {
+            subheaderLabel.font = DesignTokens.Typography.rounded(style: .caption1, weight: .semibold)
+            subheaderLabel.textColor = headerColor
+        } else {
+            subheaderLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .regular)
+            subheaderLabel.textColor = DesignTokens.Colors.textTertiary
+        }
+
+        // Indent == icon width (12) + headerRow spacing (xs).
+        let indent: CGFloat = 12 + DesignTokens.Spacing.xs
+        let indentSpacer = UIView()
+        indentSpacer.translatesAutoresizingMaskIntoConstraints = false
+        indentSpacer.widthAnchor.constraint(equalToConstant: indent).isActive = true
+        indentSpacer.setContentHuggingPriority(.required, for: .horizontal)
+
+        let subheaderRow = UIStackView(arrangedSubviews: [indentSpacer, subheaderLabel, UIView()])
+        subheaderRow.axis = .horizontal
+        subheaderRow.spacing = 0
+        subheaderRow.alignment = .center
+
+        let headerGroup = UIStackView(arrangedSubviews: [headerRow, subheaderRow])
+        headerGroup.axis = .vertical
+        headerGroup.spacing = 2
+        headerGroup.alignment = .fill
+
         let pillStack = UIStackView()
         pillStack.axis = .vertical
         pillStack.spacing = DesignTokens.Spacing.xs
@@ -107,7 +143,7 @@ final class OnboardingShortcomingsView: UIView, StoryAnimatable {
             pillsOut.append(pill)
         }
 
-        let column = UIStackView(arrangedSubviews: [headerRow, pillStack])
+        let column = UIStackView(arrangedSubviews: [headerGroup, pillStack])
         column.axis = .vertical
         column.spacing = DesignTokens.Spacing.sm
         return column
