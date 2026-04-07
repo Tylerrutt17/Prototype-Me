@@ -9,6 +9,9 @@ final class NoteEditorViewController: BaseViewController {
     var preselectedFolderId: UUID?           // when creating inside a folder
     var noteService: NoteService?
     var onSave: (() -> Void)?
+    // Pre-fill from AI suggestion
+    var prefillTitle: String?
+    var prefillBody: String?
     /// Called when user picks Framework but one already exists — coordinator should open it for edit instead.
     var onEditExistingFramework: ((UUID) -> Void)?
 
@@ -43,6 +46,11 @@ final class NoteEditorViewController: BaseViewController {
 
         setupLayout()
         if !isCreateMode { loadExistingNote() }
+
+        // Apply AI prefills after loading (so they override for updates)
+        if let title = prefillTitle { enteredTitle = title }
+        if let body = prefillBody { enteredBody = body }
+
         if isFrameworkEdit { stepIndicator.isHidden = true }
         showStep(0, animated: false)
         observeKeyboard()

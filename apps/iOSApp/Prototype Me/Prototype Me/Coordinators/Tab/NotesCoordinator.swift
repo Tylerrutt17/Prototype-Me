@@ -5,6 +5,7 @@ class NotesCoordinator: Coordinator {
 
     var childCoordinators: [Coordinator] = []
     var onAskAIForDirective: ((UUID) -> Void)?
+    var onAskAISuggestion: ((String) -> Void)?
     let navigationController: UINavigationController
     private let environment: AppEnvironment
 
@@ -263,6 +264,11 @@ class NotesCoordinator: Coordinator {
         editor.directiveId = directiveId
         editor.onSave = { [weak self] in
             self?.navigationController.dismiss(animated: true)
+        }
+        editor.onAskAISuggestion = { [weak self] problemText in
+            self?.navigationController.dismiss(animated: true) {
+                self?.onAskAISuggestion?(problemText)
+            }
         }
         let nav = UINavigationController(rootViewController: editor)
         navigationController.present(nav, animated: true)

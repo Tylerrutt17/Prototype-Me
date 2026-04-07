@@ -15,6 +15,14 @@ class SpeakViewController: BaseViewController {
     var onNavigateToDirective: ((UUID) -> Void)?
     var onNavigateToNote: ((UUID) -> Void)?
     var onNavigateToJournal: ((String) -> Void)?
+    /// Opens editors pre-filled with AI suggestion data.
+    var onAddDirectiveSuggestion: ((String, String?) -> Void)?
+    var onAddNoteSuggestion: ((String, String?) -> Void)?
+    var onAddJournalSuggestion: ((String, Int?, String?, [String]?) -> Void)?   // date, rating, diary, tags
+    /// Opens editors pre-filled for updates (entity already exists).
+    var onEditDirective: ((UUID, String?, String?) -> Void)?    // id, title, body
+    var onEditNote: ((UUID, String?, String?) -> Void)?         // id, title, body
+    var onEditJournal: ((String, Int?, String?, [String]?) -> Void)?  // date, rating, diary, tags
 
     lazy var actionExecutor = SpeakActionExecutor(
         directiveService: directiveService,
@@ -33,6 +41,7 @@ class SpeakViewController: BaseViewController {
     let thinkingContextPill = UIView()
     let thinkingContextLabel = UILabel()
     let actionConfirmView = ActionConfirmView()
+    let suggestionsStack = UIStackView()
     let upgradeButton = UIButton(type: .system)
 
     // MARK: - Input UI
@@ -164,6 +173,12 @@ class SpeakViewController: BaseViewController {
         responseLabel.textAlignment = .natural
         responseLabel.isHidden = true
         responseContentStack.addArrangedSubview(responseLabel)
+
+        // Suggestion cards (shown when AI suggests directives to pick from)
+        suggestionsStack.axis = .vertical
+        suggestionsStack.spacing = DesignTokens.Spacing.sm
+        suggestionsStack.isHidden = true
+        responseContentStack.addArrangedSubview(suggestionsStack)
 
         // Action confirm view
         actionConfirmView.isHidden = true
@@ -318,6 +333,7 @@ class SpeakViewController: BaseViewController {
         // Hide upgrade + confirm rows if they were showing
         responseContentStack.arrangedSubviews.first { $0.tag == 9001 }?.isHidden = true
         responseContentStack.arrangedSubviews.first { $0.tag == 9002 }?.isHidden = true
+        hideSuggestions()
 
         // Fade out current response
         UIView.animate(withDuration: 0.2) {
@@ -366,12 +382,144 @@ class SpeakViewController: BaseViewController {
         }
     }
 
+    // MARK: - Suggestion Cards (simple pick-to-open-editor cards)
+
+    struct AISuggestion {
+        let title: String
+        let subtitle: String?
+        let icon: String          // SF Symbol
+        let toolCall: SpeakPendingToolCall
+    }
+
+    private var currentSuggestions: [AISuggestion] = []
+
+    func showSuggestions(_ suggestions: [AISuggestion]) {
+        currentSuggestions = suggestions
+        suggestionsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+
+        for (index, suggestion) in suggestions.enumerated() {
+            let card = UIView()
+            card.backgroundColor = DesignTokens.Colors.surfacePrimary
+            card.layer.cornerRadius = DesignTokens.Radii.md
+            card.layer.borderWidth = 1
+            card.layer.borderColor = DesignTokens.Colors.separator.cgColor
+            card.tag = index
+            card.isUserInteractionEnabled = true
+            card.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(suggestionCardTapped(_:))))
+
+            let iconView = UIImageView(image: UIImage(systemName: suggestion.icon, withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)))
+            iconView.tintColor = DesignTokens.Colors.accent
+            iconView.setContentHuggingPriority(.required, for: .horizontal)
+
+            let titleLabel = UILabel()
+            titleLabel.text = suggestion.title
+            titleLabel.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
+            titleLabel.textColor = DesignTokens.Colors.textPrimary
+            titleLabel.numberOfLines = 2
+
+            let chevron = UIImageView(image: UIImage(systemName: "chevron.right", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)))
+            chevron.tintColor = DesignTokens.Colors.textTertiary
+            chevron.setContentHuggingPriority(.required, for: .horizontal)
+
+            let topRow = UIStackView(arrangedSubviews: [iconView, titleLabel, chevron])
+            topRow.axis = .horizontal
+            topRow.spacing = DesignTokens.Spacing.sm
+            topRow.alignment = .center
+
+            let stack = UIStackView(arrangedSubviews: [topRow])
+            stack.axis = .vertical
+            stack.spacing = DesignTokens.Spacing.xs
+
+            if let subtitle = suggestion.subtitle, !subtitle.isEmpty {
+                let bodyLabel = UILabel()
+                bodyLabel.text = subtitle
+                bodyLabel.font = DesignTokens.Typography.caption1
+                bodyLabel.textColor = DesignTokens.Colors.textSecondary
+                bodyLabel.numberOfLines = 2
+                stack.addArrangedSubview(bodyLabel)
+            }
+
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            card.addSubview(stack)
+            let pad = DesignTokens.Spacing.md
+            NSLayoutConstraint.activate([
+                stack.topAnchor.constraint(equalTo: card.topAnchor, constant: pad),
+                stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -pad),
+                stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: pad),
+                stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -pad),
+            ])
+
+            card.alpha = 0
+            card.transform = CGAffineTransform(translationX: 0, y: 10)
+            suggestionsStack.addArrangedSubview(card)
+
+            UIView.animate(
+                withDuration: 0.35,
+                delay: 0.1 + Double(index) * 0.08,
+                usingSpringWithDamping: 0.85,
+                initialSpringVelocity: 0,
+                options: []
+            ) {
+                card.alpha = 1
+                card.transform = .identity
+            }
+        }
+
+        suggestionsStack.isHidden = false
+    }
+
+    func hideSuggestions() {
+        suggestionsStack.isHidden = true
+        suggestionsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        currentSuggestions = []
+    }
+
+    @objc private func suggestionCardTapped(_ gesture: UITapGestureRecognizer) {
+        guard let view = gesture.view, view.tag < currentSuggestions.count else { return }
+        let suggestion = currentSuggestions[view.tag]
+        let args = suggestion.toolCall.arguments
+        Haptics.light()
+
+        switch suggestion.toolCall.function {
+        case "create_directive":
+            onAddDirectiveSuggestion?(
+                args["title"] as? String ?? "",
+                args["body"] as? String
+            )
+        case "create_note":
+            onAddNoteSuggestion?(
+                args["title"] as? String ?? "",
+                args["body"] as? String
+            )
+        case "create_journal_entry", "update_journal_entry":
+            onAddJournalSuggestion?(
+                args["date"] as? String ?? "",
+                args["rating"] as? Int,
+                args["diary"] as? String,
+                args["tags"] as? [String]
+            )
+        case "update_directive":
+            if let idStr = args["id"] as? String, let id = UUID(uuidString: idStr) {
+                onEditDirective?(id, args["title"] as? String, args["body"] as? String)
+            }
+        case "update_note":
+            if let idStr = args["id"] as? String, let id = UUID(uuidString: idStr) {
+                onEditNote?(id, args["title"] as? String, args["body"] as? String)
+            }
+        default:
+            break
+        }
+    }
+
+    // MARK: - Action Confirm
+
     func showActions(_ toolCalls: [SpeakPendingToolCall]) {
         pendingToolCalls = toolCalls
         actionConfirmView.configure(with: toolCalls)
         actionConfirmView.onApprove = { [weak self] in self?.approveActions() }
         actionConfirmView.onDismiss = { [weak self] in self?.dismissActions() }
         actionConfirmView.onActionTapped = { [weak self] tc in self?.navigateToItem(tc) }
+        actionConfirmView.onIndividualApprove = { [weak self] tc in self?.approveIndividualAction(tc) }
 
         actionConfirmView.isHidden = false
         actionConfirmView.alpha = 0

@@ -9,6 +9,9 @@ final class DirectiveEditorViewController: BaseViewController {
     var directiveService: DirectiveService?
     var balloonNotificationService: BalloonNotificationService?
     var onSave: (() -> Void)?
+    var onAskAISuggestion: ((String) -> Void)?  // problem text → route to Speak tab
+    var prefillTitle: String?                    // pre-fill from AI suggestion
+    var prefillBody: String?
 
     // MARK: - Mode Toggle
 
@@ -74,13 +77,26 @@ final class DirectiveEditorViewController: BaseViewController {
         if directiveId != nil { loadExistingDirective() }
         observeKeyboard()
 
-        // Show wizard by default for create, manual for edit
-        if isCreate {
+        // Show wizard by default for create, manual for edit.
+        // If pre-filled from a suggestion, jump straight to manual mode.
+        if isCreate && prefillTitle == nil {
             modeSegment.selectedSegmentIndex = 0
             showMode(0)
         } else {
+            if isCreate {
+                modeSegment.selectedSegmentIndex = 1
+                showMode(1)
+            }
             wizardContainer.isHidden = true
             manualContainer.isHidden = false
+        }
+
+        // Apply pre-fill from AI suggestion
+        if let title = prefillTitle {
+            titleField.textField.text = title
+        }
+        if let body = prefillBody {
+            bodyField.textView.text = body
         }
     }
 
@@ -241,62 +257,11 @@ final class DirectiveEditorViewController: BaseViewController {
         view.endEditing(true)
         Haptics.light()
 
-        // Clear old suggestions
-        for v in suggestionsStack.arrangedSubviews { v.removeFromSuperview() }
-
-        // Disable button while loading
-        suggestButton.isEnabled = false
-        suggestButton.setTitle("Thinking...", for: .normal)
-
-        Task {
-            do {
-                guard let apiClient else {
-                    throw APIClient.APIError.networkError(NSError(domain: "DirectiveWizard", code: 0, userInfo: [NSLocalizedDescriptionKey: "API client not configured"]))
-                }
-
-                print("[DirectiveWizard] Calling API...")
-
-                // Debug: make the request manually to see raw response
-                let debugURL = URL(string: "https://prototype-me-production.up.railway.app/v1/ai/directive-wizard")!
-                var debugReq = URLRequest(url: debugURL, timeoutInterval: 60)
-                debugReq.httpMethod = "POST"
-                debugReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                debugReq.httpBody = try JSONEncoder().encode(WizardAPIRequest(problem: text))
-                let (debugData, debugResp) = try await URLSession.shared.data(for: debugReq)
-                print("[DirectiveWizard] Raw URL: \(debugURL)")
-                print("[DirectiveWizard] Status: \((debugResp as? HTTPURLResponse)?.statusCode ?? -1)")
-                print("[DirectiveWizard] Raw response: \(String(data: debugData, encoding: .utf8) ?? "nil")")
-
-                let response: WizardAPIResponse = try await apiClient.post(
-                    "/v1/ai/directive-wizard",
-                    body: WizardAPIRequest(problem: text),
-                    timeout: APIClient.Timeout.ai
-                )
-                print("[DirectiveWizard] Got \(response.suggestions.count) suggestions")
-                let suggestions = response.suggestions.map {
-                    DirectiveWizard.Suggestion(title: $0.title, body: $0.body)
-                }
-
-                await MainActor.run {
-                    self.showSuggestions(suggestions)
-                }
-            } catch {
-                print("[DirectiveWizard] API failed: \(error)")
-                await MainActor.run {
-                    self.suggestButton.isEnabled = true
-                    self.suggestButton.setTitle("Suggest Directives", for: .normal)
-                    Haptics.error()
-
-                    let errorLabel = UILabel()
-                    errorLabel.text = "Something went wrong. Try again."
-                    errorLabel.font = DesignTokens.Typography.subheadline
-                    errorLabel.textColor = DesignTokens.Colors.destructive
-                    errorLabel.textAlignment = .center
-                    errorLabel.numberOfLines = 0
-                    self.suggestionsStack.addArrangedSubview(errorLabel)
-                }
-            }
-
+        // Route to the Speak tab — dismiss the editor and send the problem as a message
+        if let callback = onAskAISuggestion {
+            callback(text)
+        } else {
+            print("[DirectiveEditor] onAskAISuggestion not set — cannot route to Speak tab")
         }
     }
 

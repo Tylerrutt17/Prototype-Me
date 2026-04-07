@@ -103,7 +103,25 @@ extension SpeakViewController {
                             SpeakPendingToolCall(id: $0.id, function: $0.function, arguments: $0.arguments)
                         }
 
-                        if self.autoApprove {
+                        // Route by action type:
+                        // - Creates & updates → suggestion cards that open the editor
+                        // - Deletes/retires → keep action confirm view (destructive)
+                        let editorFunctions = Set([
+                            "create_directive", "create_note", "create_journal_entry",
+                            "update_directive", "update_note", "update_journal_entry",
+                        ])
+                        let allEditorActions = pending.allSatisfy { editorFunctions.contains($0.function) }
+
+                        if allEditorActions {
+                            self.hideSuggestions()
+                            let suggestions: [SpeakViewController.AISuggestion] = pending.map { tc in
+                                let (title, subtitle, icon) = Self.suggestionMeta(for: tc)
+                                return SpeakViewController.AISuggestion(
+                                    title: title, subtitle: subtitle, icon: icon, toolCall: tc
+                                )
+                            }
+                            self.showSuggestions(suggestions)
+                        } else if self.autoApprove {
                             // Auto-execute actions
                             Task {
                                 var results: [String] = []
@@ -139,6 +157,7 @@ extension SpeakViewController {
                     } else {
                         // Tool calls only, no text — hide thinking
                         self.thinkingDotsView.stopAnimating()
+                        self.hideThinkingContext()
                         UIView.animate(withDuration: 0.15) {
                             self.thinkingDotsView.alpha = 0
                         } completion: { _ in
@@ -328,7 +347,61 @@ extension SpeakViewController {
         }
     }
 
+    func approveIndividualAction(_ toolCall: SpeakPendingToolCall) {
+        Task {
+            let r = await actionExecutor.execute(toolCall)
+            if let h = r.history { recordHistory([h]) }
+            await MainActor.run {
+                Haptics.success()
+                let msg = "\u{2713} \(r.message)"
+                self.messages.append(SpeakChatMessage(role: .assistant, text: msg))
+            }
+        }
+    }
+
     func dismissActions() {
         hideActions()
+    }
+
+    // MARK: - Suggestion Metadata
+
+    static func suggestionMeta(for tc: SpeakPendingToolCall) -> (title: String, subtitle: String?, icon: String) {
+        let args = tc.arguments
+        switch tc.function {
+        case "create_directive":
+            return (
+                args["title"] as? String ?? "New Directive",
+                args["body"] as? String,
+                "target"
+            )
+        case "update_directive":
+            return (
+                "Edit: \(args["title"] as? String ?? "Directive")",
+                args["body"] as? String,
+                "pencil.circle"
+            )
+        case "create_note":
+            return (
+                args["title"] as? String ?? "New Note",
+                args["body"].flatMap { ($0 as? String)?.prefix(80).description },
+                "doc.text"
+            )
+        case "update_note":
+            return (
+                "Edit: \(args["title"] as? String ?? "Note")",
+                args["body"].flatMap { ($0 as? String)?.prefix(80).description },
+                "pencil.circle"
+            )
+        case "create_journal_entry":
+            let date = args["date"] as? String ?? "Today"
+            let rating = args["rating"] as? Int
+            let subtitle = rating.map { "Rating: \($0)/10" }
+            return ("Journal — \(date)", subtitle, "book")
+        case "update_journal_entry":
+            let date = args["date"] as? String ?? "Today"
+            return ("Edit Journal — \(date)", nil, "pencil.circle")
+        default:
+            return (tc.function, nil, "questionmark.circle")
+        }
     }
 }

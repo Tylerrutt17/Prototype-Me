@@ -44,6 +44,12 @@ final class DatabaseManager: Sendable {
         config.foreignKeysEnabled = true
         dbQueue = try DatabaseQueue(path: dbURL.path, configuration: config)
         try runMigrations()
+
+        if let attrs = try? fileManager.attributesOfItem(atPath: dbURL.path),
+           let bytes = attrs[.size] as? Int64 {
+            let mb = Double(bytes) / 1_048_576
+            print("[DB] prototype_me.sqlite — \(String(format: "%.1f", mb)) MB")
+        }
     }
 
     /// In-memory database for tests / previews.

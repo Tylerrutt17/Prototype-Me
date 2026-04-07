@@ -85,6 +85,7 @@ final class ActionConfirmView: UIView {
     var onApprove: (() -> Void)?
     var onDismiss: (() -> Void)?
     var onActionTapped: ((SpeakPendingToolCall) -> Void)?
+    var onIndividualApprove: ((SpeakPendingToolCall) -> Void)?
 
     private var toolCalls: [SpeakPendingToolCall] = []
     private let cardView = UIView()
@@ -174,10 +175,19 @@ final class ActionConfirmView: UIView {
         buttonStack.transform = .identity
         actionsStack.alpha = 1
         actionsStack.transform = .identity
+
+        // If all actions are creates (e.g. directive suggestions), show per-card
+        // "Add" buttons so the user can pick individual ones instead of bulk approve.
+        let allCreates = toolCalls.allSatisfy { $0.actionType == .create }
+
         for (index, tc) in toolCalls.enumerated() {
-            let card = buildActionCard(for: tc)
-            // Only make tappable if there's an existing item to navigate to (not creates)
-            if tc.actionType != .create {
+            let card = buildActionCard(for: tc, addButton: allCreates)
+            if allCreates {
+                // Wire up the "Add" button inside the card
+                if let addBtn = card.viewWithTag(1000 + index) as? UIButton {
+                    addBtn.addTarget(self, action: #selector(individualAddTapped(_:)), for: .touchUpInside)
+                }
+            } else if tc.actionType != .create {
                 card.isUserInteractionEnabled = true
                 card.tag = index
                 let tap = UITapGestureRecognizer(target: self, action: #selector(actionCardTapped(_:)))
@@ -185,6 +195,27 @@ final class ActionConfirmView: UIView {
             }
             actionsStack.addArrangedSubview(card)
         }
+
+        // Hide the bulk approve/dismiss when showing individual add buttons
+        if allCreates {
+            buttonStack.isHidden = true
+        }
+    }
+
+    @objc private func individualAddTapped(_ sender: UIButton) {
+        let index = sender.tag - 1000
+        guard index >= 0, index < toolCalls.count else { return }
+
+        // Animate the card to applied state
+        if let card = sender.superview {
+            sender.isEnabled = false
+            UIView.animate(withDuration: 0.3) {
+                sender.alpha = 0
+                card.backgroundColor = self.toolCalls[index].actionType.color.withAlphaComponent(0.15)
+            }
+        }
+
+        onIndividualApprove?(toolCalls[index])
     }
 
     @objc private func actionCardTapped(_ gesture: UITapGestureRecognizer) {
@@ -283,7 +314,7 @@ final class ActionConfirmView: UIView {
         }
     }
 
-    private func buildActionCard(for tc: SpeakPendingToolCall, applied: Bool = false) -> UIView {
+    private func buildActionCard(for tc: SpeakPendingToolCall, applied: Bool = false, addButton: Bool = false) -> UIView {
         let container = UIView()
         container.backgroundColor = tc.actionType.color.withAlphaComponent(0.08)
         container.layer.cornerRadius = DesignTokens.Radii.md
@@ -334,6 +365,30 @@ final class ActionConfirmView: UIView {
 
         for change in tc.changes {
             stack.addArrangedSubview(buildChangeRow(change: change, color: tc.actionType.color, applied: applied))
+        }
+
+        // Per-card "Add" button for pick-your-own suggestion flows
+        if addButton && !applied {
+            let btn = UIButton(type: .system)
+            var config = UIButton.Configuration.filled()
+            config.title = "Add"
+            config.image = UIImage(systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold))
+            config.imagePadding = 4
+            config.baseBackgroundColor = tc.actionType.color
+            config.baseForegroundColor = .white
+            config.cornerStyle = .capsule
+            config.contentInsets = NSDirectionalEdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 14)
+            config.titleTextAttributesTransformer = .init { c in
+                var c = c; c.font = DesignTokens.Typography.rounded(style: .caption1, weight: .semibold); return c
+            }
+            btn.configuration = config
+            // Tag encodes the index so individualAddTapped can find it
+            if let idx = toolCalls.firstIndex(where: { $0.id == tc.id }) {
+                btn.tag = 1000 + idx
+            }
+            let btnRow = UIStackView(arrangedSubviews: [UIView(), btn])
+            btnRow.axis = .horizontal
+            stack.addArrangedSubview(btnRow)
         }
 
         stack.translatesAutoresizingMaskIntoConstraints = false

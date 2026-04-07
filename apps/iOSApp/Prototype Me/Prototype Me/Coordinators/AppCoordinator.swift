@@ -135,8 +135,14 @@ class AppCoordinator: Coordinator {
         focusCoordinator.onAskAIForDirective = { [weak self] directiveId in
             self?.askAIAboutDirective(directiveId: directiveId)
         }
+        focusCoordinator.onAskAISuggestion = { [weak self] problemText in
+            self?.askAIForDirectiveSuggestion(problemText: problemText)
+        }
         notesCoordinator.onAskAIForDirective = { [weak self] directiveId in
             self?.askAIAboutDirective(directiveId: directiveId)
+        }
+        notesCoordinator.onAskAISuggestion = { [weak self] problemText in
+            self?.askAIForDirectiveSuggestion(problemText: problemText)
         }
         settingsCoordinator.onReplayTourRequested = { [weak self] in
             self?.startGuidedTour()
@@ -218,6 +224,29 @@ class AppCoordinator: Coordinator {
         DispatchQueue.main.async {
             guard !speakVC.isProcessing else { return }
             speakVC.showThinkingContext("Finding an alternative for \u{201C}\(title)\u{201D}")
+            speakVC.sendMessage(prompt)
+        }
+    }
+
+    // MARK: - Ask AI for Directive Suggestions
+
+    private func askAIForDirectiveSuggestion(problemText: String) {
+        guard let speakCoordinator,
+              let speakVC = speakCoordinator.navigationController.viewControllers.first as? SpeakViewController
+        else { return }
+
+        // Dismiss any presented modal, pop Speak to root, switch tabs
+        if let presented = tabBarController.presentedViewController {
+            presented.dismiss(animated: false)
+        }
+        speakCoordinator.navigationController.popToRootViewController(animated: false)
+        tabBarController.selectedIndex = 2
+
+        let prompt = "I need help with: \(problemText). Suggest up to 3 directives I could try. Use the create_directive tool for each one so I can pick which to add."
+
+        DispatchQueue.main.async {
+            guard !speakVC.isProcessing else { return }
+            speakVC.showThinkingContext("Suggesting directives")
             speakVC.sendMessage(prompt)
         }
     }

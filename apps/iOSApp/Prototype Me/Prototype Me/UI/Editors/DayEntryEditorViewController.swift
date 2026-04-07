@@ -9,6 +9,10 @@ final class DayEntryEditorViewController: BaseViewController {
     var preselectedDate: String?             // yyyy-MM-dd
     var dayEntryService: DayEntryService?
     var onSave: (() -> Void)?
+    // Pre-fill from AI suggestion
+    var prefillRating: Int?
+    var prefillDiary: String?
+    var prefillTags: [String]?
 
     // MARK: - Form Controls
 
@@ -130,6 +134,16 @@ final class DayEntryEditorViewController: BaseViewController {
         }
 
         if entryId != nil { loadExistingEntry() }
+
+        // Apply AI prefills (after loadExisting so they override for updates)
+        if let rating = prefillRating, rating >= 1, rating <= 10 {
+            selectedRating = rating
+            updateRatingButtons(animated: false)
+        }
+        if let diary = prefillDiary {
+            journalField.textView.text = diary
+        }
+
         observeKeyboard()
     }
 

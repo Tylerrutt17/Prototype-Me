@@ -14,6 +14,10 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
     private var cycleID = 0
     private var currentModeIndex = 0
 
+    // Swipe hint hand
+    private let swipeHintView = UIImageView()
+    private var swipeHintDismissed = false
+
     // User interaction: when the user swipes the carousel, pause auto-cycling
     // for `inactivityTimeout` seconds of no interaction, then resume.
     private var isUserControlled = false
@@ -139,6 +143,9 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
         for card in modeCards { card.alpha = 0 }
         headerLabel.alpha = 0
         headerLabel.tag = 500
+
+        // Swipe hint hand
+        buildSwipeHint()
     }
 
     private func makeModeCard(title: String, index: Int) -> UIView {
@@ -234,6 +241,68 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
         return card
     }
 
+    // MARK: - Swipe Hint
+
+    private func buildSwipeHint() {
+        let config = UIImage.SymbolConfiguration(pointSize: 44, weight: .light)
+        swipeHintView.image = UIImage(systemName: "hand.draw.fill", withConfiguration: config)
+        swipeHintView.tintColor = DesignTokens.Colors.textSecondary.withAlphaComponent(0.55)
+        swipeHintView.contentMode = .scaleAspectFit
+        swipeHintView.alpha = 0
+        swipeHintView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(swipeHintView)
+
+        NSLayoutConstraint.activate([
+            swipeHintView.topAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: DesignTokens.Spacing.sm),
+            swipeHintView.centerXAnchor.constraint(equalTo: centerXAnchor),
+        ])
+    }
+
+    private func showSwipeHint() {
+        guard !swipeHintDismissed, !UIAccessibility.isReduceMotionEnabled else { return }
+
+        UIView.animate(withDuration: 0.4, delay: 1.2, options: .curveEaseOut) {
+            self.swipeHintView.alpha = 1
+        } completion: { _ in
+            guard !self.swipeHintDismissed else { return }
+            self.animateSwipeHint()
+        }
+    }
+
+    private func animateSwipeHint() {
+        guard !swipeHintDismissed else { return }
+
+        // Swipe left motion, repeating
+        let startX: CGFloat = 12
+        swipeHintView.transform = CGAffineTransform(translationX: startX, y: 0)
+
+        UIView.animate(
+            withDuration: 0.8,
+            delay: 0.3,
+            options: [.curveEaseInOut]
+        ) {
+            self.swipeHintView.transform = CGAffineTransform(translationX: -20, y: 0)
+        } completion: { [weak self] finished in
+            guard let self, finished, !self.swipeHintDismissed else { return }
+            // Reset and repeat
+            UIView.animate(withDuration: 0.3, delay: 0.6, options: .curveEaseOut) {
+                self.swipeHintView.transform = CGAffineTransform(translationX: startX, y: 0)
+            } completion: { [weak self] _ in
+                self?.animateSwipeHint()
+            }
+        }
+    }
+
+    private func dismissSwipeHint() {
+        guard !swipeHintDismissed else { return }
+        swipeHintDismissed = true
+        swipeHintView.layer.removeAllAnimations()
+        UIView.animate(withDuration: 0.25, delay: 0, options: .curveEaseIn) {
+            self.swipeHintView.alpha = 0
+            self.swipeHintView.transform = CGAffineTransform(translationX: -10, y: 0).scaledBy(x: 0.8, y: 0.8)
+        }
+    }
+
     // MARK: - StoryAnimatable
 
     func playEntrance() {
@@ -269,6 +338,7 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
             guard let self, !self.isStopped, self.cycleID == currentCycle else { return }
             self.selectMode(at: 0, animated: true)
             self.showDirectives(for: 0, animated: true)
+            self.showSwipeHint()
 
             // 3. Swipe to next mode after a pause
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
@@ -324,6 +394,7 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
         resumeTimer?.invalidate()
         resumeTimer = nil
         isUserControlled = false
+        swipeHintView.layer.removeAllAnimations()
         for card in modeCards { card.layer.removeAllAnimations() }
         for group in directiveGroups { for card in group { card.layer.removeAllAnimations() } }
         resetState()
@@ -412,6 +483,9 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
     private func resetState() {
         currentModeIndex = 0
         scrollView.contentOffset = .zero
+        swipeHintDismissed = false
+        swipeHintView.alpha = 0
+        swipeHintView.transform = .identity
 
         for card in modeCards {
             card.layer.removeAllAnimations()
@@ -498,6 +572,7 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
 
 extension OnboardingModeCardsView: UIScrollViewDelegate {
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        dismissSwipeHint()
         pauseForUserControl()
     }
 
