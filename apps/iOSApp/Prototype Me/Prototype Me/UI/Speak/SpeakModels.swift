@@ -122,6 +122,16 @@ struct SpeakWhisperResponse: Decodable {
     let text: String
 }
 
+struct SpeakConverseRequest: Encodable {
+    let messages: [Message]
+    let localDate: String
+
+    struct Message: Encodable {
+        let role: String
+        let content: String
+    }
+}
+
 struct SpeakConverseResponse: Decodable {
     let message: String
     let toolCalls: [ToolCall]

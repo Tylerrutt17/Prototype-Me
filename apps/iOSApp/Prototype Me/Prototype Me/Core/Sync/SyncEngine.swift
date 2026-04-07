@@ -62,6 +62,9 @@ final class SyncEngine: @unchecked Sendable {
             clearSyncArtifacts()
         }
 
+        // Cap directiveHistory on every launch (not sync-dependent)
+        capDirectiveHistory()
+
         // Auto-sync when connectivity returns
         reachability.observe { [weak self] status in
             if status.isConnected {
@@ -558,10 +561,7 @@ final class SyncEngine: @unchecked Sendable {
     /// Prunes data that's no longer needed after a successful sync cycle.
     private func pruneAfterSync() async throws {
         try await db.dbQueue.write { db in
-            // ── Tombstone pruning ──
-            // A tombstone is only needed while its delete op is still in the outbox
-            // (server hasn't confirmed the delete yet). Once the outbox op is gone,
-            // the server knows the entity is deleted and won't resurrect it.
+            // Tombstone pruning: only needed while delete op is still in outbox.
             let allTombstones = try Tombstone.fetchAll(db)
             var tombstonesPruned = 0
 
@@ -578,14 +578,22 @@ final class SyncEngine: @unchecked Sendable {
                 }
             }
 
-            // ── DirectiveHistory cap ──
-            // Keep at most 30 entries per directive to prevent unbounded growth.
+            if tombstonesPruned > 0 {
+                print("[Sync] Cleanup: pruned \(tombstonesPruned) tombstone(s)")
+            }
+        }
+    }
+
+    /// Caps directiveHistory at 30 entries per directive. Runs on every launch
+    /// regardless of sync status — this is local housekeeping, not sync-dependent.
+    private func capDirectiveHistory() {
+        try? db.dbQueue.write { db in
             let directiveIds = try UUID.fetchAll(db, sql: """
                 SELECT DISTINCT directiveId FROM directiveHistory
                 """)
 
             let maxPerDirective = 30
-            var historyPruned = 0
+            var pruned = 0
 
             for directiveId in directiveIds {
                 let count = try DirectiveHistory
@@ -604,12 +612,12 @@ final class SyncEngine: @unchecked Sendable {
                     for id in oldIds {
                         _ = try DirectiveHistory.deleteOne(db, key: id)
                     }
-                    historyPruned += oldIds.count
+                    pruned += oldIds.count
                 }
             }
 
-            if tombstonesPruned > 0 || historyPruned > 0 {
-                print("[Sync] Cleanup: pruned \(tombstonesPruned) tombstone(s), \(historyPruned) history row(s)")
+            if pruned > 0 {
+                print("[Sync] DirectiveHistory cap: pruned \(pruned) row(s)")
             }
         }
     }

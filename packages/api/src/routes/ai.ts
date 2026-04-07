@@ -17,6 +17,7 @@ const converseBody = z.object({
     role: z.enum(["user", "assistant"]),
     content: z.string().max(LIMITS.ai.speakMessage),
   })).min(1),
+  localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 export async function aiRoutes(app: FastifyInstance) {
@@ -37,7 +38,7 @@ export async function aiRoutes(app: FastifyInstance) {
 
   app.post("/converse", async (req, reply) => {
     const body = converseBody.parse(req.body);
-    return ok(reply, await converseFeature.converse(req.userId, body.messages));
+    return ok(reply, await converseFeature.converse(req.userId, body.messages, body.localDate));
   });
 
   app.post("/transcribe", async (req, reply) => {

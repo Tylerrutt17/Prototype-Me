@@ -61,12 +61,22 @@ extension SpeakViewController {
                 }
                 let conversationMessages = Array(allHistory.suffix(historyLimit))
 
-                print("[Speak] POST /v1/ai/converse — \(conversationMessages.count) messages in payload")
+                // Send the user's local date so the AI knows what "today" means
+                // in the user's timezone (server defaults to UTC which can be wrong at night)
+                let localDateFormatter = DateFormatter()
+                localDateFormatter.dateFormat = "yyyy-MM-dd"
+                let localDate = localDateFormatter.string(from: Date())
+
+                print("[Speak] POST /v1/ai/converse — \(conversationMessages.count) messages in payload, localDate=\(localDate)")
                 let postedAt = Date()
 
+                let converseBody = SpeakConverseRequest(
+                    messages: conversationMessages.map { SpeakConverseRequest.Message(role: $0["role"]!, content: $0["content"]!) },
+                    localDate: localDate
+                )
                 let response: SpeakConverseResponse = try await apiClient.post(
                     "/v1/ai/converse",
-                    body: ["messages": conversationMessages],
+                    body: converseBody,
                     timeout: APIClient.Timeout.ai
                 )
 

@@ -340,6 +340,7 @@ const MAX_TOOL_ROUNDS = 3;
 export async function converse(
   userId: string,
   messages: ConversationMessage[],
+  localDate?: string,
 ): Promise<ConverseResult> {
   const quota = await getQuota(userId);
   if (quota.dailyUsed >= quota.dailyLimit) {
@@ -350,7 +351,9 @@ export async function converse(
     throw { status: 500, error: "not_configured", message: "OpenAI API key not configured" };
   }
 
-  const today = new Date().toISOString().split("T")[0];
+  // Use the client's local date when available — server UTC can be a day
+  // ahead/behind depending on the user's timezone and time of day.
+  const today = localDate || new Date().toISOString().split("T")[0]!;
   const systemContext = SYSTEM_PROMPT.replace("{today}", today);
 
   // Build input — system prompt as first user message, then conversation
