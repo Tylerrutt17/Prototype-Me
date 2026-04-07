@@ -114,10 +114,13 @@ extension SpeakViewController {
 
                         if allEditorActions {
                             self.hideSuggestions()
+                            let updateFunctions = Set(["update_directive", "update_note", "update_journal_entry"])
                             let suggestions: [SpeakViewController.AISuggestion] = pending.map { tc in
                                 let (title, subtitle, icon) = Self.suggestionMeta(for: tc)
                                 return SpeakViewController.AISuggestion(
-                                    title: title, subtitle: subtitle, icon: icon, toolCall: tc
+                                    title: title, subtitle: subtitle, icon: icon,
+                                    isUpdate: updateFunctions.contains(tc.function),
+                                    toolCall: tc
                                 )
                             }
                             self.showSuggestions(suggestions)

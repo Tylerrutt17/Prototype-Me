@@ -388,6 +388,7 @@ class SpeakViewController: BaseViewController {
         let title: String
         let subtitle: String?
         let icon: String          // SF Symbol
+        let isUpdate: Bool        // true = edit, false = create
         let toolCall: SpeakPendingToolCall
     }
 
@@ -401,8 +402,10 @@ class SpeakViewController: BaseViewController {
             let card = UIView()
             card.backgroundColor = DesignTokens.Colors.surfacePrimary
             card.layer.cornerRadius = DesignTokens.Radii.md
-            card.layer.borderWidth = 1
-            card.layer.borderColor = DesignTokens.Colors.separator.cgColor
+            card.layer.borderWidth = suggestion.isUpdate ? 1.5 : 1
+            card.layer.borderColor = suggestion.isUpdate
+                ? DesignTokens.Colors.warning.withAlphaComponent(0.4).cgColor
+                : DesignTokens.Colors.separator.cgColor
             card.tag = index
             card.isUserInteractionEnabled = true
             card.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(suggestionCardTapped(_:))))
@@ -429,6 +432,15 @@ class SpeakViewController: BaseViewController {
             let stack = UIStackView(arrangedSubviews: [topRow])
             stack.axis = .vertical
             stack.spacing = DesignTokens.Spacing.xs
+
+            // Badge: "Unapplied changes — tap to review" for edits, subtitle for creates
+            if suggestion.isUpdate {
+                let badgeLabel = UILabel()
+                badgeLabel.text = "Unapplied changes \u{2014} tap to review"
+                badgeLabel.font = DesignTokens.Typography.rounded(style: .caption2, weight: .medium)
+                badgeLabel.textColor = DesignTokens.Colors.warning
+                stack.addArrangedSubview(badgeLabel)
+            }
 
             if let subtitle = suggestion.subtitle, !subtitle.isEmpty {
                 let bodyLabel = UILabel()
