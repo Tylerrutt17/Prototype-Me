@@ -179,6 +179,11 @@ class AppCoordinator: Coordinator {
             window.rootViewController = tabBarController
         }
 
+        // Link RevenueCat to our backend user
+        if let userId = UserDefaults.standard.string(forKey: "userId") {
+            Task { try? await environment.purchaseService.identify(userId: userId) }
+        }
+
         // Wire balloon notification deep link
         environment.balloonNotificationService.onNotificationTapped = { [weak self] directiveId in
             self?.navigateToDirective(directiveId: directiveId)

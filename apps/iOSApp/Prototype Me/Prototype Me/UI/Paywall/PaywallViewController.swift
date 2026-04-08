@@ -7,6 +7,7 @@ class PaywallViewController: BaseViewController {
 
     var purchaseService: PurchaseService?
     var onDismiss: (() -> Void)?
+    var onUpgraded: (() -> Void)?
 
     private let scrollView = UIScrollView()
     private let contentStack = UIStackView()
@@ -345,11 +346,15 @@ class PaywallViewController: BaseViewController {
                 }
 
                 // Sync plan with backend
-                await purchaseService?.syncPlanWithBackend()
+                let justUpgraded = await purchaseService?.syncPlanWithBackend() ?? false
 
                 await MainActor.run {
                     Haptics.success()
-                    self.onDismiss?()
+                    if justUpgraded, let onUpgraded = self.onUpgraded {
+                        onUpgraded()
+                    } else {
+                        self.onDismiss?()
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -369,16 +374,20 @@ class PaywallViewController: BaseViewController {
             do {
                 _ = try await purchaseService?.restorePurchases()
                 let isPro = try await purchaseService?.isPro() ?? false
-                await purchaseService?.syncPlanWithBackend()
+                let justUpgraded = await purchaseService?.syncPlanWithBackend() ?? false
 
                 await MainActor.run {
                     if isPro {
                         Haptics.success()
-                        let alert = UIAlertController(title: "Restored!", message: "Your Pro subscription has been restored.", preferredStyle: .alert)
-                        alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
-                            self?.onDismiss?()
-                        })
-                        self.present(alert, animated: true)
+                        if justUpgraded, let onUpgraded = self.onUpgraded {
+                            onUpgraded()
+                        } else {
+                            let alert = UIAlertController(title: "Restored!", message: "Your Pro subscription has been restored.", preferredStyle: .alert)
+                            alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
+                                self?.onDismiss?()
+                            })
+                            self.present(alert, animated: true)
+                        }
                     } else {
                         let alert = UIAlertController(title: "No Subscription Found", message: "We couldn't find an active subscription for this account.", preferredStyle: .alert)
                         alert.addAction(UIAlertAction(title: "OK", style: .default))

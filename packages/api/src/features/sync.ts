@@ -389,6 +389,30 @@ export async function pull(userId: string, deviceId: string, cursor?: string, li
   };
 }
 
+// ── Stats: entity counts for the sync choice screen ──
+
+export async function stats(userId: string) {
+  const counts = await db.transaction(async (tx) => {
+    const count = async (table: { userId: any }, tableName: string) => {
+      const [row] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(table as any)
+        .where(eq((table as any).userId, userId));
+      return row?.count ?? 0;
+    };
+
+    return {
+      directives: await count(schema.directive, "directive"),
+      notes: await count(schema.notePage, "notePage"),
+      folders: await count(schema.folder, "folder"),
+      dayEntries: await count(schema.dayEntry, "dayEntry"),
+      tags: await count(schema.tag, "tag"),
+    };
+  });
+
+  return counts;
+}
+
 // ── Reset: wipe all user data so client can push fresh ──
 
 export async function reset(userId: string): Promise<{ ok: true }> {

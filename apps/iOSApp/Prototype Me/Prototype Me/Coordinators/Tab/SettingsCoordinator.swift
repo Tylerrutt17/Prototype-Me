@@ -143,13 +143,72 @@ class SettingsCoordinator: Coordinator {
         vc.dbQueue = environment.db.dbQueue
         vc.purchaseService = environment.purchaseService
         vc.onDismiss = { [weak self] in
-            self?.navigationController.dismiss(animated: true)
+            self?.navigationController.dismiss(animated: true) {
+                self?.refreshSubscriptionScreen()
+            }
+        }
+        vc.onUpgraded = { [weak self] in
+            guard let self else { return }
+            // Dismiss paywall, then show sync choice
+            self.navigationController.dismiss(animated: true) {
+                self.showSyncChoice()
+            }
         }
 
         let nav = UINavigationController(rootViewController: vc)
         nav.setNavigationBarHidden(true, animated: false)
         nav.modalPresentationStyle = .fullScreen
         navigationController.present(nav, animated: true)
+    }
+
+    private func showSyncChoice() {
+        let vc = SyncChoiceViewController()
+        vc.apiClient = environment.apiClient
+        vc.dbQueue = environment.db.dbQueue
+        vc.onChoice = { [weak self] direction in
+            guard let self else { return }
+            // Show loading while sync runs
+            let loadingVC = SyncLoadingViewController()
+            loadingVC.syncTask = {
+                switch direction {
+                case .useCloud:
+                    await self.environment.purchaseService.pullFromCloud()
+                case .useDevice:
+                    await self.environment.purchaseService.seedFullPush()
+                }
+            }
+            loadingVC.onComplete = { [weak self] in
+                self?.navigationController.dismiss(animated: true) {
+                    self?.refreshSubscriptionScreen()
+                }
+            }
+
+            let nav = UINavigationController(rootViewController: loadingVC)
+            nav.setNavigationBarHidden(true, animated: false)
+            nav.modalPresentationStyle = .fullScreen
+            vc.present(nav, animated: true)
+        }
+
+        let nav = UINavigationController(rootViewController: vc)
+        nav.setNavigationBarHidden(true, animated: false)
+        nav.modalPresentationStyle = .fullScreen
+        navigationController.present(nav, animated: true)
+    }
+
+    /// Refreshes the subscription screen if it's currently visible.
+    private func refreshSubscriptionScreen() {
+        guard let subVC = navigationController.viewControllers.last as? SubscriptionViewController else { return }
+        Task {
+            do {
+                async let subReq: SubscriptionInfo = environment.apiClient.get("/v1/subscription")
+                async let quotaReq: UsageQuota = environment.apiClient.get("/v1/usage")
+                let (sub, quota) = try await (subReq, quotaReq)
+                await MainActor.run {
+                    subVC.subscriptionInfo = sub
+                    subVC.usageQuota = quota
+                }
+            } catch {}
+        }
     }
 
     private func showLegal(title: String) {

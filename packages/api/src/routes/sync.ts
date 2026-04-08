@@ -20,6 +20,12 @@ export async function syncRoutes(app: FastifyInstance) {
     return ok(reply, await sync.pull(req.userId, deviceId, query.cursor, query.limit));
   });
 
+  // Stats: GET /v1/sync/stats — entity counts for the sync choice screen
+  app.get("/stats", async (req, reply) => {
+    await requirePro(req.userId);
+    return ok(reply, await sync.stats(req.userId));
+  });
+
   // Reset: DELETE /v1/sync/reset — wipe all user data so client can push fresh.
   // Called on free→pro upgrade so local state becomes authoritative.
   app.delete("/reset", async (req, reply) => {

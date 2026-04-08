@@ -196,6 +196,12 @@ final class SyncEngine: @unchecked Sendable {
         let count = try await db.dbQueue.write { db -> Int in
             var total = 0
 
+            // Folders (must come before notes — note_page has FK to folder)
+            for entity in try Folder.fetchAll(db) {
+                try OutboxOp.enqueue(entityType: "folder", entityId: entity.id.uuidString, op: "create", patch: entity.syncPatch(), in: db)
+                total += 1
+            }
+
             // Directives
             for entity in try Directive.fetchAll(db) {
                 try OutboxOp.enqueue(entityType: "directive", entityId: entity.id.uuidString, op: "create", patch: entity.syncPatch(), in: db)
@@ -205,12 +211,6 @@ final class SyncEngine: @unchecked Sendable {
             // Notes
             for entity in try NotePage.fetchAll(db) {
                 try OutboxOp.enqueue(entityType: "notePage", entityId: entity.id.uuidString, op: "create", patch: entity.syncPatch(), in: db)
-                total += 1
-            }
-
-            // Folders
-            for entity in try Folder.fetchAll(db) {
-                try OutboxOp.enqueue(entityType: "folder", entityId: entity.id.uuidString, op: "create", patch: entity.syncPatch(), in: db)
                 total += 1
             }
 
@@ -253,6 +253,19 @@ final class SyncEngine: @unchecked Sendable {
         try await sync()
     }
 
+    /// Entity types ordered by FK dependencies — parents before children.
+    /// Types not listed here sort to the end (safe default for standalone entities).
+    private static let entityPushOrder: [String: Int] = [
+        "folder":         0,
+        "directive":      1,
+        "tag":            2,
+        "notePage":       3,
+        "dayEntry":       4,
+        "scheduleRule":   5,
+        "noteDirective":  6,
+        "activeMode":     7,
+    ]
+
     /// Push only (e.g., after a local write).
     func push() async throws {
         guard reachability.isConnected else { return }
@@ -270,13 +283,21 @@ final class SyncEngine: @unchecked Sendable {
 
         guard !ops.isEmpty else { return }
 
-        let deviceId = api.deviceId
-        let batchSize = 20
-        let batches = stride(from: 0, to: ops.count, by: batchSize).map {
-            Array(ops[$0..<min($0 + batchSize, ops.count)])
+        // Sort by entity dependency order so parents push before children
+        let sortedOps = ops.sorted { a, b in
+            let orderA = Self.entityPushOrder[a.entityType] ?? 99
+            let orderB = Self.entityPushOrder[b.entityType] ?? 99
+            if orderA != orderB { return orderA < orderB }
+            return a.createdAt < b.createdAt
         }
 
-        print("[Sync] Pushing \(ops.count) ops in \(batches.count) batch(es)")
+        let deviceId = api.deviceId
+        let batchSize = 20
+        let batches = stride(from: 0, to: sortedOps.count, by: batchSize).map {
+            Array(sortedOps[$0..<min($0 + batchSize, sortedOps.count)])
+        }
+
+        print("[Sync] Pushing \(sortedOps.count) ops in \(batches.count) batch(es)")
 
         for batch in batches {
             let syncToken = try await db.dbQueue.read { db in
