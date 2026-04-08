@@ -88,6 +88,7 @@ final class PurchaseService {
             let justUpgraded = isPro && !wasPro
             if justUpgraded {
                 print("[PurchaseService] Free → Pro upgrade detected")
+                UserDefaults.standard.set(true, forKey: "pendingSyncChoice")
             }
             return justUpgraded
         } catch {
@@ -113,16 +114,16 @@ final class PurchaseService {
         do {
             print("[PurchaseService] Pulling cloud data — wiping local first")
 
-            // Clear local user data
+            // Clear local user data (delete children/junctions before parents)
             try await db.dbQueue.write { db in
-                try Directive.deleteAll(db)
+                try NoteDirective.deleteAll(db)
+                try ActiveMode.deleteAll(db)
+                try ScheduleRule.deleteAll(db)
                 try NotePage.deleteAll(db)
+                try Directive.deleteAll(db)
                 try Folder.deleteAll(db)
                 try DayEntry.deleteAll(db)
                 try Tag.deleteAll(db)
-                try ScheduleRule.deleteAll(db)
-                try NoteDirective.deleteAll(db)
-                try ActiveMode.deleteAll(db)
                 try OutboxOp.deleteAll(db)
                 try Tombstone.deleteAll(db)
 
@@ -140,6 +141,16 @@ final class PurchaseService {
         } catch {
             print("[PurchaseService] Pull from cloud failed: \(error)")
         }
+    }
+    // MARK: - Sync Choice State
+
+    /// Whether the user still needs to choose cloud vs. device after upgrading.
+    static var hasPendingSyncChoice: Bool {
+        UserDefaults.standard.bool(forKey: "pendingSyncChoice")
+    }
+
+    static func clearPendingSyncChoice() {
+        UserDefaults.standard.removeObject(forKey: "pendingSyncChoice")
     }
 }
 

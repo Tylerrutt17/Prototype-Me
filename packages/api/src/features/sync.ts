@@ -366,9 +366,22 @@ export async function pull(userId: string, deviceId: string, cursor?: string, li
     });
   }
 
-  // Sort by token (updatedAt) + entityId for consistent ordering
-  // Secondary sort by entityId prevents skipping same-timestamp events
+  // Sort by entity dependency order first (parents before children/junctions),
+  // then by token (updatedAt), then by entityId for consistency.
+  const entityOrder: Record<string, number> = {
+    folder: 0,
+    directive: 1,
+    tag: 2,
+    notePage: 3,
+    dayEntry: 4,
+    scheduleRule: 5,
+    noteDirective: 6,
+    activeMode: 7,
+  };
   events.sort((a, b) => {
+    const orderA = entityOrder[a.entityType] ?? 50;
+    const orderB = entityOrder[b.entityType] ?? 50;
+    if (orderA !== orderB) return orderA - orderB;
     const cmp = a.token.localeCompare(b.token);
     if (cmp !== 0) return cmp;
     return a.entityId.localeCompare(b.entityId);

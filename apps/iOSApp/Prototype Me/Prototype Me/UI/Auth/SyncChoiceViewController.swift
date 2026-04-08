@@ -66,6 +66,7 @@ final class SyncChoiceViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        isModalInPresentation = true  // prevent swipe-to-dismiss
         view.backgroundColor = DesignTokens.Colors.background
         buildLayout()
         loadStats()
@@ -235,14 +236,22 @@ final class SyncChoiceViewController: UIViewController {
             let notes: Int
             let folders: Int
             let dayEntries: Int
-            let lastUpdatedAt: Date?
+            let lastUpdatedAt: String?
         }
 
         do {
             let response: CloudStats = try await apiClient.get("/v1/sync/stats")
+
+            var lastDate: Date?
+            if let dateStr = response.lastUpdatedAt {
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                lastDate = formatter.date(from: dateStr) ?? ISO8601DateFormatter().date(from: dateStr)
+            }
+
             return Stats(directives: response.directives, notes: response.notes,
                          folders: response.folders, dayEntries: response.dayEntries,
-                         lastUpdatedAt: response.lastUpdatedAt)
+                         lastUpdatedAt: lastDate)
         } catch {
             print("[SyncChoice] Failed to fetch cloud stats: \(error)")
             return nil

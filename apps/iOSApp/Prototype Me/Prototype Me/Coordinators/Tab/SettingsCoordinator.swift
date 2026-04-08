@@ -167,6 +167,8 @@ class SettingsCoordinator: Coordinator {
         vc.dbQueue = environment.db.dbQueue
         vc.onChoice = { [weak self] direction in
             guard let self else { return }
+            PurchaseService.clearPendingSyncChoice()
+
             // Show loading while sync runs
             let loadingVC = SyncLoadingViewController()
             loadingVC.syncTask = {

@@ -32,6 +32,13 @@ class AppCoordinator: Coordinator {
                 showMainApp(animated: false)
                 // Refresh plan from server in background
                 Task { await environment.authService.refreshPlan() }
+
+                // If user closed the app before completing sync choice, show it again
+                if PurchaseService.hasPendingSyncChoice {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                        self?.showSyncChoice()
+                    }
+                }
             } else {
                 showLogin(animated: false)
             }
@@ -254,6 +261,41 @@ class AppCoordinator: Coordinator {
             speakVC.showThinkingContext("Suggesting directives")
             speakVC.sendMessage(prompt)
         }
+    }
+
+    // MARK: - Sync Choice
+
+    private func showSyncChoice() {
+        let vc = SyncChoiceViewController()
+        vc.apiClient = environment.apiClient
+        vc.dbQueue = environment.db.dbQueue
+        vc.onChoice = { [weak self] direction in
+            guard let self else { return }
+            PurchaseService.clearPendingSyncChoice()
+
+            let loadingVC = SyncLoadingViewController()
+            loadingVC.syncTask = {
+                switch direction {
+                case .useCloud:
+                    await self.environment.purchaseService.pullFromCloud()
+                case .useDevice:
+                    await self.environment.purchaseService.seedFullPush()
+                }
+            }
+            loadingVC.onComplete = {
+                self.tabBarController.dismiss(animated: true)
+            }
+
+            let nav = UINavigationController(rootViewController: loadingVC)
+            nav.setNavigationBarHidden(true, animated: false)
+            nav.modalPresentationStyle = .fullScreen
+            vc.present(nav, animated: true)
+        }
+
+        let nav = UINavigationController(rootViewController: vc)
+        nav.setNavigationBarHidden(true, animated: false)
+        nav.modalPresentationStyle = .fullScreen
+        tabBarController.present(nav, animated: true)
     }
 
     // MARK: - Guided Tour
