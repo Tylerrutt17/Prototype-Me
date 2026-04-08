@@ -416,14 +416,17 @@ export async function stats(userId: string) {
 
     // Find the most recent updatedAt across all synced tables
     const tables = [schema.directive, schema.notePage, schema.folder, schema.dayEntry, schema.tag];
-    let lastUpdatedAt: string | null = null;
+    let latestDate: Date | null = null;
     for (const table of tables) {
       const [row] = await tx
-        .select({ latest: sql<string>`max(updated_at)` })
+        .select({ latest: sql<Date>`max(updated_at)` })
         .from(table as any)
         .where(eq((table as any).userId, userId));
-      if (row?.latest && (!lastUpdatedAt || row.latest > lastUpdatedAt)) {
-        lastUpdatedAt = row.latest;
+      if (row?.latest) {
+        const d = new Date(row.latest);
+        if (!isNaN(d.getTime()) && (!latestDate || d > latestDate)) {
+          latestDate = d;
+        }
       }
     }
 
@@ -433,7 +436,7 @@ export async function stats(userId: string) {
       folders: await count(schema.folder),
       dayEntries: await count(schema.dayEntry),
       tags: await count(schema.tag),
-      lastUpdatedAt,
+      lastUpdatedAt: latestDate ? latestDate.toISOString() : null,
     };
   });
 
