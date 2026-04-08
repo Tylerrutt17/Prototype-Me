@@ -393,20 +393,34 @@ export async function pull(userId: string, deviceId: string, cursor?: string, li
 
 export async function stats(userId: string) {
   const counts = await db.transaction(async (tx) => {
-    const count = async (table: { userId: any }, tableName: string) => {
+    const count = async (table: any) => {
       const [row] = await tx
         .select({ count: sql<number>`count(*)::int` })
-        .from(table as any)
-        .where(eq((table as any).userId, userId));
+        .from(table)
+        .where(eq(table.userId, userId));
       return row?.count ?? 0;
     };
 
+    // Find the most recent updatedAt across all synced tables
+    const tables = [schema.directive, schema.notePage, schema.folder, schema.dayEntry, schema.tag];
+    let lastUpdatedAt: string | null = null;
+    for (const table of tables) {
+      const [row] = await tx
+        .select({ latest: sql<string>`max(updated_at)` })
+        .from(table as any)
+        .where(eq((table as any).userId, userId));
+      if (row?.latest && (!lastUpdatedAt || row.latest > lastUpdatedAt)) {
+        lastUpdatedAt = row.latest;
+      }
+    }
+
     return {
-      directives: await count(schema.directive, "directive"),
-      notes: await count(schema.notePage, "notePage"),
-      folders: await count(schema.folder, "folder"),
-      dayEntries: await count(schema.dayEntry, "dayEntry"),
-      tags: await count(schema.tag, "tag"),
+      directives: await count(schema.directive),
+      notes: await count(schema.notePage),
+      folders: await count(schema.folder),
+      dayEntries: await count(schema.dayEntry),
+      tags: await count(schema.tag),
+      lastUpdatedAt,
     };
   });
 

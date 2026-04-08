@@ -23,6 +23,7 @@ final class SyncChoiceViewController: UIViewController {
         let notes: Int
         let folders: Int
         let dayEntries: Int
+        let lastUpdatedAt: Date?
 
         var isEmpty: Bool { directives == 0 && notes == 0 && folders == 0 && dayEntries == 0 }
 
@@ -32,7 +33,17 @@ final class SyncChoiceViewController: UIViewController {
             if notes > 0 { parts.append("\(notes) note\(notes == 1 ? "" : "s")") }
             if folders > 0 { parts.append("\(folders) folder\(folders == 1 ? "" : "s")") }
             if dayEntries > 0 { parts.append("\(dayEntries) journal entr\(dayEntries == 1 ? "y" : "ies")") }
-            return parts.isEmpty ? "No data" : parts.joined(separator: " · ")
+            if parts.isEmpty { return "No data" }
+            if let date = lastUpdatedAt {
+                parts.append("last updated \(Self.relativeFormat(date))")
+            }
+            return parts.joined(separator: " · ")
+        }
+
+        private static func relativeFormat(_ date: Date) -> String {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .short
+            return formatter.localizedString(for: date, relativeTo: Date())
         }
     }
 
@@ -224,12 +235,14 @@ final class SyncChoiceViewController: UIViewController {
             let notes: Int
             let folders: Int
             let dayEntries: Int
+            let lastUpdatedAt: Date?
         }
 
         do {
             let response: CloudStats = try await apiClient.get("/v1/sync/stats")
             return Stats(directives: response.directives, notes: response.notes,
-                         folders: response.folders, dayEntries: response.dayEntries)
+                         folders: response.folders, dayEntries: response.dayEntries,
+                         lastUpdatedAt: response.lastUpdatedAt)
         } catch {
             print("[SyncChoice] Failed to fetch cloud stats: \(error)")
             return nil
@@ -239,11 +252,21 @@ final class SyncChoiceViewController: UIViewController {
     private func fetchLocalStats() async -> Stats? {
         do {
             return try await dbQueue.read { db in
-                Stats(
+                // Find the most recent updatedAt across local tables
+                let dates: [Date?] = [
+                    try Directive.select(max(Column("updatedAt"))).fetchOne(db),
+                    try NotePage.select(max(Column("updatedAt"))).fetchOne(db),
+                    try Folder.select(max(Column("updatedAt"))).fetchOne(db),
+                    try DayEntry.select(max(Column("updatedAt"))).fetchOne(db),
+                ]
+                let lastUpdated = dates.compactMap { $0 }.max()
+
+                return Stats(
                     directives: try Directive.fetchCount(db),
                     notes: try NotePage.fetchCount(db),
                     folders: try Folder.fetchCount(db),
-                    dayEntries: try DayEntry.fetchCount(db)
+                    dayEntries: try DayEntry.fetchCount(db),
+                    lastUpdatedAt: lastUpdated
                 )
             }
         } catch {
