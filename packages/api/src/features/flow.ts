@@ -30,6 +30,8 @@ interface FlowSession {
   selectedField?: "title" | "body" | "both";
   existingBody?: string;
   localDate?: string;
+  /** The option labels last shown to the user — used to detect option taps vs new intents */
+  lastPresentedOptions?: string[];
   createdAt: number;
 }
 
@@ -100,6 +102,14 @@ function toolCall(fn: string, args: Record<string, unknown>): ToolCall {
   return { id: `flow-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, function: fn, arguments: args };
 }
 
+/** Create a present_options tool call and store the options on the session for tap detection. */
+function optionsCall(session: FlowSession | undefined, args: { question: string; options: string[]; icons?: string[] }): ToolCall {
+  if (session) {
+    session.lastPresentedOptions = args.options;
+  }
+  return toolCall("present_options", args);
+}
+
 // ── Main Entry Point ──
 
 export async function handleFlow(
@@ -110,19 +120,24 @@ export async function handleFlow(
 ): Promise<FlowResponse> {
   const quota = await getQuota(userId);
 
-  // Always classify the message to detect intent switches
-  const intent = await classifyIntent(message);
-
   // Resume existing session?
   if (flowId && sessions.has(flowId)) {
     const session = sessions.get(flowId)!;
     if (Date.now() - session.createdAt > SESSION_TTL) {
       sessions.delete(flowId);
     } else {
-      // Check if the user switched intent mid-flow
-      // A "freeform" classification during a flow usually means the user is
-      // answering our prompt (e.g. typing content), so we continue the flow.
-      // But if the AI detects a specific different intent, abandon and restart.
+      // If the message matches one of the options we presented, it's a button tap —
+      // always continue the flow (don't re-classify, it would misinterpret option text).
+      const isOptionTap = session.lastPresentedOptions?.some(
+        (opt) => opt.toLowerCase() === message.toLowerCase(),
+      );
+
+      if (isOptionTap) {
+        return continueFlow(session, flowId, message, quota);
+      }
+
+      // Not an option tap — classify to detect intent switches.
+      const intent = await classifyIntent(message);
       if (intent && intent.intent !== "freeform" && intent.intent !== session.intent.intent) {
         console.log(`[Flow] Intent switch detected: ${session.intent.intent} → ${intent.intent}`);
         sessions.delete(flowId);
@@ -132,7 +147,8 @@ export async function handleFlow(
     }
   }
 
-  // New message
+  // New message — classify intent with AI
+  const intent = await classifyIntent(message);
   if (!intent || intent.intent === "freeform") {
     return fallback(quota);
   }
@@ -248,7 +264,7 @@ async function handleJournalLog(
     const rating = existing.rating ? ` (currently rated **${existing.rating}/10**)` : "";
     return {
       message: `You already have a journal entry for *${date}*${rating}. What would you like to do?`,
-      toolCalls: [toolCall("present_options", {
+      toolCalls: [optionsCall(session, {
         question: `You already have a journal entry for ${date}. What would you like to do?`,
         options: ["Update rating", "Add to diary", "Replace diary", "Something else"],
         icons: ["star.fill", "text.append", "arrow.triangle.2.circlepath", "ellipsis.circle"],
@@ -416,7 +432,7 @@ async function handleCreateDirective(
 
       return {
         message: "I found some similar directives:",
-        toolCalls: [toolCall("present_options", {
+        toolCalls: [optionsCall(session, {
           question: "I found some similar directives:",
           options,
           icons,
@@ -503,7 +519,7 @@ async function handleUpdate(
 
     return {
       message: `Found **${item.title}**. What would you like to change?`,
-      toolCalls: [toolCall("present_options", {
+      toolCalls: [optionsCall(session, {
         question: `Found "${item.title}". What would you like to change?`,
         options: ["Change title", "Change description", "Both", "Something else"],
         icons: ["textformat", "doc.text", "square.and.pencil", "ellipsis.circle"],
@@ -534,7 +550,7 @@ async function handleUpdate(
 
   return {
     message: "Which one did you mean?",
-    toolCalls: [toolCall("present_options", {
+    toolCalls: [optionsCall(session, {
       question: "Which one did you mean?",
       options,
       icons,
@@ -591,7 +607,7 @@ async function handleRetire(
 
   return {
     message: "Which directive did you want to retire?",
-    toolCalls: [toolCall("present_options", {
+    toolCalls: [optionsCall(session, {
       question: "Which directive?",
       options: [...directives.slice(0, 4).map((d) => d.title), "Cancel"],
       icons: [...directives.slice(0, 4).map(() => "archivebox"), "xmark.circle"],
@@ -678,7 +694,7 @@ async function handleSearchChoice(
 
       return {
         message: `What would you like to change about **${results[0]!.title}**?`,
-        toolCalls: [toolCall("present_options", {
+        toolCalls: [optionsCall(session, {
           question: `What would you like to change?`,
           options: ["Change title", "Change description", "Both", "Something else"],
         })],
@@ -780,7 +796,7 @@ async function handleItemChoice(
   session.state = "awaiting_field_choice";
   return {
     message: `What would you like to change about **${item.title}**?`,
-    toolCalls: [toolCall("present_options", {
+    toolCalls: [optionsCall(session, {
       question: `What would you like to change?`,
       options: ["Change title", "Change description", "Both", "Something else"],
     })],
@@ -839,7 +855,7 @@ async function handleFieldChoice(
 
   return {
     message: "How would you like to change the description?",
-    toolCalls: [toolCall("present_options", {
+    toolCalls: [optionsCall(session, {
       question: "How would you like to change the description?",
       options: ["Add to the end", "Replace entirely", "Update a specific part"],
       icons: ["text.append", "arrow.triangle.2.circlepath", "pencil.and.outline"],
