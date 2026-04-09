@@ -150,10 +150,13 @@ final class SyncEngine: @unchecked Sendable {
 
             // 426 Upgrade Required — stop sync entirely until the app is updated
             if case .clientError(426, _, _) = error as? APIClient.APIError {
+                print("[Sync] 426 Upgrade Required — stopping sync, posting notification")
                 stopPollTimer()
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(name: .syncUpgradeRequired, object: nil)
                 }
+            } else {
+                print("[Sync] Error type: \(type(of: error)) — \(error)")
             }
 
             throw error

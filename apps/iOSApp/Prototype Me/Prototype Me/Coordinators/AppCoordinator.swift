@@ -56,11 +56,24 @@ class AppCoordinator: Coordinator {
     @objc private func handleSyncUpgradeRequired() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            // Don't present if already showing the update screen
-            if self.tabBarController.presentedViewController is UpdateRequiredViewController { return }
-            let vc = UpdateRequiredViewController()
-            vc.modalPresentationStyle = .fullScreen
-            self.tabBarController.present(vc, animated: true)
+            print("[AppCoordinator] syncUpgradeRequired received")
+
+            // Dismiss any existing modal first, then present update screen
+            let presenter = self.tabBarController.presentedViewController != nil ? self.tabBarController : self.tabBarController
+            if presenter.presentedViewController is UpdateRequiredViewController { return }
+
+            let present = { [weak self] in
+                guard let self else { return }
+                let vc = UpdateRequiredViewController()
+                vc.modalPresentationStyle = .fullScreen
+                self.tabBarController.present(vc, animated: true)
+            }
+
+            if let existing = self.tabBarController.presentedViewController {
+                existing.dismiss(animated: false) { present() }
+            } else {
+                present()
+            }
         }
     }
 

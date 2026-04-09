@@ -21,5 +21,5 @@ export const config = {
 
   // Sync protocol version — bump when push/pull contract changes.
   // Clients sending X-Sync-Version < this get 426 Upgrade Required.
-  minSyncVersion: 2,
+  minSyncVersion: 1,
 } as const;
