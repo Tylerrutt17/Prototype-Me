@@ -88,7 +88,7 @@ class SpeakViewController: BaseViewController {
     /// Key = option label, Value = (question, options, icons, nestedFollowUp)
     private var optionFollowUps: [String: (question: String, options: [String], icons: [String]?, followUp: Any?)] = []
     /// Accumulated choices from multi-step option flows, sent with the final message.
-    private var accumulatedChoices: [String] = []
+    var accumulatedChoices: [String] = []
     var isTranscribing = false
     var isRecording = false
     var isProcessing = false
