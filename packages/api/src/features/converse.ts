@@ -144,7 +144,7 @@ const tools: OpenAI.Responses.Tool[] = [
     type: "function",
     strict: false,
     name: "list_directives",
-    description: "List the user's current directives. Use this to look up directive IDs before updating or retiring.",
+    description: "List the user's current directives (body is truncated to a preview). Use get_directive to fetch the full body before editing.",
     parameters: {
       type: "object",
       properties: {
@@ -205,7 +205,7 @@ const tools: OpenAI.Responses.Tool[] = [
     type: "function",
     strict: false,
     name: "list_notes",
-    description: "List the user's notes. Optionally filter by kind. Use to look up note IDs before updating.",
+    description: "List the user's notes (body is truncated to a preview). Use get_note to fetch the full body before editing. Optionally filter by kind.",
     parameters: {
       type: "object",
       properties: {
