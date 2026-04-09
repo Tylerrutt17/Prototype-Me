@@ -132,10 +132,21 @@ struct SpeakConverseRequest: Encodable {
     }
 }
 
+struct SpeakFlowRequest: Encodable {
+    let message: String
+    let flowId: String?
+    let localDate: String
+}
+
 struct SpeakConverseResponse: Decodable {
     let message: String
     let toolCalls: [ToolCall]
     let remainingQuota: Int
+    // Flow engine fields (optional — present when response comes from /v1/ai/flow)
+    let flowId: String?
+    let flowState: String?
+    let fallbackToConverse: Bool?
+    let quotaFree: Bool?
 
     struct ToolCall: Decodable {
         let id: String
@@ -147,6 +158,11 @@ struct SpeakConverseResponse: Decodable {
             case id, function
             case _arguments = "arguments"
         }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case message, toolCalls, remainingQuota
+        case flowId, flowState, fallbackToConverse, quotaFree
     }
 }
 

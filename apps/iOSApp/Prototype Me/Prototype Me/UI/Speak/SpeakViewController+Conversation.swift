@@ -23,167 +23,79 @@ extension SpeakViewController {
     // MARK: - Send Message
 
     func sendMessage(_ rawText: String) {
-        // Safety cap for voice transcriptions that might exceed the typed-input cap
         let text = rawText.count > FieldLimits.AI.speakMessage
             ? String(rawText.prefix(FieldLimits.AI.speakMessage))
             : rawText
 
-        print("[Speak] sendMessage called — text length: \(text.count) (raw: \(rawText.count))")
+        print("[Speak] sendMessage called — text length: \(text.count)")
 
         isProcessing = true
         hideEmptyState()
         updateControlsForProcessing()
-
-        // Store user message for conversation context
         messages.append(SpeakChatMessage(role: .user, text: text))
-
-        // Clear previous response, show thinking
         hideActions(animated: false)
         showThinking()
+
+        let localDateFormatter = DateFormatter()
+        localDateFormatter.dateFormat = "yyyy-MM-dd"
+        let localDate = localDateFormatter.string(from: Date())
 
         Task {
             do {
                 guard let apiClient else { throw NSError(domain: "Speak", code: 0) }
-
-                // Only send the most recent N messages to keep context focused
-                // and API costs predictable (each turn re-sends all history).
-                // 10 ≈ 5 user/assistant exchanges.
-                let historyLimit = 10
-                let allHistory: [[String: String]] = self.messages.compactMap { msg in
-                    switch msg.role {
-                    case .user:
-                        return ["role": "user", "content": msg.text]
-                    case .assistant:
-                        return ["role": "assistant", "content": msg.text]
-                    case .system, .pendingActions:
-                        return nil
-                    }
-                }
-                let conversationMessages = Array(allHistory.suffix(historyLimit))
-
-                // Send the user's local date so the AI knows what "today" means
-                // in the user's timezone (server defaults to UTC which can be wrong at night)
-                let localDateFormatter = DateFormatter()
-                localDateFormatter.dateFormat = "yyyy-MM-dd"
-                let localDate = localDateFormatter.string(from: Date())
-
-                print("[Speak] POST /v1/ai/converse — \(conversationMessages.count) messages in payload, localDate=\(localDate)")
                 let postedAt = Date()
 
-                let converseBody = SpeakConverseRequest(
-                    messages: conversationMessages.map { SpeakConverseRequest.Message(role: $0["role"]!, content: $0["content"]!) },
+                // 1. Try the deterministic flow engine first
+                let flowRequest = SpeakFlowRequest(
+                    message: text,
+                    flowId: self.currentFlowId,
                     localDate: localDate
                 )
-                let response: SpeakConverseResponse = try await apiClient.post(
-                    "/v1/ai/converse",
-                    body: converseBody,
+                print("[Speak] POST /v1/ai/flow — flowId=\(self.currentFlowId ?? "nil")")
+                var response: SpeakConverseResponse = try await apiClient.post(
+                    "/v1/ai/flow",
+                    body: flowRequest,
                     timeout: APIClient.Timeout.ai
                 )
 
+                // 2. If flow engine says fallback, call the full AI converse endpoint
+                if response.fallbackToConverse == true {
+                    self.currentFlowId = nil
+                    print("[Speak] Flow fallback → POST /v1/ai/converse")
+
+                    let historyLimit = 10
+                    let allHistory: [[String: String]] = self.messages.compactMap { msg in
+                        switch msg.role {
+                        case .user:    return ["role": "user", "content": msg.text]
+                        case .assistant: return ["role": "assistant", "content": msg.text]
+                        case .system, .pendingActions: return nil
+                        }
+                    }
+                    let conversationMessages = Array(allHistory.suffix(historyLimit))
+                    let converseBody = SpeakConverseRequest(
+                        messages: conversationMessages.map { SpeakConverseRequest.Message(role: $0["role"]!, content: $0["content"]!) },
+                        localDate: localDate
+                    )
+                    response = try await apiClient.post(
+                        "/v1/ai/converse",
+                        body: converseBody,
+                        timeout: APIClient.Timeout.ai
+                    )
+                } else {
+                    // Track the flow session for continuation
+                    self.currentFlowId = response.flowId
+                }
+
                 let elapsed = Date().timeIntervalSince(postedAt)
-                print("[Speak] Converse response received in \(String(format: "%.2f", elapsed))s — message chars: \(response.message.count), tool calls: \(response.toolCalls.count), quota: \(response.remainingQuota)")
-                print("[Speak] Response text: \(response.message)")
+                let source = response.flowId != nil ? "flow" : "converse"
+                print("[Speak] \(source) response in \(String(format: "%.2f", elapsed))s — message: \(response.message.count) chars, tools: \(response.toolCalls.count), quota: \(response.remainingQuota)")
 
+                // 3. Handle the response (same logic regardless of source)
                 await MainActor.run {
-                    // Clear any leftover suggestion cards from the previous response
-                    self.hideSuggestions()
-                    self.hideActions()
-
-                    // Branch: is this a binary confirmation request? If so, show
-                    // Yes/No buttons instead of treating it as an executable action.
-                    if let confirmCall = response.toolCalls.first(where: { $0.function == "ask_confirmation" }) {
-                        let question = (confirmCall.arguments["question"] as? String) ?? response.message
-                        self.messages.append(SpeakChatMessage(role: .assistant, text: question))
-                        self.showConfirmation(question: question)
-                        self.isProcessing = false
-                        self.updateControlsForProcessing()
-                        self.quotaLabel.text = "\(response.remainingQuota) Prototype left"
-                        return
-                    }
-
-                    // Handle tool calls
-                    if !response.toolCalls.isEmpty {
-                        let pending = response.toolCalls.map {
-                            SpeakPendingToolCall(id: $0.id, function: $0.function, arguments: $0.arguments)
-                        }
-
-                        // Route by action type:
-                        // - Creates & updates → suggestion cards that open the editor
-                        // - Deletes/retires → keep action confirm view (destructive)
-                        let editorFunctions = Set([
-                            "create_directive", "create_note", "create_journal_entry",
-                            "update_directive", "update_note", "update_journal_entry",
-                        ])
-                        let allEditorActions = pending.allSatisfy { editorFunctions.contains($0.function) }
-
-                        if allEditorActions {
-                            let updateFunctions = Set(["update_directive", "update_note", "update_journal_entry"])
-                            let suggestions: [SpeakViewController.AISuggestion] = pending.map { tc in
-                                let (title, subtitle, icon) = Self.suggestionMeta(for: tc)
-                                return SpeakViewController.AISuggestion(
-                                    title: title, subtitle: subtitle, icon: icon,
-                                    isUpdate: updateFunctions.contains(tc.function),
-                                    toolCall: tc
-                                )
-                            }
-                            self.showSuggestions(suggestions)
-                        } else if self.autoApprove {
-                            // Auto-execute actions
-                            Task {
-                                var results: [String] = []
-                                var newHistory: [SpeakHistoryEntry] = []
-                                for tc in pending {
-                                    let r = await self.actionExecutor.execute(tc)
-                                    results.append(r.message)
-                                    if let h = r.history { newHistory.append(h) }
-                                }
-                                await MainActor.run {
-                                    self.recordHistory(newHistory)
-                                    self.showActionSuccess(results: results)
-                                }
-                            }
-                        } else {
-                            // Show action card for manual approval
-                            Task {
-                                let enriched = await self.actionExecutor.enrich(pending)
-                                await MainActor.run {
-                                    self.showActions(enriched)
-                                }
-                            }
-                        }
-                    }
-
-                    // Show response text
-                    if !response.message.isEmpty {
-                        self.messages.append(SpeakChatMessage(role: .assistant, text: response.message))
-                        self.showResponse(text: response.message)
-                    } else if response.toolCalls.isEmpty {
-                        self.messages.append(SpeakChatMessage(role: .assistant, text: "Done."))
-                        self.showResponse(text: "Done.")
-                    } else {
-                        // Tool calls only, no text — show a default intro if we have suggestion cards
-                        let hasCreates = response.toolCalls.contains { $0.function.hasPrefix("create_") }
-                        let hasUpdates = response.toolCalls.contains { $0.function.hasPrefix("update_") }
-                        let defaultMessage: String
-                        if hasCreates && hasUpdates {
-                            defaultMessage = "Here's what I came up with:"
-                        } else if hasCreates {
-                            defaultMessage = "Here are some options:"
-                        } else if hasUpdates {
-                            defaultMessage = "Here are the changes:"
-                        } else {
-                            defaultMessage = "Ready when you are:"
-                        }
-                        self.messages.append(SpeakChatMessage(role: .assistant, text: defaultMessage))
-                        self.showResponse(text: defaultMessage)
-                    }
-
-                    self.isProcessing = false
-                    self.updateControlsForProcessing()
-                    self.quotaLabel.text = "\(response.remainingQuota) Prototype left"
+                    self.handleResponse(response)
                 }
             } catch {
-                print("[Speak] Converse failed: \(Self.describeError(error))")
+                print("[Speak] Request failed: \(Self.describeError(error))")
                 await MainActor.run {
                     if Self.isQuotaExceeded(error) {
                         let msg = self.isPro
@@ -198,6 +110,113 @@ extension SpeakViewController {
                 }
             }
         }
+    }
+
+    // MARK: - Response Handling (shared between flow and converse)
+
+    private func handleResponse(_ response: SpeakConverseResponse) {
+        hideSuggestions()
+        hideActions()
+
+        // Binary confirmation?
+        if let confirmCall = response.toolCalls.first(where: { $0.function == "ask_confirmation" }) {
+            let question = (confirmCall.arguments["question"] as? String) ?? response.message
+            messages.append(SpeakChatMessage(role: .assistant, text: question))
+            showConfirmation(question: question)
+            isProcessing = false
+            updateControlsForProcessing()
+            quotaLabel.text = "\(response.remainingQuota) Prototype left"
+            return
+        }
+
+        // Multiple-choice options?
+        if let optionsCall = response.toolCalls.first(where: { $0.function == "present_options" }) {
+            let question = (optionsCall.arguments["question"] as? String) ?? response.message
+            let options = (optionsCall.arguments["options"] as? [String]) ?? []
+            if !options.isEmpty {
+                messages.append(SpeakChatMessage(role: .assistant, text: question))
+                showOptions(question: question, options: options)
+                isProcessing = false
+                updateControlsForProcessing()
+                quotaLabel.text = "\(response.remainingQuota) Prototype left"
+                return
+            }
+        }
+
+        // Action tool calls
+        if !response.toolCalls.isEmpty {
+            let pending = response.toolCalls.map {
+                SpeakPendingToolCall(id: $0.id, function: $0.function, arguments: $0.arguments)
+            }
+
+            let editorFunctions = Set([
+                "create_directive", "create_note", "create_journal_entry",
+                "update_directive", "update_note", "update_journal_entry",
+            ])
+            let allEditorActions = pending.allSatisfy { editorFunctions.contains($0.function) }
+
+            if allEditorActions {
+                let updateFunctions = Set(["update_directive", "update_note", "update_journal_entry"])
+                let suggestions: [SpeakViewController.AISuggestion] = pending.map { tc in
+                    let (title, subtitle, icon) = Self.suggestionMeta(for: tc)
+                    return SpeakViewController.AISuggestion(
+                        title: title, subtitle: subtitle, icon: icon,
+                        isUpdate: updateFunctions.contains(tc.function),
+                        toolCall: tc
+                    )
+                }
+                showSuggestions(suggestions)
+            } else if autoApprove {
+                Task {
+                    var results: [String] = []
+                    var newHistory: [SpeakHistoryEntry] = []
+                    for tc in pending {
+                        let r = await actionExecutor.execute(tc)
+                        results.append(r.message)
+                        if let h = r.history { newHistory.append(h) }
+                    }
+                    await MainActor.run {
+                        self.recordHistory(newHistory)
+                        self.showActionSuccess(results: results)
+                    }
+                }
+            } else {
+                Task {
+                    let enriched = await actionExecutor.enrich(pending)
+                    await MainActor.run {
+                        self.showActions(enriched)
+                    }
+                }
+            }
+        }
+
+        // Response text
+        if !response.message.isEmpty {
+            messages.append(SpeakChatMessage(role: .assistant, text: response.message))
+            showResponse(text: response.message)
+        } else if response.toolCalls.isEmpty {
+            messages.append(SpeakChatMessage(role: .assistant, text: "Done."))
+            showResponse(text: "Done.")
+        } else {
+            let hasCreates = response.toolCalls.contains { $0.function.hasPrefix("create_") }
+            let hasUpdates = response.toolCalls.contains { $0.function.hasPrefix("update_") }
+            let defaultMessage: String
+            if hasCreates && hasUpdates {
+                defaultMessage = "Here's what I came up with:"
+            } else if hasCreates {
+                defaultMessage = "Here are some options:"
+            } else if hasUpdates {
+                defaultMessage = "Here are the changes:"
+            } else {
+                defaultMessage = "Ready when you are:"
+            }
+            messages.append(SpeakChatMessage(role: .assistant, text: defaultMessage))
+            showResponse(text: defaultMessage)
+        }
+
+        isProcessing = false
+        updateControlsForProcessing()
+        quotaLabel.text = "\(response.remainingQuota) Prototype left"
     }
 
     static func isQuotaExceeded(_ error: Error) -> Bool {

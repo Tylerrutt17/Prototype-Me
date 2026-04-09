@@ -269,13 +269,27 @@ const tools: OpenAI.Responses.Tool[] = [
     type: "function",
     strict: false,
     name: "ask_confirmation",
-    description: "Call this when you need a simple YES/NO answer from the user before proceeding with a write action. The client will show Yes/No buttons so the user can tap instead of typing. ONLY use this for strictly binary questions — if the answer could be more than yes/no (which field? what title? pick from these options?), ask in plain text instead. Do NOT combine this with any write tools in the same response.",
+    description: "Call this when you need a simple YES/NO answer from the user. The client shows Yes/No buttons. ONLY for strictly binary questions. Do NOT combine with write tools.",
     parameters: {
       type: "object",
       properties: {
         question: { type: "string", description: "The yes/no question to display. Be specific: e.g. 'Change the title from \"Morning\" to \"Morning routine\"?'" },
       },
       required: ["question"],
+    },
+  },
+  {
+    type: "function",
+    strict: false,
+    name: "present_options",
+    description: "Show the user a set of tappable option buttons when you need them to pick from specific choices. Use this instead of listing options in text. Max 5 options. The client renders each as a tappable button. The user's tap sends their choice back as a message.",
+    parameters: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "Brief context shown above the options." },
+        options: { type: "array", items: { type: "string" }, description: "2-5 short option labels.", minItems: 2, maxItems: 5 },
+      },
+      required: ["question", "options"],
     },
   },
 ];
@@ -301,15 +315,16 @@ Today is {today}.
 - If essential info is missing, ask. If you have enough, act — don't over-ask.
 - **Ambiguous updates require clarification.** If the user says "change it to X" or "can you update this" without specifying which field (title vs body), ALWAYS ask: "Do you want to change the title or the description?" Never guess. Only these keywords are unambiguous: "rename" / "change the name" = title. "Update the description" / "change the body" = body. Everything else → ask.
 - If a tool call fails or returns empty/unexpected data, explain briefly and ask the user how to proceed. Do not retry blindly.
-- **When you need a binary yes/no answer before acting, use the ask_confirmation tool** instead of asking "are you sure?" in plain text. The client will show Yes/No buttons the user can tap. Only use it for true binary questions — if the answer could have more than two options, ask in text.
+- **When you need a binary yes/no answer before acting, use the ask_confirmation tool.** The client shows Yes/No buttons the user can tap.
+- **When you need the user to pick from 2-5 options, use present_options.** The client shows each option as a tappable button — much faster than asking in plain text. Use this for: which field to edit, append vs replace, picking between similar items, choosing a date, etc.
 - **Always include a brief message when calling tools.** The client shows your message above the action cards. Never return tool calls with an empty message — always add a short line like "Here's what I'd suggest:" or "I've got a few options:" so the user has context.
 
 # Update semantics
-- update_directive and update_note REPLACE the body entirely — they do NOT append.
-- **Before any update**, call **get_directive** or **get_note** to fetch the full current body. List tools only show a truncated preview — you need the full content to avoid losing data.
-- "Add this to the description" / "also mention X" → fetch the full body with get_directive/get_note FIRST, then send original text + new content combined.
-- "Change the description to X" → fetch the full body first (to confirm you have the right item), then send just the new text.
-- Unsure whether user wants replace or append? Ask.
+- update_directive and update_note REPLACE the body entirely — the API does NOT append.
+- **Before any update**, call **get_directive** or **get_note** to fetch the full current body. List tools only show a truncated preview — you MUST have the full content to avoid losing data.
+- **Default to APPEND.** When a user says "update", "edit", "add to", or provides new content for an existing item, they almost always mean ADD to what's there. Fetch the full body first, then combine: original text + new content.
+- Only REPLACE when the user explicitly says "change to", "replace with", "make it say", or "rewrite".
+- If genuinely unclear, use **present_options** to ask: e.g. options ["Add to existing description", "Replace the entire description"].
 
 # Field requirements
 - **Journal**: entries have only these fields — **date** (yyyy-MM-dd, no time), **rating** (1-10), **diary** (text), **tags** (array). There is NO time field, no hour/minute, no location, no mood enum, no anything else. Never ask about fields that don't exist.

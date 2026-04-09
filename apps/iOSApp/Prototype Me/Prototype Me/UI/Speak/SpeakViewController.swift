@@ -82,6 +82,7 @@ class SpeakViewController: BaseViewController {
     // MARK: - State
 
     var messages: [SpeakChatMessage] = []
+    var currentFlowId: String?
     var isTranscribing = false
     var isRecording = false
     var isProcessing = false
@@ -222,6 +223,14 @@ class SpeakViewController: BaseViewController {
         confirmRow.tag = 9002
         responseContentStack.addArrangedSubview(confirmRow)
 
+        // Options buttons (shown when AI calls present_options)
+        let optionsStack = UIStackView()
+        optionsStack.axis = .vertical
+        optionsStack.spacing = DesignTokens.Spacing.sm
+        optionsStack.isHidden = true
+        optionsStack.tag = 9003
+        responseContentStack.addArrangedSubview(optionsStack)
+
         // Thinking dots
         thinkingDotsView.isHidden = true
         thinkingDotsView.translatesAutoresizingMaskIntoConstraints = false
@@ -330,9 +339,10 @@ class SpeakViewController: BaseViewController {
         emptyStateView.isHidden = true
         emptyStateView.alpha = 0
 
-        // Hide upgrade + confirm rows if they were showing
+        // Hide upgrade + confirm + options rows if they were showing
         responseContentStack.arrangedSubviews.first { $0.tag == 9001 }?.isHidden = true
         responseContentStack.arrangedSubviews.first { $0.tag == 9002 }?.isHidden = true
+        hideOptionsRow()
         hideSuggestions()
 
         // Fade out current response
@@ -719,6 +729,67 @@ class SpeakViewController: BaseViewController {
     @objc private func confirmNoTapped() {
         hideConfirmationRow()
         sendMessage("no")
+    }
+
+    // MARK: - Options Buttons
+
+    func showOptions(question: String, options: [String]) {
+        showResponse(text: question)
+
+        guard let optionsStack = responseContentStack.arrangedSubviews.first(where: { $0.tag == 9003 }) as? UIStackView else { return }
+        optionsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+
+        for (index, option) in options.enumerated() {
+            let button = UIButton(type: .system)
+            var config = UIButton.Configuration.filled()
+            config.title = option
+            config.baseBackgroundColor = DesignTokens.Colors.surfacePrimary
+            config.baseForegroundColor = DesignTokens.Colors.textPrimary
+            config.cornerStyle = .medium
+            config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
+            config.titleTextAttributesTransformer = .init { c in
+                var c = c; c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium); return c
+            }
+            button.configuration = config
+            button.layer.borderWidth = 1
+            button.layer.borderColor = DesignTokens.Colors.separator.cgColor
+            button.layer.cornerRadius = DesignTokens.Radii.md
+            button.tag = index
+            button.addTarget(self, action: #selector(optionButtonTapped(_:)), for: .touchUpInside)
+
+            button.alpha = 0
+            button.transform = CGAffineTransform(translationX: 0, y: 8)
+            optionsStack.addArrangedSubview(button)
+
+            UIView.animate(
+                withDuration: 0.3,
+                delay: 0.1 + Double(index) * 0.06,
+                usingSpringWithDamping: 0.85,
+                initialSpringVelocity: 0,
+                options: []
+            ) {
+                button.alpha = 1
+                button.transform = .identity
+            }
+        }
+
+        optionsStack.isHidden = false
+    }
+
+    private func hideOptionsRow() {
+        guard let optionsStack = responseContentStack.arrangedSubviews.first(where: { $0.tag == 9003 }) as? UIStackView else { return }
+        optionsStack.isHidden = true
+        optionsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+    }
+
+    @objc private func optionButtonTapped(_ sender: UIButton) {
+        guard let optionsStack = responseContentStack.arrangedSubviews.first(where: { $0.tag == 9003 }) as? UIStackView,
+              sender.tag < optionsStack.arrangedSubviews.count else { return }
+
+        let selectedTitle = sender.configuration?.title ?? ""
+        Haptics.light()
+        hideOptionsRow()
+        sendMessage(selectedTitle)
     }
 
     // MARK: - Markdown Rendering
