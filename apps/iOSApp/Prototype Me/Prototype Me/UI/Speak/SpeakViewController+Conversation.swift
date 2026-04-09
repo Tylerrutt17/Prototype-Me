@@ -85,6 +85,10 @@ extension SpeakViewController {
                 print("[Speak] Response text: \(response.message)")
 
                 await MainActor.run {
+                    // Clear any leftover suggestion cards from the previous response
+                    self.hideSuggestions()
+                    self.hideActions()
+
                     // Branch: is this a binary confirmation request? If so, show
                     // Yes/No buttons instead of treating it as an executable action.
                     if let confirmCall = response.toolCalls.first(where: { $0.function == "ask_confirmation" }) {
@@ -113,7 +117,6 @@ extension SpeakViewController {
                         let allEditorActions = pending.allSatisfy { editorFunctions.contains($0.function) }
 
                         if allEditorActions {
-                            self.hideSuggestions()
                             let updateFunctions = Set(["update_directive", "update_note", "update_journal_entry"])
                             let suggestions: [SpeakViewController.AISuggestion] = pending.map { tc in
                                 let (title, subtitle, icon) = Self.suggestionMeta(for: tc)
@@ -158,14 +161,21 @@ extension SpeakViewController {
                         self.messages.append(SpeakChatMessage(role: .assistant, text: "Done."))
                         self.showResponse(text: "Done.")
                     } else {
-                        // Tool calls only, no text — hide thinking
-                        self.thinkingDotsView.stopAnimating()
-                        self.hideThinkingContext()
-                        UIView.animate(withDuration: 0.15) {
-                            self.thinkingDotsView.alpha = 0
-                        } completion: { _ in
-                            self.thinkingDotsView.isHidden = true
+                        // Tool calls only, no text — show a default intro if we have suggestion cards
+                        let hasCreates = response.toolCalls.contains { $0.function.hasPrefix("create_") }
+                        let hasUpdates = response.toolCalls.contains { $0.function.hasPrefix("update_") }
+                        let defaultMessage: String
+                        if hasCreates && hasUpdates {
+                            defaultMessage = "Here's what I came up with:"
+                        } else if hasCreates {
+                            defaultMessage = "Here are some options:"
+                        } else if hasUpdates {
+                            defaultMessage = "Here are the changes:"
+                        } else {
+                            defaultMessage = "Ready when you are:"
                         }
+                        self.messages.append(SpeakChatMessage(role: .assistant, text: defaultMessage))
+                        self.showResponse(text: defaultMessage)
                     }
 
                     self.isProcessing = false
