@@ -178,6 +178,32 @@ const tools: OpenAI.Responses.Tool[] = [
   {
     type: "function",
     strict: false,
+    name: "get_directive",
+    description: "Get the full details of a specific directive by ID. Use this before updating a directive to see its complete body — list_directives only shows a preview.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The UUID of the directive." },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    type: "function",
+    strict: false,
+    name: "get_note",
+    description: "Get the full details of a specific note by ID. Use this before updating a note to see its complete body — list_notes only shows a preview.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The UUID of the note." },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    type: "function",
+    strict: false,
     name: "list_notes",
     description: "List the user's notes. Optionally filter by kind. Use to look up note IDs before updating.",
     parameters: {
@@ -280,8 +306,9 @@ Today is {today}.
 
 # Update semantics
 - update_directive and update_note REPLACE the body entirely — they do NOT append.
-- "Add this to the description" / "also mention X" → look up the current body FIRST, then send original text + new content combined.
-- "Change the description to X" → send just the new text.
+- **Before any update**, call **get_directive** or **get_note** to fetch the full current body. List tools only show a truncated preview — you need the full content to avoid losing data.
+- "Add this to the description" / "also mention X" → fetch the full body with get_directive/get_note FIRST, then send original text + new content combined.
+- "Change the description to X" → fetch the full body first (to confirm you have the right item), then send just the new text.
 - Unsure whether user wants replace or append? Ask.
 
 # Field requirements
@@ -291,7 +318,9 @@ Today is {today}.
   - If NO entry exists → use **create_journal_entry** with diary content. If the user didn't provide diary text AND a rating, ask before creating. Never create an empty journal entry.
   - A bare number 1-10 in journal context is a **rating**, not a time.
 - **Directive**: title required; body is a brief helpful explanation if you can write one. If the user says "add a directive" without specifying what it's about, ask what they want to work on.
+  - **Before suggesting new directives**, use **search** or **list_directives** to check what the user already has. If they have something similar, mention it ("You already have a directive for that — want to update it instead?"). Only suggest new ones if nothing relevant exists.
 - **Note**: title required; body is optional. If the user says "add a note" without specifying content, ask what the note should be about.
+  - Similarly, use **search** before creating notes to avoid duplicates.
 
 **Never invent fields or options that aren't defined in a tool's parameters.** If a tool doesn't have a field, don't offer it to the user.
 
@@ -336,7 +365,7 @@ export interface ConverseResult {
 
 // ── Converse ───────────────────────────────────
 
-const READ_TOOLS = new Set(["list_directives", "list_modes", "get_journal_entry", "list_notes", "list_folders", "search"]);
+const READ_TOOLS = new Set(["list_directives", "list_modes", "get_journal_entry", "get_directive", "get_note", "list_notes", "list_folders", "search"]);
 const MAX_TOOL_ROUNDS = 3;
 
 export async function converse(
@@ -508,6 +537,12 @@ async function validateActionIds(
 
 // ── Helpers ────────────────────────────────────
 
+/** Truncate a string for listing context — keeps the first N chars + ellipsis. */
+function truncate(text: unknown, maxLen = 150): string | null {
+  if (typeof text !== "string" || !text) return null;
+  return text.length <= maxLen ? text : text.slice(0, maxLen) + "…";
+}
+
 async function executeReadCall(userId: string, name: string, argsJson: string): Promise<string> {
   const args = JSON.parse(argsJson);
 
@@ -517,7 +552,7 @@ async function executeReadCall(userId: string, name: string, argsJson: string): 
       directives.map((d: Record<string, unknown>) => ({
         id: d.id,
         title: d.title,
-        body: d.body,
+        body: truncate(d.body),
         status: d.status,
       })),
     );
@@ -544,10 +579,36 @@ async function executeReadCall(userId: string, name: string, argsJson: string): 
       notes.map((n: Record<string, unknown>) => ({
         id: n.id,
         title: n.title,
-        body: n.body,
+        body: truncate(n.body),
         kind: n.kind,
       })),
     );
+  }
+
+  if (name === "get_directive") {
+    const directive = await directiveQueries.findById(userId, args.id);
+    if (!directive) return JSON.stringify({ exists: false });
+    const d = directive as Record<string, unknown>;
+    return JSON.stringify({
+      exists: true,
+      id: d.id,
+      title: d.title,
+      body: d.body, // full body — no truncation
+      status: d.status,
+    });
+  }
+
+  if (name === "get_note") {
+    const note = await noteQueries.findById(userId, args.id);
+    if (!note) return JSON.stringify({ exists: false });
+    const n = note as Record<string, unknown>;
+    return JSON.stringify({
+      exists: true,
+      id: n.id,
+      title: n.title,
+      body: n.body, // full body — no truncation
+      kind: n.kind,
+    });
   }
 
   if (name === "search") {
@@ -556,7 +617,7 @@ async function executeReadCall(userId: string, name: string, argsJson: string): 
       id: r.id,
       type: r.type,
       title: r.title,
-      body: r.body,
+      body: truncate(r.body),
       kind: r.kind,
       status: r.status,
       similarity: Math.round(r.similarity * 100) + "%",
