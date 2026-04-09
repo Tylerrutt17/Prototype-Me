@@ -199,6 +199,9 @@ async function continueFlow(
     if (state === "awaiting_field_choice") {
       return handleFieldChoice(session, flowId, message, quota);
     }
+    if (state === "awaiting_edit_mode") {
+      return handleEditModeChoice(session, flowId, message, quota);
+    }
     if (state === "awaiting_field_value") {
       return handleFieldValue(session, flowId, message, quota);
     }
@@ -776,19 +779,106 @@ async function handleFieldChoice(
 
   if (lower.includes("title") || lower.includes("name") || lower.includes("rename")) {
     session.selectedField = "title";
-  } else if (lower.includes("description") || lower.includes("body")) {
-    session.selectedField = "body";
-  } else if (lower.includes("both")) {
-    session.selectedField = "both";
-  } else {
-    session.selectedField = "body"; // default
+    session.state = "awaiting_field_value";
+    return {
+      message: "What should the new **title** be?",
+      toolCalls: [],
+      remainingQuota: quota.dailyLimit - quota.dailyUsed,
+      resetAt: getResetTime(),
+      flowId,
+      flowState: "awaiting_field_value",
+      quotaFree: true,
+    };
   }
 
-  session.state = "awaiting_field_value";
-  const fieldLabel = session.selectedField === "both" ? "title and description" : session.selectedField;
+  if (lower.includes("both")) {
+    session.selectedField = "both";
+    session.state = "awaiting_field_value";
+    return {
+      message: "What should the new **title and description** be?",
+      toolCalls: [],
+      remainingQuota: quota.dailyLimit - quota.dailyUsed,
+      resetAt: getResetTime(),
+      flowId,
+      flowState: "awaiting_field_value",
+      quotaFree: true,
+    };
+  }
+
+  // Description/body selected — ask how they want to edit it
+  session.selectedField = "body";
+  session.state = "awaiting_edit_mode";
 
   return {
-    message: `What should the new **${fieldLabel}** be?`,
+    message: "How would you like to change the description?",
+    toolCalls: [toolCall("present_options", {
+      question: "How would you like to change the description?",
+      options: ["Add to the end", "Replace entirely", "Update a specific part"],
+    })],
+    remainingQuota: quota.dailyLimit - quota.dailyUsed,
+    resetAt: getResetTime(),
+    flowId,
+    flowState: "awaiting_edit_mode",
+    quotaFree: true,
+  };
+}
+
+async function handleEditModeChoice(
+  session: FlowSession,
+  flowId: string,
+  message: string,
+  quota: { dailyLimit: number; dailyUsed: number },
+): Promise<FlowResponse> {
+  const lower = message.toLowerCase();
+
+  if (lower.includes("add") || lower.includes("append") || lower.includes("end")) {
+    session.state = "awaiting_field_value";
+    // Store edit mode so handleFieldValue knows to append
+    (session as any).editMode = "append";
+    return {
+      message: "What would you like to add?",
+      toolCalls: [],
+      remainingQuota: quota.dailyLimit - quota.dailyUsed,
+      resetAt: getResetTime(),
+      flowId,
+      flowState: "awaiting_field_value",
+      quotaFree: true,
+    };
+  }
+
+  if (lower.includes("replace") || lower.includes("entirely") || lower.includes("whole")) {
+    session.state = "awaiting_field_value";
+    (session as any).editMode = "replace";
+    return {
+      message: "What should the new description be?",
+      toolCalls: [],
+      remainingQuota: quota.dailyLimit - quota.dailyUsed,
+      resetAt: getResetTime(),
+      flowId,
+      flowState: "awaiting_field_value",
+      quotaFree: true,
+    };
+  }
+
+  if (lower.includes("specific") || lower.includes("part") || lower.includes("update")) {
+    session.state = "awaiting_field_value";
+    (session as any).editMode = "specific";
+    return {
+      message: "Describe what you want to change — e.g. \"change the part about X to say Y\"",
+      toolCalls: [],
+      remainingQuota: quota.dailyLimit - quota.dailyUsed,
+      resetAt: getResetTime(),
+      flowId,
+      flowState: "awaiting_field_value",
+      quotaFree: true,
+    };
+  }
+
+  // Default to append
+  session.state = "awaiting_field_value";
+  (session as any).editMode = "append";
+  return {
+    message: "What would you like to add?",
     toolCalls: [],
     remainingQuota: quota.dailyLimit - quota.dailyUsed,
     resetAt: getResetTime(),
@@ -813,15 +903,61 @@ async function handleFieldValue(
   const fn = entityType === "directive" ? "update_directive" : "update_note";
   const args: Record<string, unknown> = { id: session.selectedItemId };
 
+  const editMode = (session as any).editMode as string | undefined;
+  let usedAI = false;
+
   if (session.selectedField === "title") {
     args.title = message.trim().slice(0, LIMITS.directive.title);
+
   } else if (session.selectedField === "body") {
-    args.body = message.trim();
+    // Fetch current body for append/specific modes
+    let currentBody = "";
+    if (editMode === "append" || editMode === "specific") {
+      if (entityType === "directive") {
+        const d = await directiveQueries.findById(session.userId, session.selectedItemId!);
+        currentBody = (d as Record<string, unknown>)?.body as string ?? "";
+      } else {
+        const n = await noteQueries.findById(session.userId, session.selectedItemId!);
+        currentBody = (n as Record<string, unknown>)?.body as string ?? "";
+      }
+    }
+
+    if (editMode === "append") {
+      // Combine existing + new content
+      const newContent = message.trim();
+      args.body = currentBody ? `${currentBody}\n\n${newContent}` : newContent;
+
+    } else if (editMode === "specific") {
+      // Use AI to apply the specific edit to the existing body
+      if (quota.dailyUsed >= quota.dailyLimit) {
+        sessions.delete(flowId);
+        return {
+          message: "You've hit your daily AI limit. Try editing directly in the app.",
+          toolCalls: [],
+          remainingQuota: 0,
+          resetAt: getResetTime(),
+        };
+      }
+      try {
+        const edited = await applySpecificEdit(currentBody, message);
+        await usageQueries.increment(session.userId);
+        usedAI = true;
+        args.body = edited;
+      } catch {
+        // Fallback: just replace
+        args.body = message.trim();
+      }
+
+    } else {
+      // Replace entirely
+      args.body = message.trim();
+    }
+
   } else if (session.selectedField === "both") {
-    // For "both", use AI to split the input into title + body
     try {
       const result = await generateTitleBody(message, entityType === "note" ? "note" : "directive");
       await usageQueries.increment(session.userId);
+      usedAI = true;
       args.title = result.title;
       args.body = result.body;
     } catch {
@@ -839,7 +975,7 @@ async function handleFieldValue(
     remainingQuota: updatedQuota.dailyLimit - updatedQuota.dailyUsed,
     resetAt: getResetTime(),
     flowState: "done",
-    quotaFree: session.selectedField !== "both",
+    quotaFree: !usedAI,
   };
 }
 
@@ -889,6 +1025,33 @@ async function generateTitleBody(
     title: (parsed.title || description.slice(0, 60)).slice(0, LIMITS.directive.title),
     body: (parsed.body || "").slice(0, LIMITS.directive.body),
   };
+}
+
+/**
+ * Use AI to apply a specific edit instruction to existing text.
+ * e.g. currentBody = "Wake up at 6am, meditate", instruction = "change 6am to 7am"
+ * → "Wake up at 7am, meditate"
+ */
+async function applySpecificEdit(currentBody: string, instruction: string): Promise<string> {
+  if (!openai) throw new Error("OpenAI not configured");
+
+  const response = await openai.responses.create({
+    model: OPENAI_MODEL,
+    input: [
+      {
+        role: "user",
+        content: `Apply this edit to the text below. Return ONLY the updated text, nothing else.
+
+Edit instruction: "${instruction}"
+
+Current text:
+${currentBody}`,
+      },
+    ],
+    max_output_tokens: 512,
+  });
+
+  return response.output_text.trim();
 }
 
 // ── Fallback ──
