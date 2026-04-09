@@ -83,6 +83,7 @@ class SpeakViewController: BaseViewController {
 
     var messages: [SpeakChatMessage] = []
     var currentFlowId: String?
+    private var optionLabels: [String] = []
     var isTranscribing = false
     var isRecording = false
     var isProcessing = false
@@ -738,37 +739,70 @@ class SpeakViewController: BaseViewController {
 
         guard let optionsStack = responseContentStack.arrangedSubviews.first(where: { $0.tag == 9003 }) as? UIStackView else { return }
         optionsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        // Store option labels for tap handler
+        optionLabels = options
+
+        let hasIcons = icons != nil && !(icons?.isEmpty ?? true)
+        let iconWidth: CGFloat = 28 // fixed column width so all text aligns
 
         for (index, option) in options.enumerated() {
-            let button = UIButton(type: .system)
-            var config = UIButton.Configuration.filled()
-            config.title = option
-            config.baseBackgroundColor = DesignTokens.Colors.surfacePrimary
-            config.baseForegroundColor = DesignTokens.Colors.textPrimary
-            config.cornerStyle = .medium
-            config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
-            config.titleTextAttributesTransformer = .init { c in
-                var c = c; c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium); return c
+            let row = UIView()
+            row.backgroundColor = DesignTokens.Colors.surfacePrimary
+            row.layer.cornerRadius = DesignTokens.Radii.md
+            row.layer.borderWidth = 1
+            row.layer.borderColor = DesignTokens.Colors.separator.cgColor
+            row.isUserInteractionEnabled = true
+            row.tag = index
+            row.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(optionRowTapped(_:))))
+
+            let hStack = UIStackView()
+            hStack.axis = .horizontal
+            hStack.spacing = DesignTokens.Spacing.sm
+            hStack.alignment = .center
+            hStack.translatesAutoresizingMaskIntoConstraints = false
+
+            // Icon (fixed width so text aligns across rows)
+            if hasIcons {
+                let iconContainer = UIView()
+                iconContainer.translatesAutoresizingMaskIntoConstraints = false
+                iconContainer.widthAnchor.constraint(equalToConstant: iconWidth).isActive = true
+
+                let iconName = (icons != nil && index < icons!.count) ? icons![index] : "circle"
+                let iconView = UIImageView(image: UIImage(
+                    systemName: iconName,
+                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+                ))
+                iconView.tintColor = DesignTokens.Colors.accent
+                iconView.contentMode = .center
+                iconView.translatesAutoresizingMaskIntoConstraints = false
+                iconContainer.addSubview(iconView)
+                NSLayoutConstraint.activate([
+                    iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+                    iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+                ])
+                hStack.addArrangedSubview(iconContainer)
             }
 
-            // Add icon if provided
-            if let icons, index < icons.count,
-               let image = UIImage(systemName: icons[index], withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)) {
-                config.image = image
-                config.imagePadding = DesignTokens.Spacing.sm
-                config.imagePlacement = .leading
-            }
+            // Label
+            let label = UILabel()
+            label.text = option
+            label.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium)
+            label.textColor = DesignTokens.Colors.textPrimary
+            label.numberOfLines = 2
+            hStack.addArrangedSubview(label)
 
-            button.configuration = config
-            button.layer.borderWidth = 1
-            button.layer.borderColor = DesignTokens.Colors.separator.cgColor
-            button.layer.cornerRadius = DesignTokens.Radii.md
-            button.tag = index
-            button.addTarget(self, action: #selector(optionButtonTapped(_:)), for: .touchUpInside)
+            row.addSubview(hStack)
+            let pad = DesignTokens.Spacing.md
+            NSLayoutConstraint.activate([
+                hStack.topAnchor.constraint(equalTo: row.topAnchor, constant: pad),
+                hStack.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -pad),
+                hStack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: pad),
+                hStack.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -pad),
+            ])
 
-            button.alpha = 0
-            button.transform = CGAffineTransform(translationX: 0, y: 8)
-            optionsStack.addArrangedSubview(button)
+            row.alpha = 0
+            row.transform = CGAffineTransform(translationX: 0, y: 8)
+            optionsStack.addArrangedSubview(row)
 
             UIView.animate(
                 withDuration: 0.3,
@@ -777,8 +811,8 @@ class SpeakViewController: BaseViewController {
                 initialSpringVelocity: 0,
                 options: []
             ) {
-                button.alpha = 1
-                button.transform = .identity
+                row.alpha = 1
+                row.transform = .identity
             }
         }
 
@@ -791,11 +825,9 @@ class SpeakViewController: BaseViewController {
         optionsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
     }
 
-    @objc private func optionButtonTapped(_ sender: UIButton) {
-        guard let optionsStack = responseContentStack.arrangedSubviews.first(where: { $0.tag == 9003 }) as? UIStackView,
-              sender.tag < optionsStack.arrangedSubviews.count else { return }
-
-        let selectedTitle = sender.configuration?.title ?? ""
+    @objc private func optionRowTapped(_ gesture: UITapGestureRecognizer) {
+        guard let view = gesture.view, view.tag < optionLabels.count else { return }
+        let selectedTitle = optionLabels[view.tag]
         Haptics.light()
         hideOptionsRow()
         sendMessage(selectedTitle)

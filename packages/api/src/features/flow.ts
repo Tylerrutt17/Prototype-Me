@@ -110,19 +110,29 @@ export async function handleFlow(
 ): Promise<FlowResponse> {
   const quota = await getQuota(userId);
 
+  // Always classify the message to detect intent switches
+  const intent = await classifyIntent(message);
+
   // Resume existing session?
   if (flowId && sessions.has(flowId)) {
     const session = sessions.get(flowId)!;
     if (Date.now() - session.createdAt > SESSION_TTL) {
       sessions.delete(flowId);
     } else {
-      // Continue the existing flow — the user is responding to a prompt
+      // Check if the user switched intent mid-flow
+      // A "freeform" classification during a flow usually means the user is
+      // answering our prompt (e.g. typing content), so we continue the flow.
+      // But if the AI detects a specific different intent, abandon and restart.
+      if (intent && intent.intent !== "freeform" && intent.intent !== session.intent.intent) {
+        console.log(`[Flow] Intent switch detected: ${session.intent.intent} → ${intent.intent}`);
+        sessions.delete(flowId);
+        return startNewFlow(userId, message, intent, localDate, quota);
+      }
       return continueFlow(session, flowId, message, quota);
     }
   }
 
-  // New message — classify intent with AI
-  const intent = await classifyIntent(message);
+  // New message
   if (!intent || intent.intent === "freeform") {
     return fallback(quota);
   }
