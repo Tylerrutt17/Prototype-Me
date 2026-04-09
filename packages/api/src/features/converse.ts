@@ -282,12 +282,13 @@ const tools: OpenAI.Responses.Tool[] = [
     type: "function",
     strict: false,
     name: "present_options",
-    description: "Show the user a set of tappable option buttons when you need them to pick from specific choices. Use this instead of listing options in text. Max 5 options. The client renders each as a tappable button. The user's tap sends their choice back as a message.",
+    description: "Show the user a set of tappable option buttons when you need them to pick from specific choices. Use this instead of listing options in text. Max 5 options. The client renders each as a tappable button with an SF Symbol icon. The user's tap sends their choice back as a message.",
     parameters: {
       type: "object",
       properties: {
         question: { type: "string", description: "Brief context shown above the options." },
         options: { type: "array", items: { type: "string" }, description: "2-5 short option labels.", minItems: 2, maxItems: 5 },
+        icons: { type: "array", items: { type: "string" }, description: "SF Symbol names matching each option. e.g. ['pencil', 'doc.text', 'trash']. Must be same length as options." },
       },
       required: ["question", "options"],
     },

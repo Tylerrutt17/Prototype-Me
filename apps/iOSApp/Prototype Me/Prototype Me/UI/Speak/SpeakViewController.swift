@@ -733,7 +733,7 @@ class SpeakViewController: BaseViewController {
 
     // MARK: - Options Buttons
 
-    func showOptions(question: String, options: [String]) {
+    func showOptions(question: String, options: [String], icons: [String]? = nil) {
         showResponse(text: question)
 
         guard let optionsStack = responseContentStack.arrangedSubviews.first(where: { $0.tag == 9003 }) as? UIStackView else { return }
@@ -750,6 +750,15 @@ class SpeakViewController: BaseViewController {
             config.titleTextAttributesTransformer = .init { c in
                 var c = c; c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium); return c
             }
+
+            // Add icon if provided
+            if let icons, index < icons.count,
+               let image = UIImage(systemName: icons[index], withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)) {
+                config.image = image
+                config.imagePadding = DesignTokens.Spacing.sm
+                config.imagePlacement = .leading
+            }
+
             button.configuration = config
             button.layer.borderWidth = 1
             button.layer.borderColor = DesignTokens.Colors.separator.cgColor

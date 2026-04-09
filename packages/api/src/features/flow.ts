@@ -241,6 +241,7 @@ async function handleJournalLog(
       toolCalls: [toolCall("present_options", {
         question: `You already have a journal entry for ${date}. What would you like to do?`,
         options: ["Update rating", "Add to diary", "Replace diary", "Something else"],
+        icons: ["star.fill", "text.append", "arrow.triangle.2.circlepath", "ellipsis.circle"],
       })],
       remainingQuota: quota.dailyLimit - quota.dailyUsed,
       resetAt: getResetTime(),
@@ -398,11 +399,17 @@ async function handleCreateDirective(
         "Create new directive",
       ];
 
+      const icons = [
+        ...directives.slice(0, 3).map(() => "pencil.circle"),
+        "plus.circle",
+      ];
+
       return {
         message: "I found some similar directives:",
         toolCalls: [toolCall("present_options", {
           question: "I found some similar directives:",
           options,
+          icons,
         })],
         remainingQuota: quota.dailyLimit - quota.dailyUsed,
         resetAt: getResetTime(),
@@ -489,6 +496,7 @@ async function handleUpdate(
       toolCalls: [toolCall("present_options", {
         question: `Found "${item.title}". What would you like to change?`,
         options: ["Change title", "Change description", "Both", "Something else"],
+        icons: ["textformat", "doc.text", "square.and.pencil", "ellipsis.circle"],
       })],
       remainingQuota: quota.dailyLimit - quota.dailyUsed,
       resetAt: getResetTime(),
@@ -503,14 +511,23 @@ async function handleUpdate(
   const session = sessions.get(flowId)!;
   session.state = "awaiting_item_choice";
 
+  const typeIcons: Record<string, string> = {
+    directive: "target",
+    note: "doc.text",
+    folder: "folder",
+    mode: "bolt.fill",
+  };
   const options = results.slice(0, 4).map((r) => `${r.type}: ${r.title}`);
+  const icons = results.slice(0, 4).map((r) => typeIcons[r.type] || "doc");
   options.push("Something else");
+  icons.push("ellipsis.circle");
 
   return {
     message: "Which one did you mean?",
     toolCalls: [toolCall("present_options", {
       question: "Which one did you mean?",
       options,
+      icons,
     })],
     remainingQuota: quota.dailyLimit - quota.dailyUsed,
     resetAt: getResetTime(),
@@ -567,6 +584,7 @@ async function handleRetire(
     toolCalls: [toolCall("present_options", {
       question: "Which directive?",
       options: [...directives.slice(0, 4).map((d) => d.title), "Cancel"],
+      icons: [...directives.slice(0, 4).map(() => "archivebox"), "xmark.circle"],
     })],
     remainingQuota: quota.dailyLimit - quota.dailyUsed,
     resetAt: getResetTime(),
@@ -814,6 +832,7 @@ async function handleFieldChoice(
     toolCalls: [toolCall("present_options", {
       question: "How would you like to change the description?",
       options: ["Add to the end", "Replace entirely", "Update a specific part"],
+      icons: ["text.append", "arrow.triangle.2.circlepath", "pencil.and.outline"],
     })],
     remainingQuota: quota.dailyLimit - quota.dailyUsed,
     resetAt: getResetTime(),

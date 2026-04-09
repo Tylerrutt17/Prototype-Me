@@ -133,9 +133,10 @@ extension SpeakViewController {
         if let optionsCall = response.toolCalls.first(where: { $0.function == "present_options" }) {
             let question = (optionsCall.arguments["question"] as? String) ?? response.message
             let options = (optionsCall.arguments["options"] as? [String]) ?? []
+            let icons = optionsCall.arguments["icons"] as? [String]
             if !options.isEmpty {
                 messages.append(SpeakChatMessage(role: .assistant, text: question))
-                showOptions(question: question, options: options)
+                showOptions(question: question, options: options, icons: icons)
                 isProcessing = false
                 updateControlsForProcessing()
                 quotaLabel.text = "\(response.remainingQuota) Prototype left"
