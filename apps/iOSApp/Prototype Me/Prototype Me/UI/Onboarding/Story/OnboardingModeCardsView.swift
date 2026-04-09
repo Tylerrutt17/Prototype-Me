@@ -244,51 +244,105 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
     // MARK: - Swipe Hint
 
     private func buildSwipeHint() {
-        let config = UIImage.SymbolConfiguration(pointSize: 44, weight: .light)
+        let config = UIImage.SymbolConfiguration(pointSize: 40, weight: .regular)
         swipeHintView.image = UIImage(systemName: "hand.draw.fill", withConfiguration: config)
-        swipeHintView.tintColor = DesignTokens.Colors.textSecondary.withAlphaComponent(0.55)
+        swipeHintView.tintColor = DesignTokens.Colors.textPrimary.withAlphaComponent(0.85)
         swipeHintView.contentMode = .scaleAspectFit
         swipeHintView.alpha = 0
+        swipeHintView.isUserInteractionEnabled = false
         swipeHintView.translatesAutoresizingMaskIntoConstraints = false
+
+        // Drop shadow for depth
+        swipeHintView.layer.shadowColor = UIColor.black.cgColor
+        swipeHintView.layer.shadowOpacity = 0.25
+        swipeHintView.layer.shadowOffset = CGSize(width: 0, height: 4)
+        swipeHintView.layer.shadowRadius = 8
+
         addSubview(swipeHintView)
 
         NSLayoutConstraint.activate([
-            swipeHintView.topAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: DesignTokens.Spacing.sm),
-            swipeHintView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            swipeHintView.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor, constant: 4),
+            swipeHintView.centerXAnchor.constraint(equalTo: centerXAnchor, constant: 40),
         ])
     }
 
     private func showSwipeHint() {
         guard !swipeHintDismissed, !UIAccessibility.isReduceMotionEnabled else { return }
 
-        UIView.animate(withDuration: 0.4, delay: 1.2, options: .curveEaseOut) {
+        // Start scaled up and above, like a hand floating in
+        swipeHintView.transform = CGAffineTransform(scaleX: 1.25, y: 1.25).translatedBy(x: 0, y: -12)
+
+        // Pop in: float down and scale to normal
+        UIView.animate(
+            withDuration: 0.5,
+            delay: 1.0,
+            usingSpringWithDamping: 0.65,
+            initialSpringVelocity: 0.4
+        ) {
             self.swipeHintView.alpha = 1
-        } completion: { _ in
-            guard !self.swipeHintDismissed else { return }
-            self.animateSwipeHint()
+            self.swipeHintView.transform = .identity
         }
     }
 
-    private func animateSwipeHint() {
-        guard !swipeHintDismissed else { return }
+    private func playSwipeHintGesture(completion: @escaping () -> Void) {
+        guard !swipeHintDismissed else { completion(); return }
 
-        // Swipe left motion, repeating
-        let startX: CGFloat = 12
-        swipeHintView.transform = CGAffineTransform(translationX: startX, y: 0)
-
+        // Phase 1: Touch down — hand presses into the card (scale down + slight y shift)
         UIView.animate(
-            withDuration: 0.8,
-            delay: 0.3,
-            options: [.curveEaseInOut]
+            withDuration: 0.18,
+            delay: 0,
+            options: .curveEaseIn
         ) {
-            self.swipeHintView.transform = CGAffineTransform(translationX: -20, y: 0)
-        } completion: { [weak self] finished in
-            guard let self, finished, !self.swipeHintDismissed else { return }
-            // Reset and repeat
-            UIView.animate(withDuration: 0.3, delay: 0.6, options: .curveEaseOut) {
-                self.swipeHintView.transform = CGAffineTransform(translationX: startX, y: 0)
-            } completion: { [weak self] _ in
-                self?.animateSwipeHint()
+            self.swipeHintView.transform = CGAffineTransform(scaleX: 0.88, y: 0.88).translatedBy(x: 0, y: 3)
+            self.swipeHintView.layer.shadowOpacity = 0.12
+            self.swipeHintView.layer.shadowOffset = CGSize(width: 0, height: 2)
+        } completion: { [weak self] _ in
+            guard let self, !self.swipeHintDismissed else { completion(); return }
+
+            // Phase 2: Swipe left while pressed
+            UIView.animate(
+                withDuration: 0.4,
+                delay: 0.08,
+                options: .curveEaseInOut
+            ) {
+                self.swipeHintView.transform = CGAffineTransform(scaleX: 0.9, y: 0.9).translatedBy(x: -80, y: 2)
+            } completion: { [weak self] finished in
+                guard let self, finished, !self.swipeHintDismissed else {
+                    completion()
+                    return
+                }
+
+                // Phase 3: Lift off — scale up, fade out
+                UIView.animate(
+                    withDuration: 0.22,
+                    delay: 0,
+                    options: .curveEaseOut
+                ) {
+                    self.swipeHintView.alpha = 0
+                    self.swipeHintView.transform = CGAffineTransform(scaleX: 1.1, y: 1.1).translatedBy(x: -80, y: -8)
+                    self.swipeHintView.layer.shadowOpacity = 0.25
+                    self.swipeHintView.layer.shadowOffset = CGSize(width: 0, height: 4)
+                } completion: { [weak self] _ in
+                    guard let self else { return }
+                    // Reset while invisible
+                    self.swipeHintView.transform = .identity
+
+                    // Fire the card move
+                    completion()
+
+                    // Float hand back in for next cycle
+                    guard !self.swipeHintDismissed else { return }
+                    self.swipeHintView.transform = CGAffineTransform(scaleX: 1.2, y: 1.2).translatedBy(x: 0, y: -10)
+                    UIView.animate(
+                        withDuration: 0.45,
+                        delay: 1.8,
+                        usingSpringWithDamping: 0.7,
+                        initialSpringVelocity: 0.3
+                    ) {
+                        self.swipeHintView.alpha = 1
+                        self.swipeHintView.transform = .identity
+                    }
+                }
             }
         }
     }
@@ -297,9 +351,14 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
         guard !swipeHintDismissed else { return }
         swipeHintDismissed = true
         swipeHintView.layer.removeAllAnimations()
-        UIView.animate(withDuration: 0.25, delay: 0, options: .curveEaseIn) {
+        UIView.animate(
+            withDuration: 0.3,
+            delay: 0,
+            usingSpringWithDamping: 0.8,
+            initialSpringVelocity: 0.2
+        ) {
             self.swipeHintView.alpha = 0
-            self.swipeHintView.transform = CGAffineTransform(translationX: -10, y: 0).scaledBy(x: 0.8, y: 0.8)
+            self.swipeHintView.transform = CGAffineTransform(scaleX: 0.6, y: 0.6).translatedBy(x: 0, y: 10)
         }
     }
 
@@ -358,33 +417,38 @@ final class OnboardingModeCardsView: UIView, StoryAnimatable {
             return
         }
 
-        // Deselect current
-        deselectMode(at: currentModeIndex)
-
-        // Fade out current directives
-        hideDirectives(for: currentModeIndex)
-
-        // Scroll to new mode card
-        let cardWidth = bounds.width - DesignTokens.Spacing.xl * 2
-        let cardSpacing = DesignTokens.Spacing.md
-        let targetX = CGFloat(index) * (cardWidth + cardSpacing)
-
-        UIView.animate(withDuration: 0.4, delay: 0.1, options: .curveEaseInOut) {
-            self.scrollView.contentOffset = CGPoint(x: targetX, y: 0)
-        }
-
-        // Select new mode
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        // Hand swipes first, then card follows
+        playSwipeHintGesture { [weak self] in
             guard let self, !self.isStopped, !self.isUserControlled, self.cycleID == cycle else { return }
-            self.selectMode(at: index, animated: true)
-            self.showDirectives(for: index, animated: true)
-            self.currentModeIndex = index
 
-            // Next swipe
-            let nextIndex = index + 1
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
+            // Deselect current
+            self.deselectMode(at: self.currentModeIndex)
+
+            // Fade out current directives
+            self.hideDirectives(for: self.currentModeIndex)
+
+            // Scroll to new mode card
+            let cardWidth = self.bounds.width - DesignTokens.Spacing.xl * 2
+            let cardSpacing = DesignTokens.Spacing.md
+            let targetX = CGFloat(index) * (cardWidth + cardSpacing)
+
+            UIView.animate(withDuration: 0.4, delay: 0.1, options: .curveEaseInOut) {
+                self.scrollView.contentOffset = CGPoint(x: targetX, y: 0)
+            }
+
+            // Select new mode
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 guard let self, !self.isStopped, !self.isUserControlled, self.cycleID == cycle else { return }
-                self.swipeToMode(nextIndex >= self.modes.count ? 0 : nextIndex, cycle: cycle)
+                self.selectMode(at: index, animated: true)
+                self.showDirectives(for: index, animated: true)
+                self.currentModeIndex = index
+
+                // Next swipe
+                let nextIndex = index + 1
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
+                    guard let self, !self.isStopped, !self.isUserControlled, self.cycleID == cycle else { return }
+                    self.swipeToMode(nextIndex >= self.modes.count ? 0 : nextIndex, cycle: cycle)
+                }
             }
         }
     }

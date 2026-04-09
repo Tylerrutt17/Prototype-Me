@@ -55,15 +55,17 @@ class SettingsViewController: BaseViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         refreshSyncStatus()
-        NotificationCenter.default.addObserver(self, selector: #selector(syncDidComplete), name: .syncDidComplete, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(syncStatusChanged), name: .syncDidComplete, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(syncStatusChanged), name: .syncDidBegin, object: nil)
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         NotificationCenter.default.removeObserver(self, name: .syncDidComplete, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .syncDidBegin, object: nil)
     }
 
-    @objc private func syncDidComplete() {
+    @objc private func syncStatusChanged() {
         refreshSyncStatus()
     }
 
@@ -91,7 +93,9 @@ class SettingsViewController: BaseViewController {
             let info = try? await syncEngine.debugInfo()
             await MainActor.run {
                 let outbox = info?.outboxCount ?? 0
-                if let error = info?.lastError {
+                if info?.isSyncing == true {
+                    syncBanner.configure(state: .syncing)
+                } else if let error = info?.lastError {
                     syncBanner.configure(state: .error(error))
                 } else if outbox > 0 {
                     syncBanner.configure(state: .pending(outbox))

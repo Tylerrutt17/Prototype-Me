@@ -62,6 +62,10 @@ export function conflict(reply: FastifyReply, message = "Version conflict") {
   return send(reply, 409, false, null, "conflict", message);
 }
 
+export function upgradeRequired(reply: FastifyReply, message = "Client sync version is too old. Please update the app.") {
+  return send(reply, 426, false, null, "upgrade_required", message);
+}
+
 export function serverError(reply: FastifyReply, message = "Something went wrong") {
   return send(reply, 500, false, null, "internal_error", message);
 }

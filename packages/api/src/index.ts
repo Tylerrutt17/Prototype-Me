@@ -21,6 +21,7 @@ import { aiRoutes } from "./routes/ai.js";
 import { deviceRoutes } from "./routes/devices.js";
 import { authRoutes } from "./routes/auth.js";
 import { cleanupRoutes } from "./routes/cleanup.js";
+import { webhookRoutes } from "./routes/webhooks.js";
 
 const app = Fastify({ logger: true, bodyLimit: 15 * 1024 * 1024 }); // 10MB for base64 audio uploads
 
@@ -30,7 +31,7 @@ await app.register(cors, { origin: true });
 // ── Global auth hook ────────────────────────
 app.addHook("onRequest", async (request, reply) => {
   // Skip auth for health check and public endpoints
-  const publicPaths = ["/health", "/v1/ai/onboard", "/v1/auth/", "/v1/cleanup/"];
+  const publicPaths = ["/health", "/v1/ai/onboard", "/v1/auth/", "/v1/cleanup/", "/v1/webhooks/"];
   if (publicPaths.some((p) => request.url.startsWith(p))) return;
 
   // Dev bypass: skip auth and use a test user ID
@@ -97,6 +98,7 @@ await app.register(aiRoutes, { prefix: "/v1/ai" });
 await app.register(deviceRoutes, { prefix: "/v1/devices" });
 await app.register(authRoutes, { prefix: "/v1/auth" });
 await app.register(cleanupRoutes, { prefix: "/v1/cleanup" });
+await app.register(webhookRoutes, { prefix: "/v1/webhooks" });
 
 // ── Scheduled Jobs ─────────────────────────
 import cron from "node-cron";

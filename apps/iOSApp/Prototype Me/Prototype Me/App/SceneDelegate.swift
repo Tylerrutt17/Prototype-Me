@@ -22,7 +22,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             showRecoveryScreen(error: error, window: window)
         } else {
             let environment = appDelegate.environment!
-            startApp(environment: environment, window: window)
+            showSplash(then: environment, window: window)
         }
 
         window.makeKeyAndVisible()
@@ -32,6 +32,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let coordinator = AppCoordinator(window: window, environment: environment)
         coordinator.start()
         self.appCoordinator = coordinator
+    }
+
+    private func showSplash(then environment: AppEnvironment, window: UIWindow) {
+        let splash = SplashViewController()
+        splash.onFinished = { [weak self] in
+            self?.startApp(environment: environment, window: window)
+        }
+        window.rootViewController = splash
     }
 
     private func showRecoveryScreen(error: Error, window: UIWindow) {

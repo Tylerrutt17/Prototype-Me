@@ -167,9 +167,8 @@ class SettingsCoordinator: Coordinator {
         vc.dbQueue = environment.db.dbQueue
         vc.onChoice = { [weak self] direction in
             guard let self else { return }
-            PurchaseService.clearPendingSyncChoice()
 
-            // Show loading while sync runs
+            // Show loading while sync runs — only clear flag on success
             let loadingVC = SyncLoadingViewController()
             loadingVC.syncTask = {
                 switch direction {
@@ -178,6 +177,7 @@ class SettingsCoordinator: Coordinator {
                 case .useDevice:
                     await self.environment.purchaseService.seedFullPush()
                 }
+                PurchaseService.clearPendingSyncChoice()
             }
             loadingVC.onComplete = { [weak self] in
                 self?.navigationController.dismiss(animated: true) {

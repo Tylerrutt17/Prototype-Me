@@ -271,7 +271,6 @@ class AppCoordinator: Coordinator {
         vc.dbQueue = environment.db.dbQueue
         vc.onChoice = { [weak self] direction in
             guard let self else { return }
-            PurchaseService.clearPendingSyncChoice()
 
             let loadingVC = SyncLoadingViewController()
             loadingVC.syncTask = {
@@ -281,6 +280,7 @@ class AppCoordinator: Coordinator {
                 case .useDevice:
                     await self.environment.purchaseService.seedFullPush()
                 }
+                PurchaseService.clearPendingSyncChoice()
             }
             loadingVC.onComplete = {
                 self.tabBarController.dismiss(animated: true)

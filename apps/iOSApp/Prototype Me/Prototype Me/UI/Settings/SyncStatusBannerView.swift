@@ -4,6 +4,7 @@ class SyncStatusBannerView: UIView {
 
     enum State {
         case synced
+        case syncing
         case pending(Int)
         case error(String)
     }
@@ -62,6 +63,15 @@ class SyncStatusBannerView: UIView {
             iconView.tintColor = DesignTokens.Colors.accentSecondary
             label.text = "All synced"
             label.textColor = DesignTokens.Colors.accentSecondary
+            stopSpinning()
+
+        case .syncing:
+            backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.12)
+            iconView.image = UIImage(systemName: "arrow.trianglehead.2.clockwise", withConfiguration: iconConfig)
+            iconView.tintColor = DesignTokens.Colors.accent
+            label.text = "Syncing…"
+            label.textColor = DesignTokens.Colors.accent
+            startSpinning()
 
         case .pending(let count):
             backgroundColor = DesignTokens.Colors.warning.withAlphaComponent(0.12)
@@ -69,6 +79,7 @@ class SyncStatusBannerView: UIView {
             iconView.tintColor = DesignTokens.Colors.warning
             label.text = count == 1 ? "1 change waiting to sync" : "\(count) changes waiting to sync"
             label.textColor = DesignTokens.Colors.warning
+            stopSpinning()
 
         case .error:
             backgroundColor = DesignTokens.Colors.destructive.withAlphaComponent(0.12)
@@ -76,6 +87,22 @@ class SyncStatusBannerView: UIView {
             iconView.tintColor = DesignTokens.Colors.destructive
             label.text = "Sync issue — check connection"
             label.textColor = DesignTokens.Colors.destructive
+            stopSpinning()
         }
+    }
+
+    private func startSpinning() {
+        guard iconView.layer.animation(forKey: "spin") == nil else { return }
+        let rotation = CABasicAnimation(keyPath: "transform.rotation.z")
+        rotation.fromValue = 0
+        rotation.toValue = CGFloat.pi * 2
+        rotation.duration = 1.2
+        rotation.repeatCount = .infinity
+        rotation.timingFunction = CAMediaTimingFunction(name: .linear)
+        iconView.layer.add(rotation, forKey: "spin")
+    }
+
+    private func stopSpinning() {
+        iconView.layer.removeAnimation(forKey: "spin")
     }
 }

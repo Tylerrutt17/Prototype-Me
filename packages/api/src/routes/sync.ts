@@ -2,9 +2,20 @@ import type { FastifyInstance } from "fastify";
 import * as sync from "../features/sync.js";
 import * as profileQueries from "../db/queries/profiles.js";
 import { syncPushRequest, syncPullQuery } from "../validation/sync.js";
-import { ok } from "../lib/responses.js";
+import { ok, upgradeRequired } from "../lib/responses.js";
+import { config } from "../config.js";
 
 export async function syncRoutes(app: FastifyInstance) {
+  // Enforce minimum sync protocol version on every sync endpoint
+  app.addHook("onRequest", async (req, reply) => {
+    const raw = req.headers["x-sync-version"];
+    const clientVersion = typeof raw === "string" ? parseInt(raw, 10) : NaN;
+
+    if (isNaN(clientVersion) || clientVersion < config.minSyncVersion) {
+      return upgradeRequired(reply);
+    }
+  });
+
   // Push: POST /v1/sync/push — matches iOS SyncEngine.PushRequest
   app.post("/push", async (req, reply) => {
     await requirePro(req.userId);

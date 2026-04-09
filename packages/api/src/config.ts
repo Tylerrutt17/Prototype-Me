@@ -16,4 +16,10 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || "dev-secret-change-in-production",
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+  revenueCatWebhookSecret: process.env.REVENUECAT_WEBHOOK_SECRET ?? "",
+  revenueCatSecretKey: process.env.REVENUECAT_SECRET_KEY ?? "",
+
+  // Sync protocol version — bump when push/pull contract changes.
+  // Clients sending X-Sync-Version < this get 426 Upgrade Required.
+  minSyncVersion: 1,
 } as const;

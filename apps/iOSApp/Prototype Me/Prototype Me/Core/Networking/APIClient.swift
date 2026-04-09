@@ -9,10 +9,12 @@ final class APIClient: Sendable {
     struct Config: Sendable {
         let baseURL: URL
         let apiVersion: String
+        let syncVersion: String
 
         static let `default` = Config(
             baseURL: URL(string: Self.resolvedBaseURL)!,
-            apiVersion: "1"
+            apiVersion: "1",
+            syncVersion: "1"
         )
 
         private static var resolvedBaseURL: String {
@@ -167,6 +169,7 @@ final class APIClient: Sendable {
         var request = URLRequest(url: url, timeoutInterval: timeout)
         request.httpMethod = method
         request.setValue(config.apiVersion, forHTTPHeaderField: "X-API-Version")
+        request.setValue(config.syncVersion, forHTTPHeaderField: "X-Sync-Version")
 
         lock.lock()
         let token = authState.accessToken

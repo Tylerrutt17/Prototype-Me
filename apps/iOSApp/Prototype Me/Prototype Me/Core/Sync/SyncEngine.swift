@@ -4,6 +4,8 @@ import GRDB
 
 extension Notification.Name {
     static let syncDidComplete = Notification.Name("syncDidComplete")
+    static let syncDidBegin = Notification.Name("syncDidBegin")
+    static let syncUpgradeRequired = Notification.Name("syncUpgradeRequired")
 }
 
 /// Orchestrates push/pull sync between the local GRDB database and the remote API.
@@ -145,6 +147,15 @@ final class SyncEngine: @unchecked Sendable {
             lock.lock()
             lastError = error
             lock.unlock()
+
+            // 426 Upgrade Required — stop sync entirely until the app is updated
+            if case .clientError(426, _, _) = error as? APIClient.APIError {
+                stopPollTimer()
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .syncUpgradeRequired, object: nil)
+                }
+            }
+
             throw error
         }
     }
@@ -414,6 +425,7 @@ final class SyncEngine: @unchecked Sendable {
         let lastSyncToken: String?
         let lastError: String?
         let deviceId: String
+        let isSyncing: Bool
     }
 
     func debugInfo() async throws -> DebugInfo {
@@ -425,6 +437,7 @@ final class SyncEngine: @unchecked Sendable {
 
         lock.lock()
         let errorDesc = lastError.map { "\($0)" }
+        let syncing = isSyncing
         lock.unlock()
 
         return DebugInfo(
@@ -433,7 +446,8 @@ final class SyncEngine: @unchecked Sendable {
             lastPullAt: state?.lastPullAt,
             lastSyncToken: state?.lastSyncToken,
             lastError: errorDesc,
-            deviceId: api.deviceId
+            deviceId: api.deviceId,
+            isSyncing: syncing
         )
     }
 
@@ -447,6 +461,9 @@ final class SyncEngine: @unchecked Sendable {
             return false
         }
         isSyncing = true
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .syncDidBegin, object: nil)
+        }
         return true
     }
 

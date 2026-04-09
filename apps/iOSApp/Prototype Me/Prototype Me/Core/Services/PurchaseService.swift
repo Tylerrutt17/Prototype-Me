@@ -71,15 +71,18 @@ final class PurchaseService {
 
     // MARK: - Sync with Backend
 
-    /// Update the user's plan on our backend based on RevenueCat entitlements.
-    /// Returns `true` if the user just upgraded from free → pro (caller should present sync choice).
+    /// Ask the server to verify the user's subscription with RevenueCat.
+    /// The server checks RevenueCat directly and updates the plan — no client trust needed.
+    /// Returns `true` if the user just upgraded (caller should present sync choice).
     @discardableResult
     func syncPlanWithBackend() async -> Bool {
         do {
             let wasPro = UserDefaults.standard.string(forKey: "userPlan") == "pro"
-            let isPro = try await isPro()
-            let plan = isPro ? "pro" : "free"
-            let _: EmptyResponse = try await apiClient.patch("/v1/profile", body: ["plan": plan])
+
+            // Tell the server to check RevenueCat and update the plan
+            let sub: SubscriptionInfo = try await apiClient.post("/v1/subscription/verify", body: EmptyBody())
+            let plan = sub.plan.rawValue
+            let isPro = sub.plan == .pro
 
             // Update local state
             UserDefaults.standard.set(plan, forKey: "userPlan")
@@ -92,7 +95,7 @@ final class PurchaseService {
             }
             return justUpgraded
         } catch {
-            print("[PurchaseService] Failed to sync plan with backend: \(error)")
+            print("[PurchaseService] Failed to verify subscription: \(error)")
             return false
         }
     }

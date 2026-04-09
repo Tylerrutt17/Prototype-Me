@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "B6F3791F-086B-454F-B627-F12E1C8EC43B",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:",
+        "identifier" : "AABB00012F621E2800C4DFF4",
+        "name" : "Prototype MeTests"
+      }
+    }
+  ],
+  "version" : 1
+}

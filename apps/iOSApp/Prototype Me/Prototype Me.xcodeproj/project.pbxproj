@@ -9,10 +9,23 @@
 /* Begin PBXBuildFile section */
 		2F3F44762F7F3833004F6908 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 2F3F44752F7F3833004F6908 /* GRDB */; };
 		2F3F44792F7F387F004F6908 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = 2F3F44782F7F387F004F6908 /* RevenueCat */; };
+		AABB000C2F621E2800C4DFF4 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = AABB000D2F621E2800C4DFF4 /* GRDB */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		AABB00092F621E2800C4DFF4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 2FED5D752F621E2700C4DFF4 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2FED5D7C2F621E2700C4DFF4;
+			remoteInfo = "Prototype Me";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		2F8AB8F92F88293C0098BEC7 /* Prototype Me.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; name = "Prototype Me.xctestplan"; path = "../Prototype Me.xctestplan"; sourceTree = "<group>"; };
 		2FED5D7D2F621E2700C4DFF4 /* Prototype Me.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Prototype Me.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AABB00022F621E2800C4DFF4 /* Prototype MeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Prototype MeTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -34,6 +47,11 @@
 			path = "Prototype Me";
 			sourceTree = "<group>";
 		};
+		AABB000B2F621E2800C4DFF4 /* Prototype MeTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Prototype MeTests";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -46,13 +64,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AABB00042F621E2800C4DFF4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AABB000C2F621E2800C4DFF4 /* GRDB in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		2FED5D742F621E2700C4DFF4 = {
 			isa = PBXGroup;
 			children = (
+				2F8AB8F92F88293C0098BEC7 /* Prototype Me.xctestplan */,
 				2FED5D7F2F621E2700C4DFF4 /* Prototype Me */,
+				AABB000B2F621E2800C4DFF4 /* Prototype MeTests */,
 				2FED5D7E2F621E2700C4DFF4 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -61,6 +89,7 @@
 			isa = PBXGroup;
 			children = (
 				2FED5D7D2F621E2700C4DFF4 /* Prototype Me.app */,
+				AABB00022F621E2800C4DFF4 /* Prototype MeTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -92,6 +121,30 @@
 			productReference = 2FED5D7D2F621E2700C4DFF4 /* Prototype Me.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AABB00012F621E2800C4DFF4 /* Prototype MeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AABB00082F621E2800C4DFF4 /* Build configuration list for PBXNativeTarget "Prototype MeTests" */;
+			buildPhases = (
+				AABB00032F621E2800C4DFF4 /* Sources */,
+				AABB00042F621E2800C4DFF4 /* Frameworks */,
+				AABB00052F621E2800C4DFF4 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AABB000A2F621E2800C4DFF4 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AABB000B2F621E2800C4DFF4 /* Prototype MeTests */,
+			);
+			name = "Prototype MeTests";
+			packageProductDependencies = (
+				AABB000D2F621E2800C4DFF4 /* GRDB */,
+			);
+			productName = "Prototype MeTests";
+			productReference = AABB00022F621E2800C4DFF4 /* Prototype MeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -104,6 +157,10 @@
 				TargetAttributes = {
 					2FED5D7C2F621E2700C4DFF4 = {
 						CreatedOnToolsVersion = 26.3;
+					};
+					AABB00012F621E2800C4DFF4 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 2FED5D7C2F621E2700C4DFF4;
 					};
 				};
 			};
@@ -126,12 +183,20 @@
 			projectRoot = "";
 			targets = (
 				2FED5D7C2F621E2700C4DFF4 /* Prototype Me */,
+				AABB00012F621E2800C4DFF4 /* Prototype MeTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		2FED5D7B2F621E2700C4DFF4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AABB00052F621E2800C4DFF4 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -148,7 +213,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AABB00032F621E2800C4DFF4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AABB000A2F621E2800C4DFF4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2FED5D7C2F621E2700C4DFF4 /* Prototype Me */;
+			targetProxy = AABB00092F621E2800C4DFF4 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		2FED5D912F621E2800C4DFF4 /* Debug */ = {
@@ -338,6 +418,50 @@
 			};
 			name = Release;
 		};
+		AABB00062F621E2800C4DFF4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = XKPZ5YY97J;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.Prototype-Me.tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Prototype Me.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Prototype Me";
+			};
+			name = Debug;
+		};
+		AABB00072F621E2800C4DFF4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = XKPZ5YY97J;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.Prototype-Me.tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Prototype Me.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Prototype Me";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -355,6 +479,15 @@
 			buildConfigurations = (
 				2FED5D912F621E2800C4DFF4 /* Debug */,
 				2FED5D922F621E2800C4DFF4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AABB00082F621E2800C4DFF4 /* Build configuration list for PBXNativeTarget "Prototype MeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AABB00062F621E2800C4DFF4 /* Debug */,
+				AABB00072F621E2800C4DFF4 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -390,6 +523,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 2F3F44772F7F387F004F6908 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */;
 			productName = RevenueCat;
+		};
+		AABB000D2F621E2800C4DFF4 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2F3F44742F7F3833004F6908 /* XCRemoteSwiftPackageReference "GRDB" */;
+			productName = GRDB;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

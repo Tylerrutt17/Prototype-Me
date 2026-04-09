@@ -62,11 +62,24 @@ final class DatabaseManager: Sendable {
 
     // MARK: - Migrations
 
-    private func runMigrations() throws {
-        var migrator = DatabaseMigrator()
+    /// All migration identifiers in order. Used by tests to build partial migrators.
+    static let migrationIds = [
+        "v1_initialSchema",
+        "v10_missedScheduled",
+        "v11_directiveColor",
+        "v12_outboxBackoff",
+    ]
 
-        // NOTE: eraseDatabaseOnSchemaChange was removed — it wiped all user data
-        // on every rebuild when migrations changed. Use "Delete app + reinstall" instead.
+    /// Builds a migrator with all registered migrations.
+    /// Pass `through:` to stop after a specific migration (for testing).
+    static func makeMigrator(through lastMigration: String? = nil) -> DatabaseMigrator {
+        var migrator = DatabaseMigrator()
+        var registered = [String]()
+
+        func shouldStop() -> Bool {
+            if let last = lastMigration, registered.last == last { return true }
+            return false
+        }
 
         migrator.registerMigration("v1_initialSchema") { db in
             // ── folders — created first because notePage references it ──
@@ -246,6 +259,9 @@ final class DatabaseManager: Sendable {
             try db.create(indexOn: "speakHistory", columns: ["timestamp"])
         }
 
+        registered.append("v1_initialSchema")
+        if shouldStop() { return migrator }
+
         migrator.registerMigration("v10_missedScheduled") { db in
             try db.alter(table: "periodicReview") { t in
                 t.add(column: "missedScheduledJSON", .text).notNull().defaults(to: "[]")
@@ -254,11 +270,17 @@ final class DatabaseManager: Sendable {
             try db.execute(sql: "DELETE FROM periodicReview")
         }
 
+        registered.append("v10_missedScheduled")
+        if shouldStop() { return migrator }
+
         migrator.registerMigration("v11_directiveColor") { db in
             try db.alter(table: "directive") { t in
                 t.add(column: "color", .text)  // user-chosen hex color, nullable
             }
         }
+
+        registered.append("v11_directiveColor")
+        if shouldStop() { return migrator }
 
         migrator.registerMigration("v12_outboxBackoff") { db in
             try db.alter(table: "outboxOp") { t in
@@ -267,7 +289,13 @@ final class DatabaseManager: Sendable {
             // Unstick existing failed ops — reset attemptCount so they retry on next sync.
             try db.execute(sql: "UPDATE outboxOp SET attemptCount = 0, lastError = NULL")
         }
+        registered.append("v12_outboxBackoff")
 
+        return migrator
+    }
+
+    private func runMigrations() throws {
+        let migrator = Self.makeMigrator()
         try migrator.migrate(dbQueue)
     }
 }
