@@ -103,12 +103,35 @@ function toolCall(fn: string, args: Record<string, unknown>): ToolCall {
 }
 
 /** Create a present_options tool call and store the options on the session for tap detection. */
-function optionsCall(session: FlowSession | undefined, args: { question: string; options: string[]; icons?: string[] }): ToolCall {
+function optionsCall(session: FlowSession | undefined, args: { question: string; options: string[]; icons?: string[]; followUp?: Record<string, unknown> }): ToolCall {
   if (session) {
     session.lastPresentedOptions = args.options;
+    // Also include nested follow-up options as presented options for tap detection
+    if (args.followUp) {
+      for (const val of Object.values(args.followUp)) {
+        const nested = val as { options?: string[] };
+        if (nested.options) {
+          session.lastPresentedOptions.push(...nested.options);
+        }
+      }
+    }
   }
   return toolCall("present_options", args);
 }
+
+/** Reusable nested options tree for "what do you want to change?" */
+const FIELD_CHOICE_OPTIONS = {
+  question: "What would you like to change?",
+  options: ["Change title", "Change description", "Both", "Something else"],
+  icons: ["textformat", "doc.text", "square.and.pencil", "ellipsis.circle"],
+  followUp: {
+    "Change description": {
+      question: "How would you like to change the description?",
+      options: ["Add to the end", "Replace entirely", "Update a specific part"],
+      icons: ["text.append", "arrow.triangle.2.circlepath", "pencil.and.outline"],
+    },
+  },
+};
 
 // ── Main Entry Point ──
 
@@ -126,6 +149,18 @@ export async function handleFlow(
     if (Date.now() - session.createdAt > SESSION_TTL) {
       sessions.delete(flowId);
     } else {
+      // States where the user is providing free-text content — never re-classify,
+      // just continue the flow. The user is answering our prompt, not starting a new intent.
+      const freeTextStates = new Set([
+        "awaiting_content",
+        "awaiting_field_value",
+        "awaiting_journal_content",
+      ]);
+
+      if (freeTextStates.has(session.state)) {
+        return continueFlow(session, flowId, message, quota);
+      }
+
       // If the message matches one of the options we presented, it's a button tap —
       // always continue the flow (don't re-classify, it would misinterpret option text).
       const isOptionTap = session.lastPresentedOptions?.some(
@@ -136,7 +171,7 @@ export async function handleFlow(
         return continueFlow(session, flowId, message, quota);
       }
 
-      // Not an option tap — classify to detect intent switches.
+      // Not a free-text state and not an option tap — classify to detect intent switches.
       const intent = await classifyIntent(message);
       if (intent && intent.intent !== "freeform" && intent.intent !== session.intent.intent) {
         console.log(`[Flow] Intent switch detected: ${session.intent.intent} → ${intent.intent}`);
@@ -520,9 +555,8 @@ async function handleUpdate(
     return {
       message: `Found **${item.title}**. What would you like to change?`,
       toolCalls: [optionsCall(session, {
+        ...FIELD_CHOICE_OPTIONS,
         question: `Found "${item.title}". What would you like to change?`,
-        options: ["Change title", "Change description", "Both", "Something else"],
-        icons: ["textformat", "doc.text", "square.and.pencil", "ellipsis.circle"],
       })],
       remainingQuota: quota.dailyLimit - quota.dailyUsed,
       resetAt: getResetTime(),
@@ -694,10 +728,7 @@ async function handleSearchChoice(
 
       return {
         message: `What would you like to change about **${results[0]!.title}**?`,
-        toolCalls: [optionsCall(session, {
-          question: `What would you like to change?`,
-          options: ["Change title", "Change description", "Both", "Something else"],
-        })],
+        toolCalls: [optionsCall(session, FIELD_CHOICE_OPTIONS)],
         remainingQuota: quota.dailyLimit - quota.dailyUsed,
         resetAt: getResetTime(),
         flowId,
@@ -796,10 +827,7 @@ async function handleItemChoice(
   session.state = "awaiting_field_choice";
   return {
     message: `What would you like to change about **${item.title}**?`,
-    toolCalls: [optionsCall(session, {
-      question: `What would you like to change?`,
-      options: ["Change title", "Change description", "Both", "Something else"],
-    })],
+    toolCalls: [optionsCall(session, FIELD_CHOICE_OPTIONS)],
     remainingQuota: quota.dailyLimit - quota.dailyUsed,
     resetAt: getResetTime(),
     flowId,
@@ -814,14 +842,17 @@ async function handleFieldChoice(
   message: string,
   quota: { dailyLimit: number; dailyUsed: number },
 ): Promise<FlowResponse> {
-  const lower = message.toLowerCase();
+  // Parse combined choices from client (e.g. "Change description > Add to the end")
+  const parts = message.split(" > ").map((p) => p.trim().toLowerCase());
+  const fieldChoice = parts[0] || "";
+  const editModeChoice = parts[1];
 
-  if (lower.includes("something else") || lower.includes("cancel")) {
+  if (fieldChoice.includes("something else") || fieldChoice.includes("cancel")) {
     sessions.delete(flowId);
     return fallback(quota);
   }
 
-  if (lower.includes("title") || lower.includes("name") || lower.includes("rename")) {
+  if (fieldChoice.includes("title") || fieldChoice.includes("name") || fieldChoice.includes("rename")) {
     session.selectedField = "title";
     session.state = "awaiting_field_value";
     return {
@@ -835,7 +866,7 @@ async function handleFieldChoice(
     };
   }
 
-  if (lower.includes("both")) {
+  if (fieldChoice.includes("both")) {
     session.selectedField = "both";
     session.state = "awaiting_field_value";
     return {
@@ -849,8 +880,39 @@ async function handleFieldChoice(
     };
   }
 
-  // Description/body selected — ask how they want to edit it
+  // Description selected — check if edit mode was included (client-side follow-up)
   session.selectedField = "body";
+
+  if (editModeChoice) {
+    // Both choices came in one message — set edit mode and go straight to content
+    if (editModeChoice.includes("add") || editModeChoice.includes("end")) {
+      (session as any).editMode = "append";
+    } else if (editModeChoice.includes("replace") || editModeChoice.includes("entirely")) {
+      (session as any).editMode = "replace";
+    } else if (editModeChoice.includes("specific") || editModeChoice.includes("part")) {
+      (session as any).editMode = "specific";
+    } else {
+      (session as any).editMode = "append";
+    }
+
+    session.state = "awaiting_field_value";
+    const prompts: Record<string, string> = {
+      append: "What would you like to add?",
+      replace: "What should the new description be?",
+      specific: "Describe what you want to change \u2014 e.g. \"change the part about X to say Y\"",
+    };
+    return {
+      message: prompts[(session as any).editMode] || "What would you like to add?",
+      toolCalls: [],
+      remainingQuota: quota.dailyLimit - quota.dailyUsed,
+      resetAt: getResetTime(),
+      flowId,
+      flowState: "awaiting_field_value",
+      quotaFree: true,
+    };
+  }
+
+  // No edit mode choice yet (old-style single option tap) — ask for it
   session.state = "awaiting_edit_mode";
 
   return {

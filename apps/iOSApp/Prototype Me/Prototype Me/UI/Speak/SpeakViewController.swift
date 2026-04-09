@@ -84,6 +84,11 @@ class SpeakViewController: BaseViewController {
     var messages: [SpeakChatMessage] = []
     var currentFlowId: String?
     private var optionLabels: [String] = []
+    /// Nested follow-up options for the current option set.
+    /// Key = option label, Value = (question, options, icons, nestedFollowUp)
+    private var optionFollowUps: [String: (question: String, options: [String], icons: [String]?, followUp: Any?)] = []
+    /// Accumulated choices from multi-step option flows, sent with the final message.
+    private var accumulatedChoices: [String] = []
     var isTranscribing = false
     var isRecording = false
     var isProcessing = false
@@ -734,13 +739,24 @@ class SpeakViewController: BaseViewController {
 
     // MARK: - Options Buttons
 
-    func showOptions(question: String, options: [String], icons: [String]? = nil) {
+    func showOptions(question: String, options: [String], icons: [String]? = nil, followUp: [String: Any]? = nil) {
         showResponse(text: question)
 
         guard let optionsStack = responseContentStack.arrangedSubviews.first(where: { $0.tag == 9003 }) as? UIStackView else { return }
         optionsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        // Store option labels for tap handler
+        // Store option labels and follow-ups for tap handler
         optionLabels = options
+        optionFollowUps = [:]
+        if let followUp {
+            for (key, value) in followUp {
+                guard let dict = value as? [String: Any],
+                      let q = dict["question"] as? String,
+                      let opts = dict["options"] as? [String] else { continue }
+                let icns = dict["icons"] as? [String]
+                let nested = dict["followUp"]
+                optionFollowUps[key] = (question: q, options: opts, icons: icns, followUp: nested)
+            }
+        }
 
         let hasIcons = icons != nil && !(icons?.isEmpty ?? true)
         let iconWidth: CGFloat = 28 // fixed column width so all text aligns
@@ -829,8 +845,27 @@ class SpeakViewController: BaseViewController {
         guard let view = gesture.view, view.tag < optionLabels.count else { return }
         let selectedTitle = optionLabels[view.tag]
         Haptics.light()
+
+        // Track this choice
+        accumulatedChoices.append(selectedTitle)
+
+        // Check if this option has a follow-up (another set of options to show locally)
+        if let followUp = optionFollowUps[selectedTitle] {
+            // Show the next level of options client-side — no server call
+            let nestedFollowUp = followUp.followUp as? [String: Any]
+            showOptions(
+                question: followUp.question,
+                options: followUp.options,
+                icons: followUp.icons,
+                followUp: nestedFollowUp
+            )
+            return
+        }
+
+        // No follow-up — this is a leaf option. Send all accumulated choices to the server.
         hideOptionsRow()
-        sendMessage(selectedTitle)
+        sendMessage(accumulatedChoices.joined(separator: " > "))
+        accumulatedChoices = []
     }
 
     // MARK: - Markdown Rendering
