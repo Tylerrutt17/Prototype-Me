@@ -14,7 +14,7 @@ import * as dayEntryQueries from "../db/queries/dayEntries.js";
 import * as modeQueries from "../db/queries/modes.js";
 import * as profileQueries from "../db/queries/profiles.js";
 import * as usageQueries from "../db/queries/usage.js";
-import { matchIntent, type MatchedIntent } from "./intentPatterns.js";
+import { classifyIntent, type MatchedIntent } from "./intentPatterns.js";
 import { LIMITS } from "../validation/limits.js";
 
 // ── Types ──
@@ -116,28 +116,15 @@ export async function handleFlow(
     if (Date.now() - session.createdAt > SESSION_TTL) {
       sessions.delete(flowId);
     } else {
-      // Check if user is going off-script (new intent mid-flow)
-      const newIntent = matchIntent(message);
-      if (newIntent && newIntent.intent !== session.intent.intent) {
-        // Abandon current flow, start new one
-        sessions.delete(flowId);
-        return startNewFlow(userId, message, newIntent, localDate, quota);
-      }
+      // Continue the existing flow — the user is responding to a prompt
       return continueFlow(session, flowId, message, quota);
     }
   }
 
-  // New message — try to match intent
-  const intent = matchIntent(message);
-  if (!intent) {
-    // No pattern match → fall back to AI
-    return {
-      message: "",
-      toolCalls: [],
-      remainingQuota: quota.dailyLimit - quota.dailyUsed,
-      resetAt: getResetTime(),
-      fallbackToConverse: true,
-    };
+  // New message — classify intent with AI
+  const intent = await classifyIntent(message);
+  if (!intent || intent.intent === "freeform") {
+    return fallback(quota);
   }
 
   return startNewFlow(userId, message, intent, localDate, quota);

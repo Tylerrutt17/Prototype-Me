@@ -1,7 +1,12 @@
 /**
- * Deterministic intent matching via keyword/regex patterns.
- * Returns a structured intent if matched, or null to fall back to AI classification.
+ * AI-powered intent classification.
+ *
+ * One lightweight, focused AI call to classify user intent and extract
+ * search terms. No regex — the AI handles all the natural language
+ * interpretation, then the flow engine takes over deterministically.
  */
+
+import { openai, OPENAI_MODEL } from "../lib/llm.js";
 
 export interface MatchedIntent {
   intent:
@@ -17,140 +22,70 @@ export interface MatchedIntent {
     | "list"
     | "freeform";
   entityType?: "directive" | "note" | "journal" | "mode" | "folder";
-  /** Extracted search terms for finding existing items */
+  /** Search terms extracted from the user's message (cleaned up, not the raw message) */
   searchQuery?: string;
   /** Any content the user already provided inline */
   contentHint?: string;
 }
 
-// ── Patterns ──
+const CLASSIFICATION_PROMPT = `Classify the user's intent for a personal optimization app. The app has:
+- Directives (habits/rules to follow)
+- Notes (regular, mode, framework, situation, goal)
+- Journal entries (daily diary + rating 1-10)
+- Modes (activate/deactivate)
 
-interface Pattern {
-  regex: RegExp;
-  intent: MatchedIntent["intent"];
-  entityType?: MatchedIntent["entityType"];
-  /** Named capture groups to extract */
-  extractSearch?: string; // capture group name for searchQuery
-  extractContent?: string; // capture group name for contentHint
-}
+Return JSON with these fields:
+- "intent": one of: "create_directive", "create_note", "journal_log", "journal_update", "update", "retire", "activate_mode", "deactivate_mode", "list", "freeform"
+- "entityType": one of: "directive", "note", "journal", "mode", "folder", or null
+- "searchQuery": extracted search keywords to find the item they're referring to (short, cleaned — NOT the full message). null if creating something new or no specific item referenced.
+- "contentHint": any content/description the user provided for what they want to create or change. null if none.
 
-const patterns: Pattern[] = [
-  // ── Journal ──
-  {
-    regex: /\b(log|rate|record)\s+(my\s+)?(day|today|yesterday|the day)\b/i,
-    intent: "journal_log",
-    entityType: "journal",
-  },
-  {
-    regex: /\b(add|write|create|make|new)\s+(a\s+)?(journal|diary|day)\s*(entry)?\b/i,
-    intent: "journal_log",
-    entityType: "journal",
-  },
-  {
-    regex: /\bhow was (my|your|the) day\b/i,
-    intent: "journal_log",
-    entityType: "journal",
-  },
-  {
-    regex: /\b(update|change|edit)\s+(my\s+)?(journal|diary|day)\s*(entry)?\b/i,
-    intent: "journal_update",
-    entityType: "journal",
-  },
+Rules:
+- "freeform" = conversational question, advice seeking, or anything that doesn't map to a specific action
+- "journal_log" = creating/logging a new journal entry. "journal_update" = editing an existing one.
+- "update" = editing an existing directive, note, or folder (title, body, or both)
+- "retire" = archiving/deleting a directive
+- For searchQuery: extract just the key identifying words. "the directive about going to bed early" → "going to bed early". "my morning routine note" → "morning routine".
+- If the user says something like "change the lights out directive", searchQuery should be "lights out", NOT "the lights out directive"
+- If the user describes what they want to create, put that in contentHint, not searchQuery
 
-  // ── Create Directive ──
-  {
-    regex: /\b(add|create|make|new|suggest)\s+(a\s+)?(directive|habit|rule|experiment)s?\s*(about|for|to|called|named)?\s*(?<search>.+)?/i,
-    intent: "create_directive",
-    entityType: "directive",
-    extractSearch: "search",
-  },
-  {
-    regex: /\bsuggest\s+(some\s+)?directives?\b/i,
-    intent: "create_directive",
-    entityType: "directive",
-  },
-  {
-    regex: /\bi\s+(want|need)\s+(a\s+)?(new\s+)?(directive|habit|rule)\b/i,
-    intent: "create_directive",
-    entityType: "directive",
-  },
+Return ONLY the JSON object, no other text.`;
 
-  // ── Create Note ──
-  {
-    regex: /\b(add|create|make|new)\s+(a\s+)?(note|mode|framework|situation)\s*(about|for|to|called|named)?\s*(?<search>.+)?/i,
-    intent: "create_note",
-    entityType: "note",
-    extractSearch: "search",
-  },
+/**
+ * Classify user intent using a lightweight AI call.
+ * Returns null only if the AI call fails entirely.
+ */
+export async function classifyIntent(message: string): Promise<MatchedIntent | null> {
+  if (!openai) return null;
 
-  // ── Update (generic — entity type determined by search) ──
-  {
-    regex: /\b(update|change|edit|modify|rename|fix)\s+(my\s+|the\s+)?(?<search>.+)/i,
-    intent: "update",
-    extractSearch: "search",
-  },
-  {
-    regex: /\b(add\s+to|append\s+to)\s+(my\s+|the\s+)?(?<search>.+)/i,
-    intent: "update",
-    extractSearch: "search",
-  },
+  try {
+    const response = await openai.responses.create({
+      model: OPENAI_MODEL,
+      input: [
+        { role: "user", content: `${CLASSIFICATION_PROMPT}\n\nUser message: "${message}"` },
+      ],
+      text: { format: { type: "json_object" } },
+      max_output_tokens: 150,
+    });
 
-  // ── Retire / Delete ──
-  {
-    regex: /\b(retire|archive|delete|remove)\s+(my\s+|the\s+)?(directive|habit|rule)\s*(?<search>.+)?/i,
-    intent: "retire",
-    entityType: "directive",
-    extractSearch: "search",
-  },
+    const parsed = JSON.parse(response.output_text);
 
-  // ── Modes ──
-  {
-    regex: /\b(activate|turn on|enable|start)\s+(my\s+|the\s+)?(?<search>.+)\s*mode\b/i,
-    intent: "activate_mode",
-    entityType: "mode",
-    extractSearch: "search",
-  },
-  {
-    regex: /\b(deactivate|turn off|disable|stop)\s+(my\s+|the\s+)?(?<search>.+)\s*mode\b/i,
-    intent: "deactivate_mode",
-    entityType: "mode",
-    extractSearch: "search",
-  },
+    const validIntents = new Set([
+      "create_directive", "create_note", "create_journal", "journal_log",
+      "journal_update", "update", "retire", "activate_mode", "deactivate_mode",
+      "list", "freeform",
+    ]);
 
-  // ── List ──
-  {
-    regex: /\b(list|show|what are)\s+(my\s+|all\s+)?(directives|notes|modes|folders)\b/i,
-    intent: "list",
-  },
-];
+    const intent = validIntents.has(parsed.intent) ? parsed.intent : "freeform";
 
-// ── Matcher ──
-
-export function matchIntent(text: string): MatchedIntent | null {
-  const trimmed = text.trim();
-
-  for (const pattern of patterns) {
-    const match = trimmed.match(pattern.regex);
-    if (!match) continue;
-
-    const result: MatchedIntent = {
-      intent: pattern.intent,
-      entityType: pattern.entityType,
+    return {
+      intent,
+      entityType: parsed.entityType || undefined,
+      searchQuery: parsed.searchQuery || undefined,
+      contentHint: parsed.contentHint || undefined,
     };
-
-    if (pattern.extractSearch && match.groups?.[pattern.extractSearch.replace("search", "search")]) {
-      const raw = match.groups.search?.trim();
-      if (raw && raw.length > 0 && raw.length < 200) {
-        result.searchQuery = raw;
-      }
-    }
-
-    if (pattern.extractContent && match.groups?.[pattern.extractContent]) {
-      result.contentHint = match.groups[pattern.extractContent]?.trim();
-    }
-
-    return result;
+  } catch (err) {
+    console.error("[Flow] Intent classification failed:", err);
+    return null;
   }
-
-  return null;
 }
