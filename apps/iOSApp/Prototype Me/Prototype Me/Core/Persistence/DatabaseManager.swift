@@ -62,7 +62,10 @@ final class DatabaseManager: Sendable {
 
     // MARK: - Migrations
 
-    /// All migration identifiers in order. Used by tests to build partial migrators.
+    // When adding a new migration:
+    // 1. Add the ID to migrationIds below
+    // 2. Register it in makeMigrator() with registered.append + shouldStop check
+    // 3. Add a test in Prototype MeTests/MigrationTests.swift
     static let migrationIds = [
         "v1_initialSchema",
         "v10_missedScheduled",

@@ -24,6 +24,12 @@ class AppCoordinator: Coordinator {
             name: .authSessionExpired, object: nil
         )
 
+        // Listen for 426 Upgrade Required — block sync until app is updated
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleSyncUpgradeRequired),
+            name: .syncUpgradeRequired, object: nil
+        )
+
         let hasCompleted = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
 
         if hasCompleted {
@@ -44,6 +50,17 @@ class AppCoordinator: Coordinator {
             }
         } else {
             showWelcome()
+        }
+    }
+
+    @objc private func handleSyncUpgradeRequired() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            // Don't present if already showing the update screen
+            if self.tabBarController.presentedViewController is UpdateRequiredViewController { return }
+            let vc = UpdateRequiredViewController()
+            vc.modalPresentationStyle = .fullScreen
+            self.tabBarController.present(vc, animated: true)
         }
     }
 
