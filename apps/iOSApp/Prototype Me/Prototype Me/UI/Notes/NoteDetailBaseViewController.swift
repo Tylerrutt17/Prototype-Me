@@ -44,7 +44,6 @@ class NoteDetailBaseViewController: BaseViewController {
     var onLinkDirectiveTapped: ((UUID) -> Void)?
     var onAskAIForDirective: ((UUID) -> Void)?
 
-    private(set) var isBodyExpanded = false
     private(set) var collectionView: UICollectionView!
     private(set) var dataSource: UICollectionViewDiffableDataSource<NoteDetailSection, NoteDetailItem>!
 
@@ -81,6 +80,25 @@ class NoteDetailBaseViewController: BaseViewController {
     private func editTapped() {
         guard let noteId else { return }
         onEditTapped?(noteId)
+    }
+
+    /// Persists inline title/body edits from the header cell.
+    func saveInlineEdit(title: String, body: String) {
+        guard let noteId, let noteService else { return }
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else { return }
+        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            do {
+                var note = try await noteService.fetch(id: noteId)
+                guard var note else { return }
+                note.title = trimmedTitle
+                note.body = trimmedBody
+                try await noteService.update(note)
+            } catch {
+                print("Inline note edit save failed: \(error)")
+            }
+        }
     }
 
     // MARK: - Collection View
@@ -266,19 +284,6 @@ class NoteDetailBaseViewController: BaseViewController {
         dataSource.apply(reconfigSnap, animatingDifferences: false)
     }
 
-    /// Toggle body expansion and reconfigure the header cell.
-    func toggleBodyExpanded() {
-        isBodyExpanded.toggle()
-
-        var snapshot = dataSource.snapshot()
-        if let headerItem = snapshot.itemIdentifiers.first(where: {
-            if case .header = $0 { return true }; return false
-        }) {
-            snapshot.reloadItems([headerItem])
-        }
-        dataSource.apply(snapshot, animatingDifferences: false)
-        collectionView.performBatchUpdates(nil)
-    }
 }
 
 // MARK: - UICollectionViewDelegate

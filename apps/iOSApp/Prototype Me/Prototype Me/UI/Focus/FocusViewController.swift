@@ -26,6 +26,7 @@ class FocusViewController: BaseViewController {
     var balloonNotificationService: BalloonNotificationService?
     var modeService: ModeService?
     var onPickModesTapped: (() -> Void)?
+    var noteService: NoteService?
 
     private static let maxInlineBalloons = 4
     var onReplayOnboardingTapped: (() -> Void)?
@@ -88,6 +89,9 @@ class FocusViewController: BaseViewController {
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: createLayout())
         collectionView.backgroundColor = .clear
         collectionView.delegate = self
+        collectionView.dragDelegate = self
+        collectionView.dropDelegate = self
+        collectionView.dragInteractionEnabled = true
         collectionView.contentInset.top = DesignTokens.Spacing.md
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(collectionView)
@@ -316,7 +320,7 @@ class FocusViewController: BaseViewController {
             // ALL mode notes (kind == .mode)
             let allModes = try NotePage
                 .filter(Column("kind") == NoteKind.mode.rawValue)
-                .order(Column("title").collating(.localizedCaseInsensitiveCompare))
+                .order(Column("sortIndex"))
                 .fetchAll(db)
 
             // Currently active mode (first one, or nil)
@@ -1134,5 +1138,69 @@ private final class SectionHeaderWithActionView: UICollectionReusableView {
 
     @objc private func actionTapped() {
         action?()
+    }
+}
+
+// MARK: - UICollectionViewDragDelegate
+
+extension FocusViewController: UICollectionViewDragDelegate {
+    func collectionView(_ collectionView: UICollectionView, itemsForBeginning session: any UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
+        guard let item = dataSource.itemIdentifier(for: indexPath),
+              case .directive = item else { return [] }
+        let provider = NSItemProvider(object: "\(indexPath)" as NSString)
+        let dragItem = UIDragItem(itemProvider: provider)
+        dragItem.localObject = item
+        return [dragItem]
+    }
+}
+
+// MARK: - UICollectionViewDropDelegate
+
+extension FocusViewController: UICollectionViewDropDelegate {
+    func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: any UIDropSession, withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
+        guard session.localDragSession != nil else {
+            return UICollectionViewDropProposal(operation: .cancel)
+        }
+        // Only allow drops within the directives section
+        if let dest = destinationIndexPath,
+           let sectionIndex = dataSource.snapshot().sectionIdentifiers.firstIndex(of: .directives),
+           dest.section == sectionIndex {
+            return UICollectionViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
+        }
+        return UICollectionViewDropProposal(operation: .cancel)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: any UICollectionViewDropCoordinator) {
+        guard let destinationIndexPath = coordinator.destinationIndexPath,
+              let dragItem = coordinator.items.first,
+              let sourceRow = dragItem.dragItem.localObject as? FocusItem,
+              let sourceIndexPath = dragItem.sourceIndexPath else { return }
+
+        let snapshot = dataSource.snapshot()
+        guard let directivesSectionIndex = snapshot.sectionIdentifiers.firstIndex(of: .directives),
+              sourceIndexPath.section == directivesSectionIndex,
+              destinationIndexPath.section == directivesSectionIndex else { return }
+
+        var currentSnapshot = dataSource.snapshot()
+        var sectionItems = currentSnapshot.itemIdentifiers(inSection: .directives)
+        guard let sourceIndex = sectionItems.firstIndex(of: sourceRow) else { return }
+
+        sectionItems.remove(at: sourceIndex)
+        let destIndex = min(destinationIndexPath.item, sectionItems.count)
+        sectionItems.insert(sourceRow, at: destIndex)
+
+        currentSnapshot.deleteItems(currentSnapshot.itemIdentifiers(inSection: .directives))
+        currentSnapshot.appendItems(sectionItems, toSection: .directives)
+        dataSource.apply(currentSnapshot, animatingDifferences: true)
+
+        coordinator.drop(dragItem.dragItem, toItemAt: destinationIndexPath)
+
+        // Persist reorder
+        guard let activeModeId, let noteService else { return }
+        let directiveIds = sectionItems.compactMap { item -> UUID? in
+            if case .directive(let data) = item { return data.directive.id }
+            return nil
+        }
+        Task { try? await noteService.reorderDirectives(noteId: activeModeId, directiveIds: directiveIds) }
     }
 }

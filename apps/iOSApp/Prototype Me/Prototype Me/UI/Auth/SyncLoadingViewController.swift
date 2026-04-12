@@ -3,7 +3,7 @@ import UIKit
 /// "Welcome back" screen shown to returning users while sync pulls their data.
 final class SyncLoadingViewController: UIViewController {
 
-    var syncTask: (() async -> Void)?
+    var syncTask: (() async throws -> Void)?
     var onComplete: (() -> Void)?
 
     // MARK: - Background
@@ -27,6 +27,8 @@ final class SyncLoadingViewController: UIViewController {
     private let statusLabel = UILabel()
     private let trackView = UIView()
     private let shimmerLayer = CAGradientLayer()
+    private let retryButton = UIButton(type: .system)
+    private let errorIcon = UIImageView()
 
     // MARK: - Lifecycle
 
@@ -78,6 +80,7 @@ final class SyncLoadingViewController: UIViewController {
         statusLabel.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .regular)
         statusLabel.textColor = DesignTokens.Colors.textSecondary
         statusLabel.textAlignment = .center
+        statusLabel.numberOfLines = 0
         statusLabel.alpha = 0
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
@@ -99,21 +102,56 @@ final class SyncLoadingViewController: UIViewController {
         shimmerLayer.endPoint = CGPoint(x: 1, y: 0.5)
         trackView.layer.addSublayer(shimmerLayer)
 
+        // Error icon (hidden by default)
+        let iconConfig = UIImage.SymbolConfiguration(pointSize: 40, weight: .medium)
+        errorIcon.image = UIImage(systemName: "exclamationmark.triangle.fill", withConfiguration: iconConfig)
+        errorIcon.tintColor = DesignTokens.Colors.warning
+        errorIcon.contentMode = .scaleAspectFit
+        errorIcon.alpha = 0
+        errorIcon.translatesAutoresizingMaskIntoConstraints = false
+
+        // Retry button (hidden by default)
+        var retryConfig = UIButton.Configuration.filled()
+        retryConfig.title = "Try Again"
+        retryConfig.image = UIImage(systemName: "arrow.clockwise")
+        retryConfig.imagePadding = DesignTokens.Spacing.sm
+        retryConfig.cornerStyle = .capsule
+        retryConfig.baseBackgroundColor = DesignTokens.Colors.accent
+        retryConfig.baseForegroundColor = .white
+        retryButton.configuration = retryConfig
+        retryButton.alpha = 0
+        retryButton.addTarget(self, action: #selector(retryTapped), for: .touchUpInside)
+        retryButton.translatesAutoresizingMaskIntoConstraints = false
+
         view.addSubview(titleLabel)
         view.addSubview(statusLabel)
         view.addSubview(trackView)
+        view.addSubview(errorIcon)
+        view.addSubview(retryButton)
 
         NSLayoutConstraint.activate([
+            errorIcon.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            errorIcon.bottomAnchor.constraint(equalTo: titleLabel.topAnchor, constant: -DesignTokens.Spacing.lg),
+
             titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             titleLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -40),
+            titleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
 
             statusLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: DesignTokens.Spacing.md),
             statusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            statusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 40),
+            statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -40),
 
             trackView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: DesignTokens.Spacing.xl),
             trackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 60),
             trackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -60),
             trackView.heightAnchor.constraint(equalToConstant: 4),
+
+            retryButton.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: DesignTokens.Spacing.xl),
+            retryButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            retryButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
+            retryButton.heightAnchor.constraint(equalToConstant: 48),
         ])
     }
 
@@ -157,10 +195,21 @@ final class SyncLoadingViewController: UIViewController {
     // MARK: - Sync
 
     private func startSync() {
+        // Pre-flight storage check
+        if !StorageMonitor.canSafelyWrite {
+            showError(isStorageFull: true)
+            return
+        }
+
         Task {
-            await syncTask?()
-            await MainActor.run {
-                showComplete()
+            do {
+                try await syncTask?()
+                await MainActor.run { showComplete() }
+            } catch {
+                await MainActor.run {
+                    let isStorage = (error as NSError).domain == "GRDB.DatabaseError" && (error as NSError).code == 13
+                    showError(isStorageFull: isStorage)
+                }
             }
         }
     }
@@ -168,7 +217,6 @@ final class SyncLoadingViewController: UIViewController {
     private func showComplete() {
         shimmerLayer.removeAllAnimations()
 
-        // Fill the track solid green
         UIView.animate(withDuration: 0.3) {
             self.trackView.backgroundColor = DesignTokens.Colors.success
             self.shimmerLayer.opacity = 0
@@ -181,4 +229,36 @@ final class SyncLoadingViewController: UIViewController {
             self?.onComplete?()
         }
     }
+
+    private func showError(isStorageFull: Bool) {
+        shimmerLayer.removeAllAnimations()
+        Haptics.error()
+
+        titleLabel.text = isStorageFull ? "Storage Full" : "Couldn't Sync"
+        statusLabel.text = isStorageFull
+            ? "Your device doesn't have enough space to restore your data. Free up storage in Settings, then come back and try again."
+            : "Something went wrong while restoring your data. Check your connection and try again."
+
+        UIView.animate(withDuration: 0.3) {
+            self.trackView.alpha = 0
+            self.errorIcon.alpha = 1
+            self.retryButton.alpha = 1
+        }
+    }
+
+    @objc private func retryTapped() {
+        // Reset to loading state
+        titleLabel.text = "Welcome Back"
+        statusLabel.text = "Restoring your data..."
+
+        UIView.animate(withDuration: 0.3) {
+            self.errorIcon.alpha = 0
+            self.retryButton.alpha = 0
+            self.trackView.alpha = 1
+        } completion: { _ in
+            self.startShimmer()
+            self.startSync()
+        }
+    }
+
 }

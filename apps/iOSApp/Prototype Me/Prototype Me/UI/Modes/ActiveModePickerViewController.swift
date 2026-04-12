@@ -5,6 +5,7 @@ import GRDB
 final class ActiveModePickerViewController: BaseViewController {
 
     var modeService: ModeService?
+    var noteService: NoteService?
     var onDone: (() -> Void)?
 
     private var collectionView: UICollectionView!
@@ -44,6 +45,10 @@ final class ActiveModePickerViewController: BaseViewController {
         buildUI()
         configureDataSource()
         loadData()
+
+        collectionView.dragInteractionEnabled = true
+        collectionView.dragDelegate = self
+        collectionView.dropDelegate = self
     }
 
     // MARK: - UI
@@ -149,6 +154,65 @@ extension ActiveModePickerViewController: UICollectionViewDelegate {
         collectionView.deselectItem(at: indexPath, animated: true)
         guard let row = dataSource.itemIdentifier(for: indexPath) else { return }
         selectMode(row)
+    }
+}
+
+// MARK: - UICollectionViewDragDelegate
+
+extension ActiveModePickerViewController: UICollectionViewDragDelegate {
+    func collectionView(_ collectionView: UICollectionView, itemsForBeginning session: any UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
+        guard let row = dataSource.itemIdentifier(for: indexPath),
+              case .mode = row else { return [] }
+        let provider = NSItemProvider(object: "\(indexPath)" as NSString)
+        let dragItem = UIDragItem(itemProvider: provider)
+        dragItem.localObject = row
+        return [dragItem]
+    }
+}
+
+// MARK: - UICollectionViewDropDelegate
+
+extension ActiveModePickerViewController: UICollectionViewDropDelegate {
+    func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: any UIDropSession, withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
+        guard session.localDragSession != nil else {
+            return UICollectionViewDropProposal(operation: .cancel)
+        }
+        // Don't allow dropping at index 0 (the "No Mode" row)
+        if let dest = destinationIndexPath, dest.item == 0 {
+            return UICollectionViewDropProposal(operation: .cancel)
+        }
+        return UICollectionViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: any UICollectionViewDropCoordinator) {
+        guard let destinationIndexPath = coordinator.destinationIndexPath,
+              let dragItem = coordinator.items.first,
+              let sourceRow = dragItem.dragItem.localObject as? ModePickerRow,
+              let sourceIndexPath = dragItem.sourceIndexPath else { return }
+
+        // Don't allow drop onto index 0
+        guard destinationIndexPath.item > 0, sourceIndexPath.section == destinationIndexPath.section else { return }
+
+        var snapshot = dataSource.snapshot()
+        var items = snapshot.itemIdentifiers(inSection: .main)
+        guard let sourceIndex = items.firstIndex(of: sourceRow) else { return }
+
+        items.remove(at: sourceIndex)
+        let destIndex = min(destinationIndexPath.item, items.count)
+        items.insert(sourceRow, at: destIndex)
+
+        snapshot.deleteItems(snapshot.itemIdentifiers(inSection: .main))
+        snapshot.appendItems(items, toSection: .main)
+        dataSource.apply(snapshot, animatingDifferences: true)
+
+        coordinator.drop(dragItem.dragItem, toItemAt: destinationIndexPath)
+
+        // Persist new order (skip the .noMode row)
+        let modeIds = items.compactMap { row -> UUID? in
+            if case .mode(let note, _) = row { return note.id }
+            return nil
+        }
+        Task { try? await noteService?.reorderNotes(ids: modeIds) }
     }
 }
 

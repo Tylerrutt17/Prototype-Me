@@ -2,11 +2,17 @@ import UIKit
 
 class SyncStatusBannerView: UIView {
 
+    enum SyncErrorKind {
+        case storageFull
+        case network
+        case server
+    }
+
     enum State {
         case synced
         case syncing
         case pending(Int)
-        case error(String)
+        case error(SyncErrorKind)
     }
 
     private let iconView = UIImageView()
@@ -81,11 +87,15 @@ class SyncStatusBannerView: UIView {
             label.textColor = DesignTokens.Colors.warning
             stopSpinning()
 
-        case .error:
+        case .error(let kind):
             backgroundColor = DesignTokens.Colors.destructive.withAlphaComponent(0.12)
             iconView.image = UIImage(systemName: "exclamationmark.icloud", withConfiguration: iconConfig)
             iconView.tintColor = DesignTokens.Colors.destructive
-            label.text = "Sync issue — check connection"
+            switch kind {
+            case .storageFull: label.text = "Sync failed — free up device storage"
+            case .network:     label.text = "Sync issue — check connection"
+            case .server:      label.text = "Sync issue — try again later"
+            }
             label.textColor = DesignTokens.Colors.destructive
             stopSpinning()
         }

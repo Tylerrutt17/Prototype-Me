@@ -107,7 +107,7 @@ class AppCoordinator: Coordinator {
     private func showSyncLoading() {
         let syncVC = SyncLoadingViewController()
         syncVC.syncTask = { [weak self] in
-            try? await self?.environment.syncEngine.pull()
+            try await self?.environment.syncEngine.pull()
         }
         syncVC.onComplete = { [weak self] in
             UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")

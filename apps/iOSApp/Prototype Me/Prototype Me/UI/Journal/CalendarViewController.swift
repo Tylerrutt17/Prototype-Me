@@ -28,6 +28,11 @@ class CalendarViewController: BaseViewController {
     private var selectedDate: String?
     private var allDays: [CalendarDay] = []
     private var entryCache: [String: DayEntry] = [:]   // date → entry
+    private let todayDateString: String = {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        return fmt.string(from: .now)
+    }()
 
     // MARK: - Calendar UI
 
@@ -297,7 +302,7 @@ class CalendarViewController: BaseViewController {
 
     private func configureCalendarDataSource() {
         let cellReg = UICollectionView.CellRegistration<CalendarDayCell, CalendarDay> { [weak self] cell, _, day in
-            cell.configure(with: day, isSelected: day.date == self?.selectedDate)
+            cell.configure(with: day, isSelected: day.date == self?.selectedDate, isToday: day.date == self?.todayDateString)
         }
 
         calendarDataSource = UICollectionViewDiffableDataSource(collectionView: calendarCollectionView) { cv, indexPath, day in
@@ -516,11 +521,12 @@ private final class CalendarDayCell: InteractiveCell {
         ])
     }
 
-    func configure(with day: CalendarDay, isSelected: Bool) {
+    func configure(with day: CalendarDay, isSelected: Bool, isToday: Bool = false) {
         if day.isEmpty {
             dayLabel.text = nil
             dot.isHidden = true
             contentView.backgroundColor = .clear
+            contentView.layer.borderWidth = 0
             return
         }
 
@@ -553,6 +559,14 @@ private final class CalendarDayCell: InteractiveCell {
             contentView.backgroundColor = .clear
             dayLabel.textColor = DesignTokens.Colors.textSecondary
             dayLabel.font = DesignTokens.Typography.subheadline
+        }
+
+        // Today indicator — yellow ring, always visible
+        if isToday {
+            contentView.layer.borderWidth = 2
+            contentView.layer.borderColor = DesignTokens.Colors.warning.cgColor
+        } else {
+            contentView.layer.borderWidth = 0
         }
     }
 }

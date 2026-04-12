@@ -535,9 +535,91 @@ extension Encodable {
 }
 
 extension OutboxOp {
+
+    /// Find an existing pending outbox op for the same entity.
+    private static func findPending(entityType: String, entityId: String, in db: Database) throws -> OutboxOp? {
+        try OutboxOp
+            .filter(Column("entityType") == entityType && Column("entityId") == entityId)
+            .order(Column("createdAt").desc)
+            .fetchOne(db)
+    }
+
     /// Enqueue a create/update sync operation inside an existing database transaction.
+    /// Coalesces with any pending op for the same entity to keep the outbox minimal.
     @discardableResult
     static func enqueue(
+        entityType: String,
+        entityId: String,
+        op: String,
+        patch: String = "{}",
+        baseUpdatedAt: Date? = nil,
+        in db: Database
+    ) throws -> OutboxOp {
+        if let existing = try findPending(entityType: entityType, entityId: entityId, in: db) {
+            switch (existing.op, op) {
+
+            // Pending delete + new create → entity exists on server, treat as update
+            case ("delete", "create"):
+                try existing.delete(db)
+                // Remove the tombstone that was created with the delete
+                try Tombstone
+                    .filter(Column("entityType") == entityType && Column("entityId") == entityId)
+                    .deleteAll(db)
+                return try insertOp(entityType: entityType, entityId: entityId, op: "update", patch: patch, baseUpdatedAt: baseUpdatedAt, in: db)
+
+            // Pending create + new update → keep as create with latest patch
+            case ("create", "update"):
+                try existing.delete(db)
+                return try insertOp(entityType: entityType, entityId: entityId, op: "create", patch: patch, baseUpdatedAt: baseUpdatedAt, in: db)
+
+            // Pending update + new update → replace with latest
+            case ("update", "update"):
+                try existing.delete(db)
+                return try insertOp(entityType: entityType, entityId: entityId, op: "update", patch: patch, baseUpdatedAt: baseUpdatedAt, in: db)
+
+            default:
+                break
+            }
+        }
+
+        return try insertOp(entityType: entityType, entityId: entityId, op: op, patch: patch, baseUpdatedAt: baseUpdatedAt, in: db)
+    }
+
+    /// Enqueue a delete: creates a tombstone + outbox op inside an existing transaction.
+    /// If there's a pending create for this entity (never synced), both cancel out.
+    static func enqueueDelete(
+        entityType: String,
+        entityId: String,
+        in db: Database
+    ) throws {
+        // If there's a pending create, the entity was never synced — cancel both
+        if let existing = try findPending(entityType: entityType, entityId: entityId, in: db),
+           existing.op == "create" {
+            try existing.delete(db)
+            return
+        }
+
+        // If there's a pending update, remove it — the delete supersedes it
+        if let existing = try findPending(entityType: entityType, entityId: entityId, in: db),
+           existing.op == "update" {
+            try existing.delete(db)
+        }
+
+        let deviceId = (try? SyncState.current(in: db)?.deviceId) ?? "unknown"
+        let tombstone = Tombstone(
+            id: UUID(),
+            entityType: entityType,
+            entityId: entityId,
+            deletedAt: Date(),
+            updatedAt: Date(),
+            deviceId: deviceId
+        )
+        try tombstone.insert(db)
+        try insertOp(entityType: entityType, entityId: entityId, op: "delete", in: db)
+    }
+
+    @discardableResult
+    private static func insertOp(
         entityType: String,
         entityId: String,
         op: String,
@@ -560,25 +642,6 @@ extension OutboxOp {
         )
         try outboxOp.insert(db)
         return outboxOp
-    }
-
-    /// Enqueue a delete: creates a tombstone + outbox op inside an existing transaction.
-    static func enqueueDelete(
-        entityType: String,
-        entityId: String,
-        in db: Database
-    ) throws {
-        let deviceId = (try? SyncState.current(in: db)?.deviceId) ?? "unknown"
-        let tombstone = Tombstone(
-            id: UUID(),
-            entityType: entityType,
-            entityId: entityId,
-            deletedAt: Date(),
-            updatedAt: Date(),
-            deviceId: deviceId
-        )
-        try tombstone.insert(db)
-        try enqueue(entityType: entityType, entityId: entityId, op: "delete", in: db)
     }
 }
 

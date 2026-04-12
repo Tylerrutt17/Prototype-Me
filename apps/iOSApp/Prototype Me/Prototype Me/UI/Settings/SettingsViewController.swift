@@ -95,8 +95,8 @@ class SettingsViewController: BaseViewController {
                 let outbox = info?.outboxCount ?? 0
                 if info?.isSyncing == true {
                     syncBanner.configure(state: .syncing)
-                } else if let error = info?.lastError {
-                    syncBanner.configure(state: .error(error))
+                } else if let errorKind = info?.lastErrorKind {
+                    syncBanner.configure(state: .error(errorKind))
                 } else if outbox > 0 {
                     syncBanner.configure(state: .pending(outbox))
                 } else {

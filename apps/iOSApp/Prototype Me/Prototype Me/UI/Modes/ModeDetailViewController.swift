@@ -11,10 +11,17 @@ class ModeDetailViewController: NoteDetailBaseViewController {
     private var currentNote: NotePage?
     private var isActive = false
 
+    override func viewDidLoad() {
+        _ = headerReg // Force creation before data source setup
+        super.viewDidLoad()
+    }
+
     private lazy var headerReg = UICollectionView.CellRegistration<ModeHeaderCell, Bool> { [weak self] cell, _, _ in
         guard let self, let note = self.currentNote else { return }
-        cell.configure(with: note, isActive: self.isActive, isBodyExpanded: self.isBodyExpanded)
-        cell.onToggleExpand = { [weak self] in self?.toggleBodyExpanded() }
+        cell.configure(with: note, isActive: self.isActive)
+        cell.onFieldEdited = { [weak self] title, body in
+            self?.saveInlineEdit(title: title, body: body)
+        }
         cell.onToggleActive = { [weak self] in
             guard let self, let noteId = self.noteId else { return }
             self.toggleActiveMode(noteId: noteId, isCurrentlyActive: self.isActive)
@@ -78,18 +85,21 @@ class ModeDetailViewController: NoteDetailBaseViewController {
 
 // MARK: - ModeHeaderCell
 
-private final class ModeHeaderCell: UICollectionViewCell {
+private final class ModeHeaderCell: UICollectionViewCell, UITextViewDelegate {
 
-    var onToggleExpand: (() -> Void)?
+    var onFieldEdited: ((String, String) -> Void)?
     var onToggleActive: (() -> Void)?
 
     private let glowLayer = CAGradientLayer()
     private let accentBar = UIView()
     private let iconView = UIImageView()
     private let kindBadge = UIButton(type: .system)
-    private let titleLabel = UILabel()
-    private let bodyLabel = UILabel()
+    private let titleView = UITextView()
+    private let titlePlaceholder = UILabel()
+    private let bodyView = UITextView()
+    private let bodyPlaceholder = UILabel()
     private let showMoreButton = UIButton(type: .system)
+    private var isExpanded = false
     private var bodyStack: UIStackView!
     private let activateButton = UIView()
     private let activateIcon = UIImageView()
@@ -106,10 +116,6 @@ private final class ModeHeaderCell: UICollectionViewCell {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
-    }
-
-    @objc private func toggleBodyExpand() {
-        onToggleExpand?()
     }
 
     @objc private func activateButtonTapped() {
@@ -181,28 +187,59 @@ private final class ModeHeaderCell: UICollectionViewCell {
         kindBadge.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(kindBadge)
 
-        titleLabel.font = DesignTokens.Typography.rounded(style: .title2, weight: .bold)
-        titleLabel.textColor = DesignTokens.Colors.textPrimary
-        titleLabel.numberOfLines = 0
-        titleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(titleLabel)
+        // Title (editable)
+        titleView.font = DesignTokens.Typography.rounded(style: .title2, weight: .bold)
+        titleView.textColor = DesignTokens.Colors.textPrimary
+        titleView.backgroundColor = .clear
+        titleView.isScrollEnabled = false
+        titleView.textContainerInset = .zero
+        titleView.textContainer.lineFragmentPadding = 0
+        titleView.delegate = self
+        titleView.returnKeyType = .done
+        titleView.setContentCompressionResistancePriority(.required, for: .vertical)
+        titleView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(titleView)
 
-        bodyLabel.font = DesignTokens.Typography.body
-        bodyLabel.textColor = DesignTokens.Colors.textSecondary
-        bodyLabel.numberOfLines = 0
-        bodyLabel.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-        bodyLabel.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(bodyLabel)
+        titlePlaceholder.text = "Title"
+        titlePlaceholder.font = DesignTokens.Typography.rounded(style: .title2, weight: .bold)
+        titlePlaceholder.textColor = DesignTokens.Colors.textTertiary
+        titlePlaceholder.translatesAutoresizingMaskIntoConstraints = false
+        titleView.addSubview(titlePlaceholder)
+        NSLayoutConstraint.activate([
+            titlePlaceholder.topAnchor.constraint(equalTo: titleView.topAnchor),
+            titlePlaceholder.leadingAnchor.constraint(equalTo: titleView.leadingAnchor),
+        ])
+
+        // Body (editable)
+        bodyView.font = DesignTokens.Typography.body
+        bodyView.textColor = DesignTokens.Colors.textSecondary
+        bodyView.backgroundColor = .clear
+        bodyView.isScrollEnabled = false
+        bodyView.textContainerInset = .zero
+        bodyView.textContainer.lineFragmentPadding = 0
+        bodyView.textContainer.maximumNumberOfLines = 3
+        bodyView.textContainer.lineBreakMode = .byTruncatingTail
+        bodyView.delegate = self
+        bodyView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        bodyView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(bodyView)
+
+        bodyPlaceholder.text = "Add a description…"
+        bodyPlaceholder.font = DesignTokens.Typography.body
+        bodyPlaceholder.textColor = DesignTokens.Colors.textTertiary
+        bodyPlaceholder.translatesAutoresizingMaskIntoConstraints = false
+        bodyView.addSubview(bodyPlaceholder)
+        NSLayoutConstraint.activate([
+            bodyPlaceholder.topAnchor.constraint(equalTo: bodyView.topAnchor),
+            bodyPlaceholder.leadingAnchor.constraint(equalTo: bodyView.leadingAnchor),
+        ])
 
         showMoreButton.setTitle("Show more", for: .normal)
         showMoreButton.titleLabel?.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
         showMoreButton.setTitleColor(DesignTokens.Colors.accent, for: .normal)
         showMoreButton.contentHorizontalAlignment = .leading
-        showMoreButton.addTarget(self, action: #selector(toggleBodyExpand), for: .touchUpInside)
+        showMoreButton.addTarget(self, action: #selector(toggleExpand), for: .touchUpInside)
         showMoreButton.isHidden = true
-        showMoreButton.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(showMoreButton)
 
         activateButton.layer.cornerRadius = DesignTokens.Radii.lg
         activateButton.translatesAutoresizingMaskIntoConstraints = false
@@ -242,21 +279,20 @@ private final class ModeHeaderCell: UICollectionViewCell {
             kindBadge.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
             kindBadge.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: DesignTokens.Spacing.md),
 
-            titleLabel.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: DesignTokens.Spacing.lg),
-            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: padding),
-            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -padding),
+            titleView.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: DesignTokens.Spacing.lg),
+            titleView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: padding),
+            titleView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -padding),
         ])
 
-        bodyStack = UIStackView(arrangedSubviews: [bodyLabel, showMoreButton, activateButton])
+        bodyStack = UIStackView(arrangedSubviews: [bodyView, showMoreButton, activateButton])
         bodyStack.axis = .vertical
         bodyStack.spacing = DesignTokens.Spacing.md
         bodyStack.alignment = .fill
-        bodyStack.setCustomSpacing(DesignTokens.Spacing.xs, after: bodyLabel)
         bodyStack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(bodyStack)
 
         NSLayoutConstraint.activate([
-            bodyStack.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: DesignTokens.Spacing.md),
+            bodyStack.topAnchor.constraint(equalTo: titleView.bottomAnchor, constant: DesignTokens.Spacing.md),
             bodyStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: padding),
             bodyStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -padding),
             bodyStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -padding),
@@ -278,29 +314,67 @@ private final class ModeHeaderCell: UICollectionViewCell {
         super.layoutSubviews()
         shimmerLayer.frame = activateButton.bounds
         glowLayer.frame = bounds.insetBy(dx: -20, dy: -20)
+        updateShowMoreVisibility()
     }
 
-    func setBodyExpanded(_ expanded: Bool, body: String) {
-        bodyLabel.text = body
-        bodyLabel.numberOfLines = expanded ? 0 : 3
-        showMoreButton.setTitle(expanded ? "Show less" : "Show more", for: .normal)
-
-        layoutIfNeeded()
-        let isTruncated = bodyLabel.isTruncated
-        showMoreButton.isHidden = !isTruncated && !expanded
-        bodyStack.setCustomSpacing(isTruncated || expanded ? DesignTokens.Spacing.xs : DesignTokens.Spacing.xl, after: bodyLabel)
+    @objc private func toggleExpand() {
+        isExpanded.toggle()
+        applyExpandState()
+        invalidateIntrinsicContentSize()
+        if let collectionView = superview as? UICollectionView {
+            collectionView.collectionViewLayout.invalidateLayout()
+        }
     }
 
-    func configure(with note: NotePage, isActive: Bool, isBodyExpanded: Bool = false) {
+    private func applyExpandState() {
+        bodyView.textContainer.maximumNumberOfLines = isExpanded ? 0 : 3
+        bodyView.textContainer.lineBreakMode = isExpanded ? .byWordWrapping : .byTruncatingTail
+        showMoreButton.setTitle(isExpanded ? "Show less" : "Show more", for: .normal)
+        bodyView.invalidateIntrinsicContentSize()
+    }
+
+    private func bodyExceedsCollapsedLines() -> Bool {
+        guard bodyView.bounds.width > 0 else { return false }
+        let textStorage = NSTextStorage(attributedString: bodyView.attributedText)
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(size: CGSize(width: bodyView.bounds.width, height: .greatestFiniteMagnitude))
+        textContainer.lineFragmentPadding = 0
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.ensureLayout(for: textContainer)
+        var lineCount = 0
+        var index = 0
+        let glyphCount = layoutManager.numberOfGlyphs
+        while index < glyphCount {
+            var lineRange = NSRange()
+            layoutManager.lineFragmentRect(forGlyphAt: index, effectiveRange: &lineRange)
+            lineCount += 1
+            index = NSMaxRange(lineRange)
+        }
+        return lineCount > 3
+    }
+
+    private func updateShowMoreVisibility() {
+        guard !bodyView.text.isEmpty else {
+            showMoreButton.isHidden = true
+            return
+        }
+        showMoreButton.isHidden = !bodyExceedsCollapsedLines() && !isExpanded
+    }
+
+    func configure(with note: NotePage, isActive: Bool) {
         let modeColor = NoteKind.mode.color
         isCurrentlyActive = isActive
-        titleLabel.text = note.title
-        if note.body.isEmpty {
-            bodyLabel.isHidden = true
-            showMoreButton.isHidden = true
-        } else {
-            bodyLabel.isHidden = false
-            setBodyExpanded(isBodyExpanded, body: note.body)
+
+        if !titleView.isFirstResponder {
+            titleView.text = note.title
+            titlePlaceholder.isHidden = !note.title.isEmpty
+        }
+
+        if !bodyView.isFirstResponder {
+            bodyView.text = note.body
+            bodyPlaceholder.isHidden = !note.body.isEmpty
+            applyExpandState()
         }
 
         let shouldAnimate = wasActive != isActive && window != nil
@@ -345,6 +419,65 @@ private final class ModeHeaderCell: UICollectionViewCell {
                 playDeactivateAnimation()
             }
         }
+    }
+
+    // MARK: - UITextViewDelegate
+
+    func textViewDidBeginEditing(_ textView: UITextView) {
+        if textView === bodyView, !isExpanded {
+            isExpanded = true
+            applyExpandState()
+            invalidateIntrinsicContentSize()
+            if let collectionView = superview as? UICollectionView {
+                collectionView.collectionViewLayout.invalidateLayout()
+            }
+        }
+    }
+
+    func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+        if textView === titleView, text == "\n" {
+            textView.resignFirstResponder()
+            return false
+        }
+        return true
+    }
+
+    func textViewDidChange(_ textView: UITextView) {
+        if textView === titleView {
+            titlePlaceholder.isHidden = !textView.text.isEmpty
+        } else {
+            bodyPlaceholder.isHidden = !textView.text.isEmpty
+            if textView === bodyView {
+                if !isExpanded, bodyExceedsCollapsedLines() {
+                    isExpanded = true
+                    applyExpandState()
+                } else if isExpanded, !bodyExceedsCollapsedLines() {
+                    isExpanded = false
+                    applyExpandState()
+                }
+                updateShowMoreVisibility()
+            }
+        }
+        invalidateIntrinsicContentSize()
+        if let collectionView = superview as? UICollectionView {
+            collectionView.collectionViewLayout.invalidateLayout()
+        }
+    }
+
+    func textViewDidEndEditing(_ textView: UITextView) {
+        if textView === titleView {
+            titlePlaceholder.isHidden = !textView.text.isEmpty
+        } else {
+            bodyPlaceholder.isHidden = !textView.text.isEmpty
+            if isExpanded, !bodyExceedsCollapsedLines() {
+                isExpanded = false
+                applyExpandState()
+            }
+            updateShowMoreVisibility()
+        }
+        let title = titleView.text ?? ""
+        let body = bodyView.text ?? ""
+        onFieldEdited?(title, body)
     }
 
     // MARK: - Animations

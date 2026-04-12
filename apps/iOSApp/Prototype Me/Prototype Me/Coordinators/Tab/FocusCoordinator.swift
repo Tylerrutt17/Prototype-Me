@@ -24,6 +24,7 @@ class FocusCoordinator: Coordinator {
         vc.dbQueue = environment.db.dbQueue
         vc.balloonNotificationService = environment.balloonNotificationService
         vc.modeService = environment.modeService
+        vc.noteService = environment.noteService
         vc.onModeSelected = { [weak self] noteId in
             self?.showModeDetail(noteId: noteId)
         }
@@ -157,6 +158,7 @@ class FocusCoordinator: Coordinator {
         let picker = ActiveModePickerViewController()
         picker.dbQueue = environment.db.dbQueue
         picker.modeService = environment.modeService
+        picker.noteService = environment.noteService
         picker.onDone = { [weak self] in
             self?.navigationController.dismiss(animated: true)
         }

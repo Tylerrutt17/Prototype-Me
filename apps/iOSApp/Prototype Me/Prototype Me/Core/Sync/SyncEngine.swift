@@ -427,6 +427,7 @@ final class SyncEngine: @unchecked Sendable {
         let lastPullAt: Date?
         let lastSyncToken: String?
         let lastError: String?
+        let lastErrorKind: SyncStatusBannerView.SyncErrorKind?
         let deviceId: String
         let isSyncing: Bool
     }
@@ -439,7 +440,7 @@ final class SyncEngine: @unchecked Sendable {
         }
 
         lock.lock()
-        let errorDesc = lastError.map { "\($0)" }
+        let capturedError = lastError
         let syncing = isSyncing
         lock.unlock()
 
@@ -448,10 +449,35 @@ final class SyncEngine: @unchecked Sendable {
             lastPushAt: state?.lastPushAt,
             lastPullAt: state?.lastPullAt,
             lastSyncToken: state?.lastSyncToken,
-            lastError: errorDesc,
+            lastError: capturedError.map { "\($0)" },
+            lastErrorKind: capturedError.map { Self.classifyError($0) },
             deviceId: api.deviceId,
             isSyncing: syncing
         )
+    }
+
+    private static func classifyError(_ error: Error) -> SyncStatusBannerView.SyncErrorKind {
+        let nsError = error as NSError
+
+        // SQLITE_FULL (13), SQLITE_IOERR (10), SQLITE_CANTOPEN (14)
+        if nsError.domain == "GRDB.DatabaseError" && [13, 10, 14].contains(nsError.code) {
+            return .storageFull
+        }
+        if error is DatabaseManager.StorageFullError {
+            return .storageFull
+        }
+
+        // Network-level errors (URLError)
+        if nsError.domain == NSURLErrorDomain {
+            return .network
+        }
+
+        // API server errors (5xx)
+        if case .serverError = error as? APIClient.APIError {
+            return .server
+        }
+
+        return .network
     }
 
     // MARK: - Private: Sync State

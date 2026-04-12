@@ -5,10 +5,17 @@ class NoteDetailViewController: NoteDetailBaseViewController {
 
     private var currentNote: NotePage?
 
+    override func viewDidLoad() {
+        _ = headerReg // Force creation before data source setup
+        super.viewDidLoad()
+    }
+
     private lazy var headerReg = UICollectionView.CellRegistration<NoteHeaderCell, Bool> { [weak self] cell, _, _ in
         guard let self, let note = self.currentNote else { return }
-        cell.configure(with: note, isExpanded: self.isBodyExpanded)
-        cell.onToggleExpand = { [weak self] in self?.toggleBodyExpanded() }
+        cell.configure(with: note)
+        cell.onFieldEdited = { [weak self] title, body in
+            self?.saveInlineEdit(title: title, body: body)
+        }
     }
 
     override func dequeueHeaderCell(for collectionView: UICollectionView, at indexPath: IndexPath) -> UICollectionViewCell {
@@ -45,16 +52,19 @@ class NoteDetailViewController: NoteDetailBaseViewController {
 
 // MARK: - NoteHeaderCell
 
-private final class NoteHeaderCell: UICollectionViewCell {
+private final class NoteHeaderCell: UICollectionViewCell, UITextViewDelegate {
 
-    var onToggleExpand: (() -> Void)?
+    var onFieldEdited: ((String, String) -> Void)?
 
     private let accentBar = UIView()
     private let iconView = UIImageView()
     private let kindBadge = UIButton(type: .system)
-    private let titleLabel = UILabel()
-    private let bodyLabel = UILabel()
+    private let titleView = UITextView()
+    private let titlePlaceholder = UILabel()
+    private let bodyView = UITextView()
+    private let bodyPlaceholder = UILabel()
     private let showMoreButton = UIButton(type: .system)
+    private var isExpanded = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -85,27 +95,60 @@ private final class NoteHeaderCell: UICollectionViewCell {
         kindBadge.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(kindBadge)
 
-        titleLabel.font = DesignTokens.Typography.rounded(style: .title2, weight: .bold)
-        titleLabel.textColor = DesignTokens.Colors.textPrimary
-        titleLabel.numberOfLines = 0
+        // Title (editable)
+        titleView.font = DesignTokens.Typography.rounded(style: .title2, weight: .bold)
+        titleView.textColor = DesignTokens.Colors.textPrimary
+        titleView.backgroundColor = .clear
+        titleView.isScrollEnabled = false
+        titleView.textContainerInset = .zero
+        titleView.textContainer.lineFragmentPadding = 0
+        titleView.delegate = self
+        titleView.returnKeyType = .done
 
-        bodyLabel.font = DesignTokens.Typography.body
-        bodyLabel.textColor = DesignTokens.Colors.textSecondary
-        bodyLabel.numberOfLines = 0
+        titlePlaceholder.text = "Title"
+        titlePlaceholder.font = DesignTokens.Typography.rounded(style: .title2, weight: .bold)
+        titlePlaceholder.textColor = DesignTokens.Colors.textTertiary
+        titlePlaceholder.translatesAutoresizingMaskIntoConstraints = false
+        titleView.addSubview(titlePlaceholder)
+        NSLayoutConstraint.activate([
+            titlePlaceholder.topAnchor.constraint(equalTo: titleView.topAnchor),
+            titlePlaceholder.leadingAnchor.constraint(equalTo: titleView.leadingAnchor),
+        ])
 
+        // Body (editable, collapsed by default)
+        bodyView.font = DesignTokens.Typography.body
+        bodyView.textColor = DesignTokens.Colors.textSecondary
+        bodyView.backgroundColor = .clear
+        bodyView.isScrollEnabled = false
+        bodyView.textContainerInset = .zero
+        bodyView.textContainer.lineFragmentPadding = 0
+        bodyView.textContainer.maximumNumberOfLines = 3
+        bodyView.textContainer.lineBreakMode = .byTruncatingTail
+        bodyView.delegate = self
+
+        bodyPlaceholder.text = "Add a description…"
+        bodyPlaceholder.font = DesignTokens.Typography.body
+        bodyPlaceholder.textColor = DesignTokens.Colors.textTertiary
+        bodyPlaceholder.translatesAutoresizingMaskIntoConstraints = false
+        bodyView.addSubview(bodyPlaceholder)
+        NSLayoutConstraint.activate([
+            bodyPlaceholder.topAnchor.constraint(equalTo: bodyView.topAnchor),
+            bodyPlaceholder.leadingAnchor.constraint(equalTo: bodyView.leadingAnchor),
+        ])
+
+        // Show more/less
         showMoreButton.setTitle("Show more", for: .normal)
         showMoreButton.titleLabel?.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
         showMoreButton.setTitleColor(DesignTokens.Colors.accent, for: .normal)
         showMoreButton.contentHorizontalAlignment = .leading
-        showMoreButton.addTarget(self, action: #selector(tappedShowMore), for: .touchUpInside)
+        showMoreButton.addTarget(self, action: #selector(toggleExpand), for: .touchUpInside)
         showMoreButton.isHidden = true
 
-        // .fill alignment gives labels correct width during sizing pass
-        let stack = UIStackView(arrangedSubviews: [titleLabel, bodyLabel, showMoreButton])
+        let stack = UIStackView(arrangedSubviews: [titleView, bodyView, showMoreButton])
         stack.axis = .vertical
         stack.spacing = DesignTokens.Spacing.md
         stack.alignment = .fill
-        stack.setCustomSpacing(DesignTokens.Spacing.xs, after: bodyLabel)
+        stack.setCustomSpacing(DesignTokens.Spacing.xs, after: bodyView)
         stack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(stack)
 
@@ -133,25 +176,58 @@ private final class NoteHeaderCell: UICollectionViewCell {
         ])
     }
 
-    @objc private func tappedShowMore() {
-        onToggleExpand?()
+    @objc private func toggleExpand() {
+        isExpanded.toggle()
+        applyExpandState()
+        invalidateIntrinsicContentSize()
+        if let collectionView = superview as? UICollectionView {
+            collectionView.collectionViewLayout.invalidateLayout()
+        }
     }
 
-    func setExpanded(_ expanded: Bool, body: String) {
-        bodyLabel.text = body
-        bodyLabel.numberOfLines = expanded ? 0 : 3
-        showMoreButton.setTitle(expanded ? "Show less" : "Show more", for: .normal)
+    private func applyExpandState() {
+        bodyView.textContainer.maximumNumberOfLines = isExpanded ? 0 : 3
+        bodyView.textContainer.lineBreakMode = isExpanded ? .byWordWrapping : .byTruncatingTail
+        showMoreButton.setTitle(isExpanded ? "Show less" : "Show more", for: .normal)
+        bodyView.invalidateIntrinsicContentSize()
+    }
 
-        layoutIfNeeded()
-        showMoreButton.isHidden = !bodyLabel.isTruncated && !expanded
+    private func bodyExceedsCollapsedLines() -> Bool {
+        guard bodyView.bounds.width > 0 else { return false }
+        let textStorage = NSTextStorage(attributedString: bodyView.attributedText)
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(size: CGSize(width: bodyView.bounds.width, height: .greatestFiniteMagnitude))
+        textContainer.lineFragmentPadding = 0
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.ensureLayout(for: textContainer)
+        var lineCount = 0
+        var index = 0
+        let glyphCount = layoutManager.numberOfGlyphs
+        while index < glyphCount {
+            var lineRange = NSRange()
+            layoutManager.lineFragmentRect(forGlyphAt: index, effectiveRange: &lineRange)
+            lineCount += 1
+            index = NSMaxRange(lineRange)
+        }
+        return lineCount > 3
+    }
+
+    private func updateShowMoreVisibility() {
+        guard !bodyView.text.isEmpty else {
+            showMoreButton.isHidden = true
+            return
+        }
+        showMoreButton.isHidden = !bodyExceedsCollapsedLines() && !isExpanded
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         ShimmerBorder.updateFrame(on: contentView, cornerRadius: DesignTokens.Radii.xl)
+        updateShowMoreVisibility()
     }
 
-    func configure(with note: NotePage, isExpanded: Bool) {
+    func configure(with note: NotePage) {
         let color = note.kind.color
         let iconConfig = UIImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
         iconView.image = UIImage(systemName: note.kind.iconName, withConfiguration: iconConfig)
@@ -170,17 +246,17 @@ private final class NoteHeaderCell: UICollectionViewCell {
         }
         kindBadge.configuration = badgeConfig
 
-        titleLabel.text = note.title
-
-        if note.body.isEmpty {
-            bodyLabel.isHidden = true
-            showMoreButton.isHidden = true
-        } else {
-            bodyLabel.isHidden = false
-            setExpanded(isExpanded, body: note.body)
+        if !titleView.isFirstResponder {
+            titleView.text = note.title
+            titlePlaceholder.isHidden = !note.title.isEmpty
         }
 
-        // Shimmer border for modes
+        if !bodyView.isFirstResponder {
+            bodyView.text = note.body
+            bodyPlaceholder.isHidden = !note.body.isEmpty
+            applyExpandState()
+        }
+
         if note.kind == .mode {
             DispatchQueue.main.async {
                 ShimmerBorder.add(to: self.contentView, color: color, cornerRadius: DesignTokens.Radii.xl)
@@ -188,6 +264,69 @@ private final class NoteHeaderCell: UICollectionViewCell {
         } else {
             ShimmerBorder.remove(from: contentView)
         }
+    }
+
+    // MARK: - UITextViewDelegate
+
+    func textViewDidBeginEditing(_ textView: UITextView) {
+        // Auto-expand when user taps into the body to edit
+        if textView === bodyView, !isExpanded {
+            isExpanded = true
+            applyExpandState()
+            invalidateIntrinsicContentSize()
+            if let collectionView = superview as? UICollectionView {
+                collectionView.collectionViewLayout.invalidateLayout()
+            }
+        }
+    }
+
+    func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+        if textView === titleView, text == "\n" {
+            textView.resignFirstResponder()
+            return false
+        }
+        return true
+    }
+
+    func textViewDidChange(_ textView: UITextView) {
+        if textView === titleView {
+            titlePlaceholder.isHidden = !textView.text.isEmpty
+        } else {
+            bodyPlaceholder.isHidden = !textView.text.isEmpty
+            if textView === bodyView {
+                if !isExpanded, bodyExceedsCollapsedLines() {
+                    // Auto-expand when typing past 3 lines
+                    isExpanded = true
+                    applyExpandState()
+                } else if isExpanded, !bodyExceedsCollapsedLines() {
+                    // Auto-collapse when text shrinks back to 3 lines or fewer
+                    isExpanded = false
+                    applyExpandState()
+                }
+                updateShowMoreVisibility()
+            }
+        }
+        invalidateIntrinsicContentSize()
+        if let collectionView = superview as? UICollectionView {
+            collectionView.collectionViewLayout.invalidateLayout()
+        }
+    }
+
+    func textViewDidEndEditing(_ textView: UITextView) {
+        if textView === titleView {
+            titlePlaceholder.isHidden = !textView.text.isEmpty
+        } else {
+            bodyPlaceholder.isHidden = !textView.text.isEmpty
+            // Collapse back if text fits in 3 lines
+            if isExpanded, !bodyExceedsCollapsedLines() {
+                isExpanded = false
+                applyExpandState()
+            }
+            updateShowMoreVisibility()
+        }
+        let title = titleView.text ?? ""
+        let body = bodyView.text ?? ""
+        onFieldEdited?(title, body)
     }
 }
 

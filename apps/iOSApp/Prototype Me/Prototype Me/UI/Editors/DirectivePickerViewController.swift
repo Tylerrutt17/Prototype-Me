@@ -250,6 +250,7 @@ extension DirectivePickerViewController: UISearchBarDelegate {
 
 private final class PickerCell: UICollectionViewCell {
 
+    private let colorBar = UIView()
     private let titleLabel = UILabel()
     private let linkIcon = UIImageView()
 
@@ -267,6 +268,10 @@ private final class PickerCell: UICollectionViewCell {
         contentView.backgroundColor = DesignTokens.Colors.surfacePrimary
         contentView.layer.cornerRadius = DesignTokens.Radii.md
         contentView.clipsToBounds = true
+
+        colorBar.translatesAutoresizingMaskIntoConstraints = false
+        colorBar.isHidden = true
+        contentView.addSubview(colorBar)
 
         titleLabel.font = DesignTokens.Typography.body
         titleLabel.textColor = DesignTokens.Colors.textPrimary
@@ -286,6 +291,11 @@ private final class PickerCell: UICollectionViewCell {
         contentView.addSubview(row)
 
         NSLayoutConstraint.activate([
+            colorBar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            colorBar.topAnchor.constraint(equalTo: contentView.topAnchor),
+            colorBar.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            colorBar.widthAnchor.constraint(equalToConstant: 4),
+
             row.topAnchor.constraint(equalTo: contentView.topAnchor, constant: DesignTokens.Spacing.md),
             row.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -DesignTokens.Spacing.md),
             row.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: DesignTokens.Spacing.lg),
@@ -295,5 +305,12 @@ private final class PickerCell: UICollectionViewCell {
 
     func configure(with directive: Directive) {
         titleLabel.text = directive.title
+
+        if let hex = directive.color, let color = UIColor(hex: hex) {
+            colorBar.backgroundColor = color
+            colorBar.isHidden = false
+        } else {
+            colorBar.isHidden = true
+        }
     }
 }
