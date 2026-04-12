@@ -28,21 +28,6 @@ extension SpeakViewController {
         clearButton.setContentHuggingPriority(.required, for: .horizontal)
         clearButton.translatesAutoresizingMaskIntoConstraints = false
 
-        // Done button
-        var doneConfig = UIButton.Configuration.plain()
-        doneConfig.title = "Done"
-        doneConfig.baseForegroundColor = DesignTokens.Colors.accent
-        doneConfig.contentInsets = .zero
-        doneConfig.titleTextAttributesTransformer = .init { container in
-            var c = container
-            c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
-            return c
-        }
-        doneButton.configuration = doneConfig
-        doneButton.addTarget(self, action: #selector(dismissKeyboard), for: .touchUpInside)
-        doneButton.isHidden = true
-        doneButton.translatesAutoresizingMaskIntoConstraints = false
-
         // Field container
         fieldContainer.backgroundColor = DesignTokens.Colors.surfacePrimary
         fieldContainer.layer.cornerRadius = DesignTokens.Radii.xl
@@ -67,7 +52,7 @@ extension SpeakViewController {
         fieldContainer.addSubview(textView)
 
         // Placeholder
-        placeholderLabel.text = "Type a message..."
+        placeholderLabel.text = "Ask about something..."
         placeholderLabel.font = DesignTokens.Typography.body
         placeholderLabel.textColor = DesignTokens.Colors.textTertiary
         placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -87,16 +72,15 @@ extension SpeakViewController {
         fieldContainer.addSubview(sendButton)
 
         inputBarBottom = inputBar.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        responseBottomConstraint = responseScrollView.bottomAnchor.constraint(equalTo: inputBar.topAnchor)
         fieldContainerHeight = fieldContainer.heightAnchor.constraint(equalToConstant: 48)
 
         textViewLeadingDefault = textView.leadingAnchor.constraint(equalTo: fieldContainer.leadingAnchor, constant: DesignTokens.Spacing.lg)
         textViewLeadingWithClear = textView.leadingAnchor.constraint(equalTo: clearButton.trailingAnchor, constant: DesignTokens.Spacing.xs)
         textViewLeadingDefault.isActive = true
 
-        inputBar.addSubview(doneButton)
-
         NSLayoutConstraint.activate([
-            responseScrollView.bottomAnchor.constraint(equalTo: inputBar.topAnchor),
+            responseBottomConstraint,
 
             inputBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             inputBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -129,9 +113,6 @@ extension SpeakViewController {
             sendButton.centerYAnchor.constraint(equalTo: fieldContainer.centerYAnchor),
             sendButton.widthAnchor.constraint(equalToConstant: 34),
             sendButton.heightAnchor.constraint(equalToConstant: 34),
-
-            doneButton.trailingAnchor.constraint(equalTo: inputBar.trailingAnchor, constant: -DesignTokens.Spacing.md),
-            doneButton.topAnchor.constraint(equalTo: inputBar.topAnchor, constant: DesignTokens.Spacing.sm),
         ])
 
         inputAreaTopAnchor = inputBar.topAnchor
@@ -150,9 +131,14 @@ extension SpeakViewController {
               let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval else { return }
         isKeyboardVisible = true
         inputBarBottom.constant = -frame.height
-        doneButton.isHidden = false
         UIView.animate(withDuration: duration) {
             self.view.layoutIfNeeded()
+            if self.isPro {
+                self.proMicButton.alpha = 0
+                self.proStatusLabel.alpha = 0
+                self.proWaveformView.alpha = 0
+                self.proStopButton.alpha = 0
+            }
         }
     }
 
@@ -160,9 +146,12 @@ extension SpeakViewController {
         guard let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval else { return }
         isKeyboardVisible = false
         inputBarBottom.constant = 0
-        doneButton.isHidden = true
         UIView.animate(withDuration: duration) {
             self.view.layoutIfNeeded()
+            if self.isPro && !self.isProcessing && !self.isRecording {
+                self.proMicButton.alpha = 1
+                self.proStatusLabel.alpha = 1
+            }
         }
     }
 

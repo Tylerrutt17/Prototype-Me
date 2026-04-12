@@ -6,6 +6,7 @@ import GRDB
 class SpeakViewController: BaseViewController {
 
     var apiClient: APIClient?
+    var aiReadQueryService: AIReadQueryService?
     var directiveService: DirectiveService?
     var noteService: NoteService?
     var dayEntryService: DayEntryService?
@@ -58,11 +59,11 @@ class SpeakViewController: BaseViewController {
 
     // Input bar state (used by InputBar extension)
     var inputBarBottom: NSLayoutConstraint!
+    var responseBottomConstraint: NSLayoutConstraint!
     var fieldContainerHeight: NSLayoutConstraint!
     lazy var maxTextViewHeight: CGFloat = UIScreen.main.bounds.height * 0.4
     let fieldContainer = UIView()
     let clearButton = UIButton(type: .system)
-    let doneButton = UIButton(type: .system)
     var textViewLeadingDefault: NSLayoutConstraint!
     var textViewLeadingWithClear: NSLayoutConstraint!
     var isKeyboardVisible = false
@@ -75,18 +76,19 @@ class SpeakViewController: BaseViewController {
 
     let proMicButton = UIButton(type: .system)
     let proStatusLabel = UILabel()
-    let proRecordingGradient = CAGradientLayer()
+    let proWaveformView = ProWaveformView()
+    let proStopButton = UIButton(type: .system)
     var proMicBottomConstraint: NSLayoutConstraint!
+    var proWaveformWidth: NSLayoutConstraint!
     var isPro: Bool { AuthService.isPro }
 
     // MARK: - State
 
     var messages: [SpeakChatMessage] = []
-    var currentFlowId: String?
     private var optionLabels: [String] = []
     /// Nested follow-up options for the current option set.
     /// Key = option label, Value = (question, options, icons, nestedFollowUp)
-    private var optionFollowUps: [String: (question: String, options: [String], icons: [String]?, followUp: Any?)] = []
+    private var optionFollowUps = [String: (question: String, options: [String], icons: [String]?, followUp: Any?)]()
     /// Accumulated choices from multi-step option flows, sent with the final message.
     var accumulatedChoices: [String] = []
     var isTranscribing = false
@@ -108,11 +110,10 @@ class SpeakViewController: BaseViewController {
         setupResponseArea()
 
         // Input must be set up before empty state / transcribing bar (they anchor to it)
+        setupFreeInputBar()
+        observeKeyboard()
         if isPro {
             setupProInput()
-        } else {
-            setupFreeInputBar()
-            observeKeyboard()
         }
 
         setupTranscribingBar()
@@ -134,12 +135,6 @@ class SpeakViewController: BaseViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         layoutBackgroundGlows()
-        guard isPro else { return }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        proRecordingGradient.frame = proMicButton.bounds
-        proRecordingGradient.cornerRadius = proMicButton.bounds.height / 2
-        CATransaction.commit()
     }
 
     private func layoutBackgroundGlows() {
@@ -527,6 +522,11 @@ class SpeakViewController: BaseViewController {
 
         let checkIcon = UIImageView(image: UIImage(systemName: "checkmark.circle.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)))
         checkIcon.tintColor = DesignTokens.Colors.accentSecondary
+        checkIcon.contentMode = .center
+        checkIcon.setContentHuggingPriority(.required, for: .horizontal)
+        checkIcon.setContentCompressionResistancePriority(.required, for: .horizontal)
+        checkIcon.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        checkIcon.heightAnchor.constraint(equalToConstant: 24).isActive = true
 
         let titleLabel = UILabel()
         titleLabel.text = currentSuggestions[index].title
@@ -975,14 +975,7 @@ class SpeakViewController: BaseViewController {
         navBar.setTitle(nil, animated: false)
         navBar.setTitleView(titleStack)
 
-        navBar.setRightButtons([
-            NavBarButton(systemImage: "clock.arrow.circlepath") { [weak self] in
-                self?.showHistory()
-            },
-            NavBarButton(systemImage: "gearshape") { [weak self] in
-                self?.showSpeakSettings()
-            }
-        ])
+        navBar.setRightButtons([])
 
         Task {
             if let apiClient, let quota: UsageQuota = try? await apiClient.get("/v1/usage") {
@@ -1311,6 +1304,14 @@ class SpeakViewController: BaseViewController {
         micButton.onAudioRecorded = { [weak self] fileURL in
             guard let self, self.isPro else { return }
             self.transcribeWithWhisper(fileURL: fileURL)
+        }
+        micButton.onAudioLevel = { [weak self] level in
+            guard let self else { return }
+            self.proWaveformView.updateLevel(level)
+        }
+        micButton.onWaveform = { [weak self] segments in
+            guard let self else { return }
+            self.proWaveformView.updateBands(segments)
         }
         micButton.onError = { [weak self] message in
             guard let self else { return }

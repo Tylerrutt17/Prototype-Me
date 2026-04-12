@@ -19,6 +19,7 @@ class SpeakCoordinator: Coordinator {
     func start() {
         let vc = SpeakViewController()
         vc.apiClient = environment.apiClient
+        vc.aiReadQueryService = environment.aiReadQueryService
         vc.directiveService = environment.directiveService
         vc.noteService = environment.noteService
         vc.dayEntryService = environment.dayEntryService

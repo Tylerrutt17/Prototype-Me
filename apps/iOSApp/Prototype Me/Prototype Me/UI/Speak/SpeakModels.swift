@@ -125,28 +125,29 @@ struct SpeakWhisperResponse: Decodable {
 struct SpeakConverseRequest: Encodable {
     let messages: [Message]
     let localDate: String
+    /// For continuation after client-side read tool execution
+    let previousResponseId: String?
+    let toolOutputs: [ToolOutput]?
 
     struct Message: Encodable {
         let role: String
         let content: String
     }
-}
 
-struct SpeakFlowRequest: Encodable {
-    let message: String
-    let flowId: String?
-    let localDate: String
+    struct ToolOutput: Encodable {
+        let callId: String
+        let output: String
+    }
 }
 
 struct SpeakConverseResponse: Decodable {
     let message: String
     let toolCalls: [ToolCall]
     let remainingQuota: Int
-    // Flow engine fields (optional — present when response comes from /v1/ai/flow)
-    let flowId: String?
-    let flowState: String?
-    let fallbackToConverse: Bool?
-    let quotaFree: Bool?
+    /// Read tool requests the client should execute locally, then call back with results
+    let readToolRequests: [ReadToolRequest]?
+    /// OpenAI response ID for continuation
+    let responseId: String?
 
     struct ToolCall: Decodable {
         let id: String
@@ -160,9 +161,16 @@ struct SpeakConverseResponse: Decodable {
         }
     }
 
-    enum CodingKeys: String, CodingKey {
-        case message, toolCalls, remainingQuota
-        case flowId, flowState, fallbackToConverse, quotaFree
+    struct ReadToolRequest: Decodable {
+        let callId: String
+        let function: String
+        private let _arguments: [String: SpeakAnyCodable]
+        var parsedArguments: [String: Any] { _arguments.mapValues(\.value) }
+
+        enum CodingKeys: String, CodingKey {
+            case callId, function
+            case _arguments = "arguments"
+        }
     }
 }
 

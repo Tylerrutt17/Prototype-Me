@@ -70,10 +70,31 @@ final class NoteService: Sendable {
 
     func unlinkDirective(noteId: UUID, directiveId: UUID) async throws {
         try await db.safeWrite { db in
+            // Get the sortIndex of the link being removed
+            let removedIndex = try Int.fetchOne(db, sql: """
+                SELECT sortIndex FROM noteDirective WHERE noteId = ? AND directiveId = ?
+                """, arguments: [noteId, directiveId])
+
             try db.execute(sql: """
                 DELETE FROM noteDirective WHERE noteId = ? AND directiveId = ?
                 """, arguments: [noteId, directiveId])
             try OutboxOp.enqueueDelete(entityType: "noteDirective", entityId: "\(noteId.uuidString)|\(directiveId.uuidString)", in: db)
+
+            // Close the gap: decrement sortIndex for all links that came after
+            if let removedIndex {
+                try db.execute(sql: """
+                    UPDATE noteDirective SET sortIndex = sortIndex - 1
+                    WHERE noteId = ? AND sortIndex > ?
+                    """, arguments: [noteId, removedIndex])
+
+                // Enqueue sync updates for the shifted links
+                let shifted = try NoteDirective
+                    .filter(Column("noteId") == noteId && Column("sortIndex") >= removedIndex)
+                    .fetchAll(db)
+                for link in shifted {
+                    try OutboxOp.enqueue(entityType: "noteDirective", entityId: "\(noteId.uuidString)|\(link.directiveId.uuidString)", op: "update", patch: link.syncPatch(), in: db)
+                }
+            }
         }
     }
 

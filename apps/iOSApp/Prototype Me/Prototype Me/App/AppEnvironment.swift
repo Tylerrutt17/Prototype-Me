@@ -15,6 +15,7 @@ struct AppEnvironment {
     let tagService: TagService
     let periodicReviewService: PeriodicReviewService
     let speakHistoryService: SpeakHistoryService
+    let aiReadQueryService: AIReadQueryService
 
     // Networking + Sync
     let apiClient: APIClient
@@ -54,6 +55,7 @@ struct AppEnvironment {
         self.modeService = ModeService(db: db)
         self.tagService = TagService(db: db)
         self.speakHistoryService = SpeakHistoryService(db: db)
+        self.aiReadQueryService = AIReadQueryService(db: db)
 
         // Networking + Sync
         self.apiClient = APIClient()

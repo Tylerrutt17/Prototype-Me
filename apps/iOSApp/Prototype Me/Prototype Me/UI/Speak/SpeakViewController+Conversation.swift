@@ -45,52 +45,55 @@ extension SpeakViewController {
                 guard let apiClient else { throw NSError(domain: "Speak", code: 0) }
                 let postedAt = Date()
 
-                // 1. Try the deterministic flow engine first
-                let flowRequest = SpeakFlowRequest(
-                    message: text,
-                    flowId: self.currentFlowId,
-                    localDate: localDate
-                )
-                print("[Speak] POST /v1/ai/flow — flowId=\(self.currentFlowId ?? "nil")")
+                // Build conversation history (last 10 messages)
+                let historyLimit = 10
+                let allHistory = self.messages.compactMap { msg -> SpeakConverseRequest.Message? in
+                    switch msg.role {
+                    case .user:    return .init(role: "user", content: msg.text)
+                    case .assistant: return .init(role: "assistant", content: msg.text)
+                    case .system, .pendingActions: return nil
+                    }
+                }
+                let conversationMessages = Array(allHistory.suffix(historyLimit))
+
+                // Initial request
                 var response: SpeakConverseResponse = try await apiClient.post(
-                    "/v1/ai/flow",
-                    body: flowRequest,
+                    "/v1/ai/converse",
+                    body: SpeakConverseRequest(
+                        messages: conversationMessages,
+                        localDate: localDate,
+                        previousResponseId: nil,
+                        toolOutputs: nil
+                    ),
                     timeout: APIClient.Timeout.ai
                 )
 
-                // 2. If flow engine says fallback, call the full AI converse endpoint
-                if response.fallbackToConverse == true {
-                    self.currentFlowId = nil
-                    print("[Speak] Flow fallback → POST /v1/ai/converse")
+                // Client-driven read loop: if the AI needs data, execute reads locally
+                // and send results back. Max 3 rounds (same as the old server-side limit).
+                var readRounds = 0
+                while let readRequests = response.readToolRequests, !readRequests.isEmpty, readRounds < 3 {
+                    readRounds += 1
+                    print("[Speak] Read round \(readRounds): \(readRequests.count) tool(s) to execute locally")
 
-                    let historyLimit = 10
-                    let allHistory: [[String: String]] = self.messages.compactMap { msg in
-                        switch msg.role {
-                        case .user:    return ["role": "user", "content": msg.text]
-                        case .assistant: return ["role": "assistant", "content": msg.text]
-                        case .system, .pendingActions: return nil
-                        }
-                    }
-                    let conversationMessages = Array(allHistory.suffix(historyLimit))
-                    let converseBody = SpeakConverseRequest(
-                        messages: conversationMessages.map { SpeakConverseRequest.Message(role: $0["role"]!, content: $0["content"]!) },
-                        localDate: localDate
-                    )
+                    // Execute each read tool against local GRDB
+                    let outputs = await executeReadToolsLocally(readRequests)
+
+                    // Send results back for the AI to continue
                     response = try await apiClient.post(
                         "/v1/ai/converse",
-                        body: converseBody,
+                        body: SpeakConverseRequest(
+                            messages: [],  // Not needed for continuation
+                            localDate: localDate,
+                            previousResponseId: response.responseId,
+                            toolOutputs: outputs
+                        ),
                         timeout: APIClient.Timeout.ai
                     )
-                } else {
-                    // Track the flow session for continuation
-                    self.currentFlowId = response.flowId
                 }
 
                 let elapsed = Date().timeIntervalSince(postedAt)
-                let source = response.flowId != nil ? "flow" : "converse"
-                print("[Speak] \(source) response in \(String(format: "%.2f", elapsed))s — message: \(response.message.count) chars, tools: \(response.toolCalls.count), quota: \(response.remainingQuota)")
+                print("[Speak] Response in \(String(format: "%.2f", elapsed))s (\(readRounds) read round(s)) — message: \(response.message.count) chars, tools: \(response.toolCalls.count), quota: \(response.remainingQuota)")
 
-                // 3. Handle the response (same logic regardless of source)
                 await MainActor.run {
                     self.handleResponse(response)
                 }
@@ -110,6 +113,26 @@ extension SpeakViewController {
                 }
             }
         }
+    }
+
+    /// Execute read tool requests locally against GRDB and return results for the server.
+    private func executeReadToolsLocally(
+        _ requests: [SpeakConverseResponse.ReadToolRequest]
+    ) async -> [SpeakConverseRequest.ToolOutput] {
+        guard let aiReadQueryService else { return [] }
+        var outputs: [SpeakConverseRequest.ToolOutput] = []
+        for req in requests {
+            let result = (try? await aiReadQueryService.execute(
+                function: req.function,
+                arguments: req.parsedArguments
+            )) ?? "{}"
+            print("[Speak] Local read: \(req.function) → \(result.prefix(100))...")
+            outputs.append(SpeakConverseRequest.ToolOutput(
+                callId: req.callId,
+                output: result
+            ))
+        }
+        return outputs
     }
 
     // MARK: - Response Handling (shared between flow and converse)

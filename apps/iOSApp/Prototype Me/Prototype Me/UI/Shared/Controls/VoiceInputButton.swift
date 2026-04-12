@@ -20,6 +20,12 @@ final class VoiceInputButton: UIButton {
     /// Called with normalized audio power level (0.0–1.0) during recording.
     var onAudioLevel: ((Float) -> Void)?
 
+    /// Called with per-segment waveform amplitudes (each 0.0–1.0). Derived directly from the audio buffer.
+    var onWaveform: (([Float]) -> Void)?
+
+    /// Number of segments to divide the audio buffer into for the waveform.
+    static let waveformSegments = 28
+
     /// Called if an error occurs (permissions denied, etc.)
     var onError: ((String) -> Void)?
 
@@ -38,6 +44,7 @@ final class VoiceInputButton: UIButton {
     /// Max recording duration
     private static let maxDuration: TimeInterval = 60
     private var maxDurationTimer: Timer?
+
 
     private let pulseLayer = CAShapeLayer()
     private var pulseAnimation: CABasicAnimation?
@@ -155,6 +162,8 @@ final class VoiceInputButton: UIButton {
         // Write in the input node's exact format — no conversion, writes always succeed
         audioFile = try? AVAudioFile(forWriting: fileURL, settings: recordingFormat.settings)
 
+        let segments = Self.waveformSegments
+
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             guard let self else { return }
             // Feed to speech recognizer
@@ -162,20 +171,45 @@ final class VoiceInputButton: UIButton {
 
             try? self.audioFile?.write(from: buffer)
 
-            // Compute RMS power for audio visualization
-            if let onAudioLevel = self.onAudioLevel,
-               let channelData = buffer.floatChannelData?[0] {
-                let frameLength = Int(buffer.frameLength)
+            // Extract float samples from the buffer (handles both Float32 and Int16)
+            let frameLength = Int(buffer.frameLength)
+            guard frameLength > 0 else { return }
+            var floatSamples = [Float](repeating: 0, count: frameLength)
+
+            if let floatData = buffer.floatChannelData?[0] {
+                for i in 0..<frameLength { floatSamples[i] = floatData[i] }
+            } else if let int16Data = buffer.int16ChannelData?[0] {
+                let scale = 1.0 / Float(Int16.max)
+                for i in 0..<frameLength { floatSamples[i] = Float(int16Data[i]) * scale }
+            }
+
+            // RMS for onAudioLevel
+            if let onAudioLevel = self.onAudioLevel {
                 var sum: Float = 0
-                for i in 0..<frameLength {
-                    sum += channelData[i] * channelData[i]
+                for s in floatSamples { sum += s * s }
+                let rms = sqrtf(sum / Float(frameLength))
+                let normalized = min(max(rms * 25, 0), 1)
+                DispatchQueue.main.async { onAudioLevel(normalized) }
+            }
+
+            // Waveform: chunk samples into segments, RMS each segment → instant waveform shape
+            if let onWaveform = self.onWaveform {
+                let samplesPerSegment = max(1, frameLength / segments)
+                var waveform = [Float](repeating: 0, count: segments)
+
+                for s in 0..<segments {
+                    let start = s * samplesPerSegment
+                    let end = min(start + samplesPerSegment, frameLength)
+                    guard end > start else { continue }
+                    var sum: Float = 0
+                    for i in start..<end {
+                        sum += floatSamples[i] * floatSamples[i]
+                    }
+                    let rms = sqrtf(sum / Float(end - start))
+                    waveform[s] = min(rms * 25, 1)
                 }
-                let rms = sqrtf(sum / Float(max(frameLength, 1)))
-                // Normalize: typical speech RMS ~0.01-0.1, map to 0-1
-                let normalized = min(max(rms * 5, 0), 1)
-                DispatchQueue.main.async {
-                    onAudioLevel(normalized)
-                }
+
+                DispatchQueue.main.async { onWaveform(waveform) }
             }
         }
 
@@ -214,7 +248,6 @@ final class VoiceInputButton: UIButton {
             }
         }
     }
-
     private func stopRecording() {
         guard isRecording else { return }
         isRecording = false

@@ -1,12 +1,6 @@
 import { openai, OPENAI_MODEL } from "../lib/llm.js";
 import * as usageQueries from "../db/queries/usage.js";
 import * as profileQueries from "../db/queries/profiles.js";
-import * as directiveQueries from "../db/queries/directives.js";
-import * as noteQueries from "../db/queries/notes.js";
-import * as modeQueries from "../db/queries/modes.js";
-import * as dayEntryQueries from "../db/queries/dayEntries.js";
-import * as folderQueries from "../db/queries/folders.js";
-import * as searchQueries from "../db/queries/search.js";
 import { LIMITS } from "../validation/limits.js";
 import type OpenAI from "openai";
 
@@ -338,6 +332,10 @@ Today is {today}.
 - **Note**: title required; body is optional. If the user says "add a note" without specifying content, ask what the note should be about.
   - Similarly, use **search** before creating notes to avoid duplicates.
 
+# What you can't do
+- **You cannot place items in folders or link directives to notes.** If the user asks to add something to a specific folder or note, create the item normally and let them know: "I've created it — you can move it to the right folder in the Library tab."
+- **You cannot set reminders, notifications, or schedules.** If asked, let them know they can set those up in the directive's detail screen.
+
 **Never invent fields or options that aren't defined in a tool's parameters.** If a tool doesn't have a field, don't offer it to the user.
 
 # Response formatting (required)
@@ -372,300 +370,143 @@ export interface ToolCall {
   arguments: Record<string, unknown>;
 }
 
+interface ReadToolRequest {
+  callId: string;
+  function: string;
+  arguments: Record<string, unknown>;
+}
+
 export interface ConverseResult {
   message: string;
   toolCalls: ToolCall[];
   remainingQuota: number;
   resetAt: string;
+  /** Read tool requests for the client to execute locally, then call back with results */
+  readToolRequests: ReadToolRequest[];
+  /** OpenAI response ID — client sends this back for continuation after executing reads */
+  responseId: string;
 }
 
 // ── Converse ───────────────────────────────────
 
 const READ_TOOLS = new Set(["list_directives", "list_modes", "get_journal_entry", "get_directive", "get_note", "list_notes", "list_folders", "search"]);
-const MAX_TOOL_ROUNDS = 3;
 
 export async function converse(
   userId: string,
   messages: ConversationMessage[],
   localDate?: string,
+  previousResponseId?: string,
+  toolOutputs?: { callId: string; output: string }[],
 ): Promise<ConverseResult> {
-  const quota = await getQuota(userId);
-  if (quota.dailyUsed >= quota.dailyLimit) {
-    throw { status: 429, error: "quota_exceeded", message: "Daily AI quota exceeded" };
+  const isContinuation = !!previousResponseId;
+
+  // Quota check only on fresh turns (not continuations)
+  if (!isContinuation) {
+    const quota = await getQuota(userId);
+    if (quota.dailyUsed >= quota.dailyLimit) {
+      throw { status: 429, error: "quota_exceeded", message: "Daily AI quota exceeded" };
+    }
   }
 
   if (!openai) {
     throw { status: 500, error: "not_configured", message: "OpenAI API key not configured" };
   }
 
-  // Use the client's local date when available — server UTC can be a day
-  // ahead/behind depending on the user's timezone and time of day.
-  const today = localDate || new Date().toISOString().split("T")[0]!;
-  const systemContext = SYSTEM_PROMPT.replace("{today}", today);
+  let response: OpenAI.Responses.Response;
 
-  // Build input — system prompt as first user message, then conversation
-  const input: OpenAI.Responses.ResponseInputItem[] = [
-    { role: "user", content: systemContext },
-    { role: "assistant", content: "Understood. I'm ready to help." },
-    ...messages.map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    })),
-  ];
-
-  // Loop: call model, resolve read-only tools server-side, repeat until done
-  let response = await openai.responses.create({
-    model: OPENAI_MODEL,
-
-    input,
-    tools,
-    max_output_tokens: 1024,
-  });
-
-  let actionCalls: ToolCall[] = [];
-  let rounds = 0;
-
-  while (rounds < MAX_TOOL_ROUNDS) {
-    rounds++;
-    const functionCalls = response.output.filter(
-      (item): item is OpenAI.Responses.ResponseFunctionToolCall => item.type === "function_call",
-    );
-
-    if (functionCalls.length === 0) break;
-
-    const readCalls = functionCalls.filter((fc) => READ_TOOLS.has(fc.name));
-    const writes = functionCalls.filter((fc) => !READ_TOOLS.has(fc.name));
-
-    // Collect action calls for iOS
-    for (const fc of writes) {
-      actionCalls.push({
-        id: fc.call_id,
-        function: fc.name,
-        arguments: JSON.parse(fc.arguments),
-      });
-    }
-
-    // If no read calls, we're done
-    if (readCalls.length === 0) break;
-
-    // Execute read calls server-side and feed results back
-    const toolOutputs: OpenAI.Responses.ResponseInputItem[] = [];
-    for (const fc of readCalls) {
-      const result = await executeReadCall(userId, fc.name, fc.arguments);
-      // Feed back the function call and its result
-      toolOutputs.push({
-        type: "function_call_output",
-        call_id: fc.call_id,
-        output: result,
-      } as OpenAI.Responses.ResponseInputItem);
-    }
-
-    // Continue the conversation with tool results
+  if (isContinuation && previousResponseId && toolOutputs) {
+    // Continuation: feed client-executed read results back to the AI
+    const inputs: OpenAI.Responses.ResponseInputItem[] = toolOutputs.map((to) => ({
+      type: "function_call_output" as const,
+      call_id: to.callId,
+      output: to.output,
+    }));
     response = await openai.responses.create({
       model: OPENAI_MODEL,
-  
-      previous_response_id: response.id,
-      input: toolOutputs,
+      previous_response_id: previousResponseId,
+      input: inputs,
+      tools,
+      max_output_tokens: 1024,
+    });
+  } else {
+    // Fresh turn: build system prompt + conversation
+    const today = localDate || new Date().toISOString().split("T")[0]!;
+    const systemContext = SYSTEM_PROMPT.replace("{today}", today);
+
+    const input: OpenAI.Responses.ResponseInputItem[] = [
+      { role: "user", content: systemContext },
+      { role: "assistant", content: "Understood. I'm ready to help." },
+      ...messages.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })),
+    ];
+
+    response = await openai.responses.create({
+      model: OPENAI_MODEL,
+      input,
       tools,
       max_output_tokens: 1024,
     });
   }
 
-  // Extract final text message
+  // Partition function calls into reads vs writes
+  const functionCalls = response.output.filter(
+    (item): item is OpenAI.Responses.ResponseFunctionToolCall => item.type === "function_call",
+  );
+
+  const readCalls = functionCalls.filter((fc) => READ_TOOLS.has(fc.name));
+  const writeCalls = functionCalls.filter((fc) => !READ_TOOLS.has(fc.name));
+
+  // If there are read calls, return them to the client for local execution
+  if (readCalls.length > 0) {
+    const quota = await getQuota(userId);
+    return {
+      message: "",
+      toolCalls: [],
+      readToolRequests: readCalls.map((fc) => ({
+        callId: fc.call_id,
+        function: fc.name,
+        arguments: JSON.parse(fc.arguments),
+      })),
+      responseId: response.id,
+      remainingQuota: quota.dailyLimit - quota.dailyUsed,
+      resetAt: getResetTime(),
+    };
+  }
+
+  // No read calls — turn is complete. Extract final message + write tool calls.
   const textOutput = response.output.find(
     (item): item is OpenAI.Responses.ResponseOutputMessage => item.type === "message",
   );
-  let finalMessage = textOutput?.content
+  const finalMessage = textOutput?.content
     ?.filter((c): c is OpenAI.Responses.ResponseOutputText => c.type === "output_text")
     .map((c) => c.text)
     .join("") ?? "";
 
-  // Validate that any IDs referenced in write tool calls actually exist.
-  // The model sometimes hallucinates UUIDs; drop those tool calls so the client
-  // doesn't try to execute against a non-existent item.
-  const { validCalls, droppedSummaries } = await validateActionIds(userId, actionCalls);
-  actionCalls = validCalls;
-  if (droppedSummaries.length > 0) {
-    const note = droppedSummaries.length === 1
-      ? `I couldn't find ${droppedSummaries[0]} — could you clarify which one you mean?`
-      : `I couldn't find: ${droppedSummaries.join(", ")}. Could you clarify?`;
-    finalMessage = finalMessage ? `${finalMessage}\n\n${note}` : note;
-  }
+  const actionCalls: ToolCall[] = writeCalls.map((fc) => ({
+    id: fc.call_id,
+    function: fc.name,
+    arguments: JSON.parse(fc.arguments),
+  }));
 
-  await usageQueries.increment(userId);
+  // Increment usage only on fresh turns
+  if (!isContinuation) {
+    await usageQueries.increment(userId);
+  }
   const updatedQuota = await getQuota(userId);
 
   return {
     message: finalMessage,
     toolCalls: actionCalls,
+    readToolRequests: [],
+    responseId: response.id,
     remainingQuota: updatedQuota.dailyLimit - updatedQuota.dailyUsed,
     resetAt: getResetTime(),
   };
 }
 
-async function validateActionIds(
-  userId: string,
-  calls: ToolCall[],
-): Promise<{ validCalls: ToolCall[]; droppedSummaries: string[] }> {
-  const validCalls: ToolCall[] = [];
-  const droppedSummaries: string[] = [];
-
-  for (const call of calls) {
-    const args = call.arguments as Record<string, unknown>;
-    let valid = true;
-    let droppedLabel: string | null = null;
-
-    if (call.function === "update_directive" || call.function === "retire_directive") {
-      const id = typeof args.id === "string" ? args.id : null;
-      if (!id || !(await directiveQueries.findById(userId, id))) {
-        valid = false;
-        droppedLabel = "that directive";
-      }
-    } else if (call.function === "update_note") {
-      const id = typeof args.id === "string" ? args.id : null;
-      if (!id || !(await noteQueries.findById(userId, id))) {
-        valid = false;
-        droppedLabel = "that note";
-      }
-    } else if (call.function === "activate_mode" || call.function === "deactivate_mode") {
-      const id = typeof args.noteId === "string" ? args.noteId : null;
-      if (!id || !(await noteQueries.findById(userId, id))) {
-        valid = false;
-        droppedLabel = "that mode";
-      }
-    } else if (call.function === "rename_folder") {
-      const id = typeof args.id === "string" ? args.id : null;
-      if (!id || !(await folderQueries.findById(userId, id))) {
-        valid = false;
-        droppedLabel = "that folder";
-      }
-    }
-
-    if (valid) {
-      validCalls.push(call);
-    } else if (droppedLabel) {
-      droppedSummaries.push(droppedLabel);
-    }
-  }
-
-  return { validCalls, droppedSummaries };
-}
-
 // ── Helpers ────────────────────────────────────
-
-/** Truncate a string for listing context — keeps the first N chars + ellipsis. */
-function truncate(text: unknown, maxLen = 150): string | null {
-  if (typeof text !== "string" || !text) return null;
-  return text.length <= maxLen ? text : text.slice(0, maxLen) + "…";
-}
-
-async function executeReadCall(userId: string, name: string, argsJson: string): Promise<string> {
-  const args = JSON.parse(argsJson);
-
-  if (name === "list_directives") {
-    const directives = await directiveQueries.findAll(userId, { status: args.status ?? "active" });
-    return JSON.stringify(
-      directives.map((d: Record<string, unknown>) => ({
-        id: d.id,
-        title: d.title,
-        body: truncate(d.body),
-        status: d.status,
-      })),
-    );
-  }
-
-  if (name === "list_modes") {
-    const modes = await noteQueries.findAll(userId, { kind: "mode" });
-    const activeModes = await modeQueries.findAll(userId);
-    const activeNoteIds = new Set(activeModes.map((m: Record<string, unknown>) => m.noteId));
-    return JSON.stringify(
-      modes.map((n: Record<string, unknown>) => ({
-        id: n.id,
-        title: n.title,
-        active: activeNoteIds.has(n.id as string),
-      })),
-    );
-  }
-
-  if (name === "list_notes") {
-    const filters: Record<string, string> = {};
-    if (args.kind) filters.kind = args.kind;
-    const notes = await noteQueries.findAll(userId, filters);
-    return JSON.stringify(
-      notes.map((n: Record<string, unknown>) => ({
-        id: n.id,
-        title: n.title,
-        body: truncate(n.body),
-        kind: n.kind,
-      })),
-    );
-  }
-
-  if (name === "get_directive") {
-    const directive = await directiveQueries.findById(userId, args.id);
-    if (!directive) return JSON.stringify({ exists: false });
-    const d = directive as Record<string, unknown>;
-    return JSON.stringify({
-      exists: true,
-      id: d.id,
-      title: d.title,
-      body: d.body, // full body — no truncation
-      status: d.status,
-    });
-  }
-
-  if (name === "get_note") {
-    const note = await noteQueries.findById(userId, args.id);
-    if (!note) return JSON.stringify({ exists: false });
-    const n = note as Record<string, unknown>;
-    return JSON.stringify({
-      exists: true,
-      id: n.id,
-      title: n.title,
-      body: n.body, // full body — no truncation
-      kind: n.kind,
-    });
-  }
-
-  if (name === "search") {
-    const results = await searchQueries.fuzzySearch(userId, args.query, 10);
-    return JSON.stringify(results.map((r) => ({
-      id: r.id,
-      type: r.type,
-      title: r.title,
-      body: truncate(r.body),
-      kind: r.kind,
-      status: r.status,
-      similarity: Math.round(r.similarity * 100) + "%",
-    })));
-  }
-
-  if (name === "list_folders") {
-    const folders = await folderQueries.findAll(userId);
-    return JSON.stringify(
-      folders.map((f: Record<string, unknown>) => ({
-        id: f.id,
-        name: f.name,
-      })),
-    );
-  }
-
-  if (name === "get_journal_entry") {
-    const entries = await dayEntryQueries.findAll(userId, { from: args.date, to: args.date });
-    if (entries.length === 0) return JSON.stringify({ exists: false });
-    const e = entries[0] as Record<string, unknown>;
-    return JSON.stringify({
-      exists: true,
-      id: e.id,
-      date: e.date,
-      diary: e.diary,
-      rating: e.rating,
-      tags: e.tags,
-    });
-  }
-
-  return "{}";
-}
 
 function getResetTime(): string {
   const tomorrow = new Date();

@@ -1,227 +1,21 @@
 import UIKit
 import GRDB
 
-nonisolated private enum NoteDetailSection: Int, Sendable {
-    case header
-    case directives
-}
+class NoteDetailViewController: NoteDetailBaseViewController {
 
-nonisolated private enum NoteDetailItem: Hashable, Sendable {
-    case header(NotePage)
-    case directive(DirectiveRowData)
-    case linkButton
-}
+    private var currentNote: NotePage?
 
-class NoteDetailViewController: BaseViewController {
-
-    var noteId: UUID?
-    var noteService: NoteService?
-    var onDirectiveSelected: ((UUID) -> Void)?
-    var onEditTapped: ((UUID) -> Void)?
-    var onLinkDirectiveTapped: ((UUID) -> Void)?
-    var onAskAIForDirective: ((UUID) -> Void)?
-
-    private var collectionView: UICollectionView!
-    private var dataSource: UICollectionViewDiffableDataSource<NoteDetailSection, NoteDetailItem>!
-    private var isBodyExpanded = false
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        navBar.setRightButtons([
-            NavBarButton(assetImage: "edit", action: { [weak self] in self?.editTapped() }),
-        ])
-        configureCollectionView()
-        configureDataSource()
-        loadData()
+    private lazy var headerReg = UICollectionView.CellRegistration<NoteHeaderCell, Bool> { [weak self] cell, _, _ in
+        guard let self, let note = self.currentNote else { return }
+        cell.configure(with: note, isExpanded: self.isBodyExpanded)
+        cell.onToggleExpand = { [weak self] in self?.toggleBodyExpanded() }
     }
 
-    private func editTapped() {
-        guard let noteId else { return }
-        onEditTapped?(noteId)
+    override func dequeueHeaderCell(for collectionView: UICollectionView, at indexPath: IndexPath) -> UICollectionViewCell {
+        collectionView.dequeueConfiguredReusableCell(using: headerReg, for: indexPath, item: true)
     }
 
-    // MARK: - Collection View
-
-    private func configureCollectionView() {
-        collectionView = UICollectionView(frame: .zero, collectionViewLayout: createLayout())
-        collectionView.backgroundColor = .clear
-        collectionView.delegate = self
-        collectionView.dragInteractionEnabled = true
-        collectionView.dragDelegate = self
-        collectionView.dropDelegate = self
-        collectionView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(collectionView)
-
-        NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: contentTopAnchor),
-            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-        ])
-    }
-
-    private func createLayout() -> UICollectionViewCompositionalLayout {
-        UICollectionViewCompositionalLayout { [weak self] sectionIndex, layoutEnv in
-            let section = NoteDetailSection(rawValue: sectionIndex)
-            switch section {
-            case .header:
-                let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .estimated(200))
-                let item = NSCollectionLayoutItem(layoutSize: itemSize)
-                let group = NSCollectionLayoutGroup.vertical(layoutSize: itemSize, subitems: [item])
-                let layoutSection = NSCollectionLayoutSection(group: group)
-                layoutSection.contentInsets = NSDirectionalEdgeInsets(
-                    top: DesignTokens.Spacing.lg,
-                    leading: DesignTokens.Spacing.lg,
-                    bottom: DesignTokens.Spacing.md,
-                    trailing: DesignTokens.Spacing.lg
-                )
-                return layoutSection
-
-            default:
-                var config = UICollectionLayoutListConfiguration(appearance: .plain)
-                config.backgroundColor = .clear
-                config.showsSeparators = false
-                config.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
-                    guard let self,
-                          let item = self.dataSource.itemIdentifier(for: indexPath),
-                          case .directive(let data) = item else { return nil }
-                    let unlink = UIContextualAction(style: .normal, title: "Unlink") { [weak self] _, _, completion in
-                        self?.confirmUnlink(directiveId: data.directive.id)
-                        completion(true)
-                    }
-                    unlink.backgroundColor = DesignTokens.Colors.destructive
-                    unlink.image = UIImage(systemName: "link.badge.minus")
-
-                    let askAI = UIContextualAction(style: .normal, title: "Not Working?") { [weak self] _, _, completion in
-                        self?.confirmAskAI(directiveId: data.directive.id)
-                        completion(true)
-                    }
-                    askAI.backgroundColor = DesignTokens.Colors.warning
-                    askAI.image = UIImage(systemName: "lightbulb.slash")
-
-                    let swipeConfig = UISwipeActionsConfiguration(actions: [unlink, askAI])
-                    swipeConfig.performsFirstActionWithFullSwipe = false
-                    return swipeConfig
-                }
-                let layoutSection = NSCollectionLayoutSection.list(using: config, layoutEnvironment: layoutEnv)
-                layoutSection.interGroupSpacing = DesignTokens.Spacing.sm
-                layoutSection.contentInsets = NSDirectionalEdgeInsets(
-                    top: DesignTokens.Spacing.sm,
-                    leading: DesignTokens.Spacing.lg,
-                    bottom: DesignTokens.Spacing.lg,
-                    trailing: DesignTokens.Spacing.lg
-                )
-
-                // Section header
-                let headerSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .estimated(32))
-                let sectionHeader = NSCollectionLayoutBoundarySupplementaryItem(
-                    layoutSize: headerSize,
-                    elementKind: UICollectionView.elementKindSectionHeader,
-                    alignment: .top
-                )
-                layoutSection.boundarySupplementaryItems = [sectionHeader]
-                return layoutSection
-            }
-        }
-    }
-
-    private func confirmAskAI(directiveId: UUID) {
-        let alert = UIAlertController(
-            title: "Ask Feature for an alternative?",
-            message: "This opens Ask Feature to help figure out what's not working with this directive and suggest alternatives you could try.",
-            preferredStyle: .actionSheet
-        )
-        alert.addAction(UIAlertAction(title: "Ask Feature", style: .default) { [weak self] _ in
-            self?.onAskAIForDirective?(directiveId)
-        })
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        present(alert, animated: true)
-    }
-
-    private func confirmUnlink(directiveId: UUID) {
-        let alert = UIAlertController(
-            title: "Unlink Directive?",
-            message: "This removes it from this note. The directive itself won't be deleted.",
-            preferredStyle: .actionSheet
-        )
-        alert.addAction(UIAlertAction(title: "Unlink", style: .destructive) { [weak self] _ in
-            self?.unlinkDirective(directiveId: directiveId)
-        })
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        present(alert, animated: true)
-    }
-
-    private func unlinkDirective(directiveId: UUID) {
-        guard let noteId else { return }
-        Task {
-            do {
-                try await noteService?.unlinkDirective(noteId: noteId, directiveId: directiveId)
-                await MainActor.run { Haptics.success() }
-            } catch {
-                await MainActor.run { Haptics.error() }
-            }
-        }
-    }
-
-    // MARK: - Data Source
-
-    private func configureDataSource() {
-        // Header cell
-        let headerReg = UICollectionView.CellRegistration<NoteHeaderCell, NotePage> { [weak self] cell, _, note in
-            guard let self else { return }
-            cell.configure(with: note, isExpanded: self.isBodyExpanded)
-            cell.onToggleExpand = { [weak self] in
-                guard let self else { return }
-                self.isBodyExpanded.toggle()
-
-                var snapshot = self.dataSource.snapshot()
-                if let headerItem = snapshot.itemIdentifiers.first(where: {
-                    if case .header = $0 { return true }; return false
-                }) {
-                    snapshot.reloadItems([headerItem])
-                }
-                self.dataSource.apply(snapshot, animatingDifferences: false)
-                self.collectionView.performBatchUpdates(nil)
-            }
-        }
-
-        // Directive cell (swipe + long-press unlink handled by list config / context menu)
-        let directiveReg = UICollectionView.CellRegistration<DirectiveCell, DirectiveRowData> { cell, _, data in
-            cell.configure(with: data)
-        }
-
-        // Link button cell
-        let linkBtnReg = UICollectionView.CellRegistration<LinkDirectiveButtonCell, Bool> { cell, _, _ in
-            cell.backgroundConfiguration = .clear()
-        }
-
-        dataSource = UICollectionViewDiffableDataSource<NoteDetailSection, NoteDetailItem>(collectionView: collectionView) { collectionView, indexPath, item in
-            switch item {
-            case .header(let note):
-                return collectionView.dequeueConfiguredReusableCell(using: headerReg, for: indexPath, item: note)
-            case .directive(let data):
-                return collectionView.dequeueConfiguredReusableCell(using: directiveReg, for: indexPath, item: data)
-            case .linkButton:
-                return collectionView.dequeueConfiguredReusableCell(using: linkBtnReg, for: indexPath, item: true)
-            }
-        }
-
-        // Section header supplementary
-        let sectionHeaderReg = UICollectionView.SupplementaryRegistration<SectionHeaderView>(elementKind: UICollectionView.elementKindSectionHeader) { supplementaryView, _, indexPath in
-            if indexPath.section == NoteDetailSection.directives.rawValue {
-                supplementaryView.configure(title: "Linked Directives")
-            }
-        }
-
-        dataSource.supplementaryViewProvider = { collectionView, kind, indexPath in
-            collectionView.dequeueConfiguredReusableSupplementary(using: sectionHeaderReg, for: indexPath)
-        }
-
-    }
-
-    // MARK: - Observe Data
-
-    private func loadData() {
+    override func loadData() {
         guard let noteId else { return }
 
         let observation = ValueObservation.tracking { db -> (NotePage?, [DirectiveRowData]) in
@@ -241,138 +35,11 @@ class NoteDetailViewController: BaseViewController {
             return (note, rows)
         }
 
-        observationCancellable = observation.start(in: dbQueue, onError: { _ in }, onChange: { [weak self] (note, linkedDirectives) in
+        observationCancellable = observation.start(in: dbQueue, onError: { _ in }, onChange: { [weak self] (note, directives) in
+            self?.currentNote = note
             self?.navBar.setTitle(note?.title)
-
-            var snapshot = NSDiffableDataSourceSnapshot<NoteDetailSection, NoteDetailItem>()
-
-            if let note {
-                snapshot.appendSections([.header])
-                snapshot.appendItems([.header(note)], toSection: .header)
-            }
-
-            // Always show directives section with link button at the end
-            snapshot.appendSections([.directives])
-            var directiveItems: [NoteDetailItem] = linkedDirectives.map { .directive($0) }
-            directiveItems.append(.linkButton)
-            snapshot.appendItems(directiveItems, toSection: .directives)
-
-            self?.dataSource.apply(snapshot, animatingDifferences: false)
-            // Force re-render: DirectiveRowData / header items use id-only equality,
-            // so changes to underlying content (balloon pumps, color, body edits)
-            // don't trigger cell reloads via diffing alone.
-            var reconfigSnap = self?.dataSource.snapshot() ?? snapshot
-            reconfigSnap.reconfigureItems(reconfigSnap.itemIdentifiers)
-            self?.dataSource.apply(reconfigSnap, animatingDifferences: false)
+            self?.applySnapshot(directives: directives)
         })
-    }
-}
-
-// MARK: - UICollectionViewDragDelegate
-
-extension NoteDetailViewController: UICollectionViewDragDelegate {
-    func collectionView(_ collectionView: UICollectionView, itemsForBeginning session: any UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
-        guard let item = dataSource.itemIdentifier(for: indexPath),
-              case .directive = item else { return [] }
-        let provider = NSItemProvider(object: "\(indexPath)" as NSString)
-        let dragItem = UIDragItem(itemProvider: provider)
-        dragItem.localObject = item
-        return [dragItem]
-    }
-}
-
-// MARK: - UICollectionViewDelegate
-
-extension NoteDetailViewController: UICollectionViewDelegate {
-    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        collectionView.deselectItem(at: indexPath, animated: true)
-        guard let item = dataSource.itemIdentifier(for: indexPath) else { return }
-        switch item {
-        case .directive(let data):
-            onDirectiveSelected?(data.directive.id)
-        case .linkButton:
-            guard let noteId else { return }
-            onLinkDirectiveTapped?(noteId)
-        case .header:
-            break
-        }
-    }
-
-    func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
-        guard let item = dataSource.itemIdentifier(for: indexPath),
-              case .directive(let data) = item else { return nil }
-        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
-            let askAI = UIAction(
-                title: "Not Working?",
-                image: UIImage(systemName: "lightbulb.slash")
-            ) { _ in
-                self?.confirmAskAI(directiveId: data.directive.id)
-            }
-            let unlink = UIAction(
-                title: "Unlink from Note",
-                image: UIImage(systemName: "link.badge.minus"),
-                attributes: .destructive
-            ) { _ in
-                self?.confirmUnlink(directiveId: data.directive.id)
-            }
-            return UIMenu(children: [askAI, unlink])
-        }
-    }
-}
-
-// MARK: - UICollectionViewDropDelegate
-
-extension NoteDetailViewController: UICollectionViewDropDelegate {
-    func collectionView(_ collectionView: UICollectionView, dropSessionDidUpdate session: any UIDropSession, withDestinationIndexPath destinationIndexPath: IndexPath?) -> UICollectionViewDropProposal {
-        guard session.localDragSession != nil else {
-            return UICollectionViewDropProposal(operation: .cancel)
-        }
-        // Only allow drops in the directives section
-        if let dest = destinationIndexPath, dest.section == NoteDetailSection.directives.rawValue {
-            return UICollectionViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
-        }
-        return UICollectionViewDropProposal(operation: .cancel)
-    }
-
-    func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: any UICollectionViewDropCoordinator) {
-        guard let destinationIndexPath = coordinator.destinationIndexPath,
-              let dragItem = coordinator.items.first,
-              let sourceRow = dragItem.dragItem.localObject as? NoteDetailItem,
-              let sourceIndexPath = dragItem.sourceIndexPath else { return }
-
-        // Only within directives section
-        let directivesSection = NoteDetailSection.directives.rawValue
-        guard sourceIndexPath.section == directivesSection,
-              destinationIndexPath.section == directivesSection else { return }
-
-        var snapshot = dataSource.snapshot()
-        let section = NoteDetailSection.directives
-        var sectionItems = snapshot.itemIdentifiers(inSection: section)
-        guard let sourceIndex = sectionItems.firstIndex(of: sourceRow) else { return }
-
-        sectionItems.remove(at: sourceIndex)
-        // Keep the link button pinned at the end — never allow a directive past it
-        let linkButtonIndex = sectionItems.firstIndex {
-            if case .linkButton = $0 { return true }
-            return false
-        }
-        let maxIndex = linkButtonIndex ?? sectionItems.count
-        let destIndex = min(destinationIndexPath.item, maxIndex)
-        sectionItems.insert(sourceRow, at: destIndex)
-
-        snapshot.deleteItems(snapshot.itemIdentifiers(inSection: section))
-        snapshot.appendItems(sectionItems, toSection: section)
-        dataSource.apply(snapshot, animatingDifferences: true)
-
-        coordinator.drop(dragItem.dragItem, toItemAt: destinationIndexPath)
-
-        // Persist — extract only directive IDs (skip linkButton)
-        guard let noteId else { return }
-        let directiveIds = sectionItems.compactMap { item -> UUID? in
-            if case .directive(let data) = item { return data.directive.id }
-            return nil
-        }
-        Task { try? await noteService?.reorderDirectives(noteId: noteId, directiveIds: directiveIds) }
     }
 }
 
@@ -515,7 +182,6 @@ private final class NoteHeaderCell: UICollectionViewCell {
 
         // Shimmer border for modes
         if note.kind == .mode {
-            // Defer to next layout pass so bounds are set
             DispatchQueue.main.async {
                 ShimmerBorder.add(to: self.contentView, color: color, cornerRadius: DesignTokens.Radii.xl)
             }
@@ -551,52 +217,6 @@ final class SectionHeaderView: UICollectionReusableView {
 
     func configure(title: String) {
         titleLabel.text = title.uppercased()
-    }
-}
-
-// MARK: - LinkDirectiveButtonCell
-
-private final class LinkDirectiveButtonCell: UICollectionViewCell {
-
-    private let iconView = UIImageView()
-    private let label = UILabel()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        setupCell()
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        setupCell()
-    }
-
-    private func setupCell() {
-        contentView.backgroundColor = DesignTokens.Colors.accent.withAlphaComponent(0.12)
-        contentView.layer.cornerRadius = DesignTokens.Radii.lg
-        contentView.clipsToBounds = true
-
-        let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
-        iconView.image = UIImage(systemName: "plus.circle.fill", withConfiguration: config)
-        iconView.tintColor = DesignTokens.Colors.accent
-        iconView.contentMode = .scaleAspectFit
-
-        label.text = "Add Directive"
-        label.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold)
-        label.textColor = DesignTokens.Colors.accent
-
-        let stack = UIStackView(arrangedSubviews: [iconView, label])
-        stack.axis = .horizontal
-        stack.spacing = DesignTokens.Spacing.sm
-        stack.alignment = .center
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
-            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: DesignTokens.Spacing.md),
-            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -DesignTokens.Spacing.md),
-        ])
     }
 }
 

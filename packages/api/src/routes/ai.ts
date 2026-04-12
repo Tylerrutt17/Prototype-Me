@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import * as ai from "../features/ai.js";
 import * as converseFeature from "../features/converse.js";
-import * as flowFeature from "../features/flow.js";
 import * as transcribeFeature from "../features/transcribe.js";
 import * as reviewFeature from "../features/weeklyReview.js";
 import { aiSuggest, aiOnboard, directiveWizard } from "../validation/ai.js";
@@ -13,18 +12,18 @@ const transcribeBody = z.object({
   audio: z.string().min(1), // base64 encoded audio
 });
 
-const flowBody = z.object({
-  message: z.string().max(LIMITS.ai.speakMessage),
-  flowId: z.string().optional(),
-  localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-});
-
 const converseBody = z.object({
   messages: z.array(z.object({
     role: z.enum(["user", "assistant"]),
     content: z.string().max(LIMITS.ai.speakMessage),
-  })).min(1),
+  })),
   localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // Continuation fields — sent when the client has executed read tools locally
+  previousResponseId: z.string().optional(),
+  toolOutputs: z.array(z.object({
+    callId: z.string(),
+    output: z.string(),
+  })).optional(),
 });
 
 export async function aiRoutes(app: FastifyInstance) {
@@ -43,16 +42,12 @@ export async function aiRoutes(app: FastifyInstance) {
     return ok(reply, await ai.directiveWizard(req.userId, body.problem));
   });
 
-  // Flow: deterministic state machine — handles common intents without AI round-trips.
-  // Falls back to converse for freeform/ambiguous requests.
-  app.post("/flow", async (req, reply) => {
-    const body = flowBody.parse(req.body);
-    return ok(reply, await flowFeature.handleFlow(req.userId, body.message, body.flowId, body.localDate));
-  });
-
   app.post("/converse", async (req, reply) => {
     const body = converseBody.parse(req.body);
-    return ok(reply, await converseFeature.converse(req.userId, body.messages, body.localDate));
+    return ok(reply, await converseFeature.converse(
+      req.userId, body.messages, body.localDate,
+      body.previousResponseId, body.toolOutputs,
+    ));
   });
 
   app.post("/transcribe", async (req, reply) => {
