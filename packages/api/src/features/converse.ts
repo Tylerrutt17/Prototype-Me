@@ -462,7 +462,7 @@ If unclear → present options:
 * Rating 1-10 → **present_rating_picker**
 * Only use plain text questions for truly freeform answers (descriptions, journal content, etc.)
 
-**When the user's message starts with `[Selected: ...]`** — this is a button tap, not a new request. Act directly on their selection. Do NOT re-check, re-search, or re-present options. Just do the next step for that choice immediately.
+**When the user's message starts with [Selected: ...]** — this is a button tap, not a new request. Act directly on their selection. Do NOT re-check, re-search, or re-present options. Just do the next step for that choice immediately.
 
 ---
 
