@@ -725,7 +725,7 @@ export async function converse(
       previous_response_id: previousResponseId,
       input: inputs,
       tools,
-      reasoning: { effort: "low" },
+      reasoning: { effort: "medium" },
       max_output_tokens: 1024,
     });
   } else {
@@ -746,7 +746,7 @@ export async function converse(
       model: OPENAI_MODEL,
       input,
       tools,
-      reasoning: { effort: "low" },
+      reasoning: { effort: "medium" },
       max_output_tokens: 1024,
     });
   }
