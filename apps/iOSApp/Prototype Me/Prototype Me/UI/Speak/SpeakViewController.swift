@@ -360,6 +360,8 @@ class SpeakViewController: BaseViewController {
         responseContentStack.arrangedSubviews.first { $0.tag == 9002 }?.isHidden = true
         hideOptionsRow()
         hideSuggestions()
+        ratingPickerStack?.removeFromSuperview()
+        ratingPickerStack = nil
 
         // Fade out current response
         UIView.animate(withDuration: 0.2) {
@@ -854,6 +856,156 @@ class SpeakViewController: BaseViewController {
         guard let optionsStack = responseContentStack.arrangedSubviews.first(where: { $0.tag == 9003 }) as? UIStackView else { return }
         optionsStack.isHidden = true
         optionsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+    }
+
+    // MARK: - Rating Picker
+
+    var ratingPickerStack: UIStackView?
+    var ratingDiaryField: UITextView?
+    var selectedRating: Int?
+
+    func showRatingPicker(question: String, showDiaryInput: Bool) {
+        showResponse(text: question)
+
+        // Remove old picker if any
+        ratingPickerStack?.removeFromSuperview()
+
+        let container = UIStackView()
+        container.axis = .vertical
+        container.spacing = DesignTokens.Spacing.md
+        container.translatesAutoresizingMaskIntoConstraints = false
+        ratingPickerStack = container
+
+        // 1-10 number buttons in a row
+        let numbersRow = UIStackView()
+        numbersRow.axis = .horizontal
+        numbersRow.distribution = .fillEqually
+        numbersRow.spacing = DesignTokens.Spacing.xs
+
+        for i in 1...10 {
+            let btn = UIButton(type: .system)
+            btn.setTitle("\(i)", for: .normal)
+            btn.titleLabel?.font = DesignTokens.Typography.rounded(style: .headline, weight: .semibold)
+            btn.setTitleColor(DesignTokens.Colors.textPrimary, for: .normal)
+            btn.backgroundColor = DesignTokens.Colors.surfacePrimary
+            btn.layer.cornerRadius = DesignTokens.Radii.md
+            btn.layer.borderWidth = 1
+            btn.layer.borderColor = DesignTokens.Colors.separator.cgColor
+            btn.tag = i
+            btn.addTarget(self, action: #selector(ratingButtonTapped(_:)), for: .touchUpInside)
+            btn.heightAnchor.constraint(equalToConstant: 44).isActive = true
+            numbersRow.addArrangedSubview(btn)
+        }
+        container.addArrangedSubview(numbersRow)
+
+        // Optional diary text field
+        if showDiaryInput {
+            let diaryField = UITextView()
+            diaryField.font = DesignTokens.Typography.body
+            diaryField.textColor = DesignTokens.Colors.textPrimary
+            diaryField.backgroundColor = DesignTokens.Colors.surfacePrimary
+            diaryField.layer.cornerRadius = DesignTokens.Radii.md
+            diaryField.layer.borderWidth = 1
+            diaryField.layer.borderColor = DesignTokens.Colors.separator.cgColor
+            diaryField.textContainerInset = UIEdgeInsets(top: 12, left: 8, bottom: 12, right: 8)
+            diaryField.isScrollEnabled = false
+            diaryField.heightAnchor.constraint(greaterThanOrEqualToConstant: 80).isActive = true
+            ratingDiaryField = diaryField
+
+            let placeholder = UILabel()
+            placeholder.text = "How was your day? (optional)"
+            placeholder.font = DesignTokens.Typography.body
+            placeholder.textColor = DesignTokens.Colors.textTertiary
+            placeholder.translatesAutoresizingMaskIntoConstraints = false
+            diaryField.addSubview(placeholder)
+            NSLayoutConstraint.activate([
+                placeholder.topAnchor.constraint(equalTo: diaryField.topAnchor, constant: 12),
+                placeholder.leadingAnchor.constraint(equalTo: diaryField.leadingAnchor, constant: 13),
+            ])
+            // Hide placeholder when typing
+            diaryField.delegate = self
+            placeholder.tag = 8888
+
+            container.addArrangedSubview(diaryField)
+        }
+
+        // Submit button
+        let submitBtn = UIButton(type: .system)
+        var submitConfig = UIButton.Configuration.filled()
+        submitConfig.title = "Submit"
+        submitConfig.baseBackgroundColor = DesignTokens.Colors.accent
+        submitConfig.baseForegroundColor = .white
+        submitConfig.cornerStyle = .capsule
+        submitConfig.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 24, bottom: 12, trailing: 24)
+        submitConfig.titleTextAttributesTransformer = .init { c in
+            var c = c; c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .semibold); return c
+        }
+        submitBtn.configuration = submitConfig
+        submitBtn.addTarget(self, action: #selector(ratingSubmitTapped), for: .touchUpInside)
+        submitBtn.alpha = 0.5
+        submitBtn.isEnabled = false
+        submitBtn.tag = 7777
+
+        let btnRow = UIStackView(arrangedSubviews: [UIView(), submitBtn, UIView()])
+        btnRow.axis = .horizontal
+        btnRow.alignment = .center
+        btnRow.distribution = .equalCentering
+        container.addArrangedSubview(btnRow)
+
+        // Add to response area
+        responseContentStack.addArrangedSubview(container)
+        selectedRating = nil
+
+        container.alpha = 0
+        container.transform = CGAffineTransform(translationX: 0, y: 10)
+        UIView.animate(withDuration: 0.35, delay: 0.15, usingSpringWithDamping: 0.85, initialSpringVelocity: 0) {
+            container.alpha = 1
+            container.transform = .identity
+        }
+    }
+
+    @objc private func ratingButtonTapped(_ sender: UIButton) {
+        let rating = sender.tag
+        selectedRating = rating
+        Haptics.light()
+
+        // Highlight selected, reset others
+        guard let numbersRow = ratingPickerStack?.arrangedSubviews.first as? UIStackView else { return }
+        for case let btn as UIButton in numbersRow.arrangedSubviews {
+            if btn.tag == rating {
+                btn.backgroundColor = DesignTokens.Colors.accent
+                btn.setTitleColor(.white, for: .normal)
+                btn.layer.borderColor = DesignTokens.Colors.accent.cgColor
+            } else {
+                btn.backgroundColor = DesignTokens.Colors.surfacePrimary
+                btn.setTitleColor(DesignTokens.Colors.textPrimary, for: .normal)
+                btn.layer.borderColor = DesignTokens.Colors.separator.cgColor
+            }
+        }
+
+        // Enable submit
+        if let submitBtn = ratingPickerStack?.viewWithTag(7777) as? UIButton {
+            submitBtn.isEnabled = true
+            UIView.animate(withDuration: 0.2) { submitBtn.alpha = 1 }
+        }
+    }
+
+    @objc private func ratingSubmitTapped() {
+        guard let rating = selectedRating else { return }
+        Haptics.light()
+
+        var message = "\(rating)"
+        if let diary = ratingDiaryField?.text, !diary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            message = "\(rating), \(diary)"
+        }
+
+        // Clean up
+        ratingPickerStack?.removeFromSuperview()
+        ratingPickerStack = nil
+        ratingDiaryField = nil
+        selectedRating = nil
+
+        sendMessage(message)
     }
 
     @objc private func optionRowTapped(_ gesture: UITapGestureRecognizer) {

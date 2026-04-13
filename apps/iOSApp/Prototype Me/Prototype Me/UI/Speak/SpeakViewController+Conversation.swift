@@ -162,6 +162,18 @@ extension SpeakViewController {
             return
         }
 
+        // Rating picker?
+        if let ratingCall = response.toolCalls.first(where: { $0.function == "present_rating_picker" }) {
+            let question = (ratingCall.arguments["question"] as? String) ?? response.message
+            let showDiary = (ratingCall.arguments["showDiaryInput"] as? Bool) ?? false
+            messages.append(SpeakChatMessage(role: .assistant, text: question))
+            showRatingPicker(question: question, showDiaryInput: showDiary)
+            isProcessing = false
+            updateControlsForProcessing()
+            quotaLabel.text = "\(response.remainingQuota) Prototype left"
+            return
+        }
+
         // Multiple-choice options?
         if let optionsCall = response.toolCalls.first(where: { $0.function == "present_options" }) {
             let question = (optionsCall.arguments["question"] as? String) ?? response.message

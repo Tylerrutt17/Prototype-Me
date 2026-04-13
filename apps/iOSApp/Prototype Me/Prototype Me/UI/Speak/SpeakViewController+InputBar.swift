@@ -233,6 +233,11 @@ extension SpeakViewController: UITextViewDelegate {
     }
 
     public func textViewDidChange(_ textView: UITextView) {
+        // Rating picker diary field — just toggle its placeholder
+        if textView === ratingDiaryField {
+            textView.viewWithTag(8888)?.isHidden = !textView.text.isEmpty
+            return
+        }
         placeholderLabel.isHidden = !textView.text.isEmpty
         updateTextViewHeight()
         updateClearButton()

@@ -84,13 +84,13 @@ final class DirectiveEditorViewController: BaseViewController {
         observeKeyboard()
 
         // Show wizard by default for create, manual for edit.
-        // If pre-filled from a suggestion, jump straight to manual mode.
+        // If pre-filled from a suggestion, jump straight to manual mode and hide the toggle.
         if isCreate && prefillTitle == nil {
             modeSegment.selectedSegmentIndex = 0
             showMode(0)
         } else {
             if isCreate {
-                modeSegment.selectedSegmentIndex = 1
+                modeSegment.isHidden = true
                 showMode(1)
             }
             wizardContainer.isHidden = true

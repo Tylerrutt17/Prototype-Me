@@ -306,6 +306,20 @@ Examples:
       required: ["question", "options"],
     },
   },
+  {
+    type: "function",
+    strict: false,
+    name: "present_rating_picker",
+    description: "Show a 1-10 rating picker when you need the user to rate something (journal entry, day rating, etc.). The client renders a compact row of numbered buttons. Use this instead of asking the user to type a number. Also optionally show a text input prompt for diary text.",
+    parameters: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "Context shown above the picker, e.g. 'How was your day?'" },
+        showDiaryInput: { type: "boolean", description: "If true, also show a text field for diary entry below the rating picker." },
+      },
+      required: ["question"],
+    },
+  },
 ];
 
 // ── System Prompt ──────────────────────────────
@@ -454,10 +468,14 @@ If unclear → present options:
 
 ---
 
-### **Confirmation & Options**
+### **Confirmation & Options (strict)**
 
-* Use **ask_confirmation** for yes/no
-* Use **present_options** for 2–5 choices
+**ALWAYS use tool-based UI for choices. NEVER list options in plain text.**
+
+* Yes/no → **ask_confirmation**
+* 2–5 choices → **present_options** (with icons)
+* Rating 1-10 → **present_rating_picker**
+* Only use plain text questions for truly freeform answers (descriptions, diary content, etc.)
 
 ---
 
@@ -474,9 +492,13 @@ Fields:
 
 Rules:
 
-* Always call **get_journal_entry first**
-* If exists → update only mentioned fields
-* If not → create (only if diary + rating exist)
+* Always assume date = **today** ({today}) unless user specifies otherwise ("yesterday", a specific date, etc.)
+* **ALWAYS call get_journal_entry FIRST** — before asking the user anything. Check if an entry exists.
+* If entry EXISTS → tell the user ("You already have an entry for today rated **7**") and use **present_options** with buttons like ["Update rating", "Add to diary", "Replace diary"]. Never just ask in plain text.
+* If entry does NOT exist → use **present_rating_picker** with showDiaryInput=true so the user can rate + write in one step.
+* When you need a rating from the user, ALWAYS use **present_rating_picker** — never ask them to type a number.
+
+**Critical: NEVER ask questions in plain text when buttons exist.** Any time you're presenting choices to the user (update vs create, which field, which item, etc.) — use present_options or present_rating_picker. Plain text questions should only be used when the answer is truly freeform (like "what do you want the description to say?").
 
 Notes:
 
