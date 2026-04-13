@@ -4,7 +4,7 @@ import { config } from "../config.js";
 
 // ── Models ─────────────────────────────────────
 
-export const OPENAI_MODEL = "gpt-5-nano";
+export const OPENAI_MODEL = "gpt-4.1-nano";
 export const ANTHROPIC_MODEL = "claude-3-5-haiku-latest";
 
 // ── Clients ────────────────────────────────────
