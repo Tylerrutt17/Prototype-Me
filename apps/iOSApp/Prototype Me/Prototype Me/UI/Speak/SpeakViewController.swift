@@ -24,13 +24,15 @@ class SpeakViewController: BaseViewController {
     var onEditDirective: ((UUID, String?, String?) -> Void)?    // id, title, body
     var onEditNote: ((UUID, String?, String?) -> Void)?         // id, title, body
     var onEditJournal: ((String, Int?, String?, [String]?) -> Void)?  // date, rating, diary, tags
+    var scheduleService: ScheduleService?
 
     lazy var actionExecutor = SpeakActionExecutor(
         directiveService: directiveService,
         noteService: noteService,
         dayEntryService: dayEntryService,
         modeService: modeService,
-        folderService: folderService
+        folderService: folderService,
+        scheduleService: scheduleService
     )
 
     // MARK: - Response UI
@@ -39,6 +41,7 @@ class SpeakViewController: BaseViewController {
     let responseContentStack = UIStackView()
     let responseLabel = UILabel()
     let thinkingDotsView = ThinkingDotsView()
+    let thinkingBar = ThinkingBarView()
     let thinkingContextPill = UIView()
     let thinkingContextLabel = UILabel()
     let actionConfirmView = ActionConfirmView()
@@ -104,6 +107,7 @@ class SpeakViewController: BaseViewController {
         super.viewDidLoad()
 
         setupBackgroundGlows()
+        setupBackgroundGrid()
         startBackgroundGlowAnimations()
         setupQuota()
         setupVoiceInput()
@@ -232,7 +236,10 @@ class SpeakViewController: BaseViewController {
         optionsStack.tag = 9003
         responseContentStack.addArrangedSubview(optionsStack)
 
-        // Thinking dots
+        // Thinking bar (gradient accent under nav bar — added last so it's on top of scroll view)
+        thinkingBar.translatesAutoresizingMaskIntoConstraints = false
+
+        // Thinking dots (kept for the thinking area stack, but hidden — bar replaces it visually)
         thinkingDotsView.isHidden = true
         thinkingDotsView.translatesAutoresizingMaskIntoConstraints = false
 
@@ -299,6 +306,14 @@ class SpeakViewController: BaseViewController {
             thinkingAreaStack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: pad),
             thinkingAreaStack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -pad),
         ])
+
+        // Add thinking bar on top of everything (must be after scroll view so it's not covered)
+        view.addSubview(thinkingBar)
+        NSLayoutConstraint.activate([
+            thinkingBar.topAnchor.constraint(equalTo: contentTopAnchor),
+            thinkingBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            thinkingBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
     }
 
     // MARK: - Thinking Context Pill
@@ -357,16 +372,15 @@ class SpeakViewController: BaseViewController {
             self.actionConfirmView.alpha = 1
         }
 
-        // Show thinking dots
-        thinkingDotsView.isHidden = false
-        thinkingDotsView.alpha = 0
-        thinkingDotsView.startAnimating()
-        UIView.animate(withDuration: 0.3, delay: 0.1) {
-            self.thinkingDotsView.alpha = 1
+        // Fire the bar splash as the pulse is arriving at the top (~1.0s)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self, self.isProcessing else { return }
+            self.thinkingBar.startAnimating()
         }
     }
 
     func showResponse(text: String) {
+        thinkingBar.stopAnimating()
         thinkingDotsView.stopAnimating()
         hideThinkingContext()
         responseLabel.attributedText = Self.renderSpeakMarkdown(text)
@@ -658,6 +672,7 @@ class SpeakViewController: BaseViewController {
     }
 
     func showError(_ text: String, showUpgrade: Bool = false) {
+        thinkingBar.stopAnimating()
         thinkingDotsView.stopAnimating()
         hideThinkingContext()
 
@@ -1043,6 +1058,24 @@ class SpeakViewController: BaseViewController {
         layer.startPoint = CGPoint(x: 0.5, y: 0.5)
         layer.endPoint = CGPoint(x: 1.0, y: 1.0)
         return layer
+    }
+
+    var gridView: GridBackgroundView?
+
+    /// Subtle grid pattern behind all content.
+    private func setupBackgroundGrid() {
+        let grid = GridBackgroundView()
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        grid.isUserInteractionEnabled = false
+        view.insertSubview(grid, at: 0)
+        gridView = grid
+        let gridView = grid
+        NSLayoutConstraint.activate([
+            gridView.topAnchor.constraint(equalTo: view.topAnchor),
+            gridView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            gridView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            gridView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
     }
 
     /// Four persistent radial glows in each corner, behind all content.

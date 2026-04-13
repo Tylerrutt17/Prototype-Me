@@ -28,7 +28,7 @@ final class PlaybookEditorViewController: BaseViewController {
         super.viewDidLoad()
         navBar.setTitle(folderId == nil ? "New Folder" : "Edit Folder", animated: false)
         navBar.setLeftButton(title: "Cancel", systemImage: nil, action: { [weak self] in self?.cancelTapped() })
-        navBar.setRightButtons([NavBarButton(title: "Save", action: { [weak self] in self?.saveTapped() })])
+        navBar.setRightButtons([NavBarButton(title: "Save", prominent: true, action: { [weak self] in self?.saveTapped() })])
 
         buildForm()
         if folderId != nil { loadExistingFolder() }

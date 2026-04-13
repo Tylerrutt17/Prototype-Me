@@ -7,28 +7,31 @@ final class ActiveModePickerViewController: BaseViewController {
     var modeService: ModeService?
     var noteService: NoteService?
     var onDone: (() -> Void)?
+    var onCreateMode: (() -> Void)?
+    var onModeSelected: ((UUID) -> Void)?
 
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, ModePickerRow>!
+    private var activeModeId: UUID?
 
     nonisolated private enum Section: Sendable { case main }
 
     nonisolated private enum ModePickerRow: Hashable, Sendable {
-        case noMode(Bool)           // isSelected
-        case mode(NotePage, Bool)   // note, isSelected
+        case noMode
+        case mode(NotePage)
 
         func hash(into hasher: inout Hasher) {
             switch self {
-            case .noMode:          hasher.combine("noMode")
-            case .mode(let n, _):  hasher.combine(n.id)
+            case .noMode:         hasher.combine("noMode")
+            case .mode(let n):    hasher.combine(n.id)
             }
         }
 
         static func == (lhs: ModePickerRow, rhs: ModePickerRow) -> Bool {
             switch (lhs, rhs) {
             case (.noMode, .noMode):                   return true
-            case (.mode(let a, _), .mode(let b, _)):   return a.id == b.id
-            default:                                    return false
+            case (.mode(let a), .mode(let b)):         return a.id == b.id
+            default:                                   return false
             }
         }
     }
@@ -41,6 +44,11 @@ final class ActiveModePickerViewController: BaseViewController {
         navBar.setLeftButton(title: "Done", systemImage: nil, action: { [weak self] in
             self?.onDone?()
         })
+        navBar.setRightButtons([
+            NavBarButton(systemImage: "plus", action: { [weak self] in
+                self?.onCreateMode?()
+            }),
+        ])
 
         buildUI()
         configureDataSource()
@@ -88,12 +96,18 @@ final class ActiveModePickerViewController: BaseViewController {
     // MARK: - Data Source
 
     private func configureDataSource() {
-        let cellReg = UICollectionView.CellRegistration<ModePickerCell, ModePickerRow> { cell, _, row in
+        let cellReg = UICollectionView.CellRegistration<ModePickerCell, ModePickerRow> { [weak self] cell, _, row in
+            let activeId = self?.activeModeId
             switch row {
-            case .noMode(let isSelected):
-                cell.configureNoMode(isSelected: isSelected)
-            case .mode(let note, let isSelected):
-                cell.configure(with: note, isActive: isSelected)
+            case .noMode:
+                cell.configureNoMode(isSelected: activeId == nil)
+                cell.onChevronTapped = nil
+            case .mode(let note):
+                cell.configure(with: note, isActive: note.id == activeId)
+                cell.onChevronTapped = { [weak self] in
+                    self?.onDone?()
+                    self?.onModeSelected?(note.id)
+                }
             }
         }
 
@@ -105,41 +119,44 @@ final class ActiveModePickerViewController: BaseViewController {
     // MARK: - Observation
 
     private func loadData() {
-        let observation = ValueObservation.tracking { db -> [ModePickerRow] in
+        let observation = ValueObservation.tracking { db -> (UUID?, [NotePage]) in
             let modes = try NotePage
                 .filter(Column("kind") == NoteKind.mode.rawValue)
                 .order(Column("sortIndex"))
                 .fetchAll(db)
             let activeId = try ActiveMode.fetchOne(db)?.noteId
-
-            var rows: [ModePickerRow] = [.noMode(activeId == nil)]
-            rows.append(contentsOf: modes.map { .mode($0, $0.id == activeId) })
-            return rows
+            return (activeId, modes)
         }
 
-        observationCancellable = observation.start(in: dbQueue, onError: { _ in }, onChange: { [weak self] rows in
+        observationCancellable = observation.start(in: dbQueue, onError: { _ in }, onChange: { [weak self] (activeId, modes) in
+            guard let self else { return }
+            self.activeModeId = activeId
+
+            var rows: [ModePickerRow] = [.noMode]
+            rows.append(contentsOf: modes.map { .mode($0) })
+
             var snapshot = NSDiffableDataSourceSnapshot<Section, ModePickerRow>()
             snapshot.appendSections([.main])
             snapshot.appendItems(rows)
-            self?.dataSource.apply(snapshot, animatingDifferences: false)
+            self.dataSource.apply(snapshot, animatingDifferences: false)
 
-            var reconfigSnap = self?.dataSource.snapshot() ?? snapshot
+            var reconfigSnap = self.dataSource.snapshot()
             reconfigSnap.reconfigureItems(reconfigSnap.itemIdentifiers)
-            self?.dataSource.apply(reconfigSnap, animatingDifferences: false)
+            self.dataSource.apply(reconfigSnap, animatingDifferences: false)
         })
     }
 
     // MARK: - Select
 
     private func selectMode(_ row: ModePickerRow) {
+        let newModeId: UUID? = if case .mode(let note) = row { note.id } else { nil }
         Task {
             do {
-                try await modeService?.deactivateAll()
-                if case .mode(let note, _) = row {
-                    try await modeService?.activate(noteId: note.id)
-                }
+                try await modeService?.switchTo(noteId: newModeId)
                 Haptics.success()
-                onDone?()
+                // Brief delay so the Focus carousel processes the change before dismiss
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                await MainActor.run { onDone?() }
             } catch {
                 Haptics.error()
             }
@@ -209,7 +226,7 @@ extension ActiveModePickerViewController: UICollectionViewDropDelegate {
 
         // Persist new order (skip the .noMode row)
         let modeIds = items.compactMap { row -> UUID? in
-            if case .mode(let note, _) = row { return note.id }
+            if case .mode(let note) = row { return note.id }
             return nil
         }
         Task { try? await noteService?.reorderNotes(ids: modeIds) }
@@ -223,6 +240,8 @@ private final class ModePickerCell: UICollectionViewCell {
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
     private let checkmark = UIImageView()
+    private let chevronButton = UIButton(type: .system)
+    var onChevronTapped: (() -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -246,7 +265,13 @@ private final class ModePickerCell: UICollectionViewCell {
         checkmark.contentMode = .scaleAspectFit
         checkmark.setContentHuggingPriority(.required, for: .horizontal)
 
-        let stack = UIStackView(arrangedSubviews: [iconView, titleLabel, UIView(), checkmark])
+        let chevronConfig = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+        chevronButton.setImage(UIImage(systemName: "chevron.right", withConfiguration: chevronConfig), for: .normal)
+        chevronButton.tintColor = DesignTokens.Colors.textTertiary
+        chevronButton.setContentHuggingPriority(.required, for: .horizontal)
+        chevronButton.addTarget(self, action: #selector(chevronTapped), for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [iconView, titleLabel, UIView(), checkmark, chevronButton])
         stack.axis = .horizontal
         stack.spacing = DesignTokens.Spacing.md
         stack.alignment = .center
@@ -265,10 +290,15 @@ private final class ModePickerCell: UICollectionViewCell {
         ])
     }
 
+    @objc private func chevronTapped() {
+        onChevronTapped?()
+    }
+
     func configureNoMode(isSelected: Bool) {
         titleLabel.text = "No Mode"
         let iconConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)
         iconView.image = UIImage(systemName: "moon.zzz", withConfiguration: iconConfig)
+        chevronButton.isHidden = true
         applySelectedState(isSelected)
     }
 
@@ -276,6 +306,7 @@ private final class ModePickerCell: UICollectionViewCell {
         titleLabel.text = note.title
         let iconConfig = UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)
         iconView.image = UIImage(systemName: "bolt.fill", withConfiguration: iconConfig)
+        chevronButton.isHidden = false
         applySelectedState(isActive)
     }
 
@@ -286,8 +317,8 @@ private final class ModePickerCell: UICollectionViewCell {
         if isSelected {
             checkmark.image = UIImage(systemName: "checkmark.circle.fill", withConfiguration: checkConfig)
             checkmark.tintColor = DesignTokens.Colors.success
-            contentView.layer.borderWidth = 2
-            contentView.layer.borderColor = DesignTokens.Colors.accent.withAlphaComponent(0.5).cgColor
+            contentView.layer.borderWidth = 2.5
+            contentView.layer.borderColor = DesignTokens.Colors.accent.withAlphaComponent(0.6).cgColor
         } else {
             checkmark.image = UIImage(systemName: "circle", withConfiguration: checkConfig)
             checkmark.tintColor = DesignTokens.Colors.textTertiary

@@ -40,6 +40,9 @@ class FocusCoordinator: Coordinator {
         vc.onPickModesTapped = { [weak self] in
             self?.presentActiveModePicker()
         }
+        vc.onAskAIForDirective = { [weak self] directiveId in
+            self?.onAskAIForDirective?(directiveId)
+        }
         vc.onReplayOnboardingTapped = { [weak self] in
             self?.presentOnboardingPreview()
         }
@@ -154,6 +157,24 @@ class FocusCoordinator: Coordinator {
         onFreshStartRequested?()
     }
 
+    private func presentNewModeEditor() {
+        let editor = NoteEditorViewController()
+        editor.dbQueue = environment.db.dbQueue
+        editor.noteService = environment.noteService
+        editor.preselectedKind = .mode
+        editor.onCreated = { [weak self] noteId, kind in
+            guard kind == .mode else { return }
+            Task {
+                try? await self?.environment.modeService.switchTo(noteId: noteId)
+            }
+        }
+        editor.onSave = { [weak self] in
+            self?.navigationController.dismiss(animated: true)
+        }
+        let nav = UINavigationController(rootViewController: editor)
+        navigationController.present(nav, animated: true)
+    }
+
     private func presentActiveModePicker() {
         let picker = ActiveModePickerViewController()
         picker.dbQueue = environment.db.dbQueue
@@ -161,6 +182,15 @@ class FocusCoordinator: Coordinator {
         picker.noteService = environment.noteService
         picker.onDone = { [weak self] in
             self?.navigationController.dismiss(animated: true)
+        }
+        picker.onCreateMode = { [weak self] in
+            guard let self else { return }
+            self.navigationController.dismiss(animated: true) {
+                self.presentNewModeEditor()
+            }
+        }
+        picker.onModeSelected = { [weak self] noteId in
+            self?.showModeDetail(noteId: noteId)
         }
         let nav = UINavigationController(rootViewController: picker)
         navigationController.present(nav, animated: true)

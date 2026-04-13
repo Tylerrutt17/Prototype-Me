@@ -25,20 +25,48 @@ class HistoryViewController: BaseViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         navBar.setTitle("History", animated: false)
+        showComingSoon()
+    }
 
-        configureCollectionView()
-        configureDataSource()
-        loadLocalData()
+    private func showComingSoon() {
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(container)
 
-        if AuthService.isPro {
-            observeLocalReviews()
-            Task { try? await periodicReviewService?.refreshFromServer() }
-            navBar.setRightButtons([
-                NavBarButton(systemImage: "sparkles") { [weak self] in
-                    self?.triggerTestReview()
-                }
-            ])
-        }
+        let iconConfig = UIImage.SymbolConfiguration(pointSize: 48, weight: .light)
+        let iconView = UIImageView(image: UIImage(systemName: "sparkles", withConfiguration: iconConfig))
+        iconView.tintColor = DesignTokens.Colors.textTertiary
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+
+        let titleLabel = UILabel()
+        titleLabel.text = "Intelligence Summaries"
+        titleLabel.font = DesignTokens.Typography.rounded(style: .title3, weight: .semibold)
+        titleLabel.textColor = DesignTokens.Colors.textPrimary
+        titleLabel.textAlignment = .center
+
+        let subtitleLabel = UILabel()
+        subtitleLabel.text = "Insights, trends, and weekly reviews — coming soon."
+        subtitleLabel.font = DesignTokens.Typography.body
+        subtitleLabel.textColor = DesignTokens.Colors.textSecondary
+        subtitleLabel.textAlignment = .center
+        subtitleLabel.numberOfLines = 0
+
+        let stack = UIStackView(arrangedSubviews: [iconView, titleLabel, subtitleLabel])
+        stack.axis = .vertical
+        stack.spacing = DesignTokens.Spacing.md
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            container.topAnchor.constraint(equalTo: contentTopAnchor),
+            container.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            container.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            stack.centerYAnchor.constraint(equalTo: container.centerYAnchor, constant: -40),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.xxxl),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.xxxl),
+        ])
     }
 
     // MARK: - Collection View

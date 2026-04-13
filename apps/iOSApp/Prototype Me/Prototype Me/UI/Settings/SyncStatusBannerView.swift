@@ -9,7 +9,7 @@ class SyncStatusBannerView: UIView {
     }
 
     enum State {
-        case synced
+        case synced(Date?)
         case syncing
         case pending(Int)
         case error(SyncErrorKind)
@@ -56,18 +56,25 @@ class SyncStatusBannerView: UIView {
             label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -DesignTokens.Spacing.sm),
         ])
 
-        configure(state: .synced)
+        configure(state: .synced(nil))
     }
 
     func configure(state: State) {
         let iconConfig = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
 
         switch state {
-        case .synced:
+        case .synced(let lastSyncDate):
             backgroundColor = DesignTokens.Colors.accentSecondary.withAlphaComponent(0.12)
             iconView.image = UIImage(systemName: "checkmark.icloud", withConfiguration: iconConfig)
             iconView.tintColor = DesignTokens.Colors.accentSecondary
-            label.text = "All synced"
+            if let lastSyncDate {
+                let fmt = DateFormatter()
+                fmt.dateStyle = .short
+                fmt.timeStyle = .short
+                label.text = "All synced · \(fmt.string(from: lastSyncDate))"
+            } else {
+                label.text = "All synced"
+            }
             label.textColor = DesignTokens.Colors.accentSecondary
             stopSpinning()
 

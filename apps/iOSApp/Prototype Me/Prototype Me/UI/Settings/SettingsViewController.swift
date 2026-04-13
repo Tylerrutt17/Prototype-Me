@@ -100,7 +100,7 @@ class SettingsViewController: BaseViewController {
                 } else if outbox > 0 {
                     syncBanner.configure(state: .pending(outbox))
                 } else {
-                    syncBanner.configure(state: .synced)
+                    syncBanner.configure(state: .synced(info?.lastPushAt ?? info?.lastPullAt))
                 }
             }
         }

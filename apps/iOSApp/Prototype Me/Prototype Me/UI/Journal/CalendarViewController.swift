@@ -28,6 +28,8 @@ class CalendarViewController: BaseViewController {
     private var selectedDate: String?
     private var allDays: [CalendarDay] = []
     private var entryCache: [String: DayEntry] = [:]   // date → entry
+    private var displayedMonth = Date.now
+    private var cachedEntries: [DayEntry] = []
     private let todayDateString: String = {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
@@ -36,6 +38,8 @@ class CalendarViewController: BaseViewController {
 
     // MARK: - Calendar UI
 
+    private let monthHeaderStack = UIStackView()
+    private let monthLabel = UILabel()
     private let dayHeaderStack = UIStackView()
     private var calendarCollectionView: UICollectionView!
     private var calendarDataSource: UICollectionViewDiffableDataSource<CalendarSection, CalendarDay>!
@@ -71,6 +75,7 @@ class CalendarViewController: BaseViewController {
             navBar.setTitle("Calendar", animated: false)
         }
 
+        setupMonthHeader()
         setupDayHeaders()
         setupCalendar()
         setupDetailPanel()
@@ -81,6 +86,64 @@ class CalendarViewController: BaseViewController {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
         selectDay(fmt.string(from: .now))
+    }
+
+    // MARK: - Month Header
+
+    private func setupMonthHeader() {
+        let chevronConfig = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+
+        let prevButton = UIButton(type: .system)
+        prevButton.setImage(UIImage(systemName: "chevron.left", withConfiguration: chevronConfig), for: .normal)
+        prevButton.tintColor = DesignTokens.Colors.accent
+        prevButton.addTarget(self, action: #selector(prevMonthTapped), for: .touchUpInside)
+
+        let nextButton = UIButton(type: .system)
+        nextButton.setImage(UIImage(systemName: "chevron.right", withConfiguration: chevronConfig), for: .normal)
+        nextButton.tintColor = DesignTokens.Colors.accent
+        nextButton.addTarget(self, action: #selector(nextMonthTapped), for: .touchUpInside)
+
+        monthLabel.font = DesignTokens.Typography.rounded(style: .headline, weight: .semibold)
+        monthLabel.textColor = DesignTokens.Colors.textPrimary
+        monthLabel.textAlignment = .center
+
+        monthHeaderStack.axis = .horizontal
+        monthHeaderStack.alignment = .center
+        monthHeaderStack.distribution = .equalSpacing
+        monthHeaderStack.translatesAutoresizingMaskIntoConstraints = false
+        monthHeaderStack.addArrangedSubview(prevButton)
+        monthHeaderStack.addArrangedSubview(monthLabel)
+        monthHeaderStack.addArrangedSubview(nextButton)
+
+        view.addSubview(monthHeaderStack)
+        NSLayoutConstraint.activate([
+            monthHeaderStack.topAnchor.constraint(equalTo: calendarContentTop, constant: DesignTokens.Spacing.sm),
+            monthHeaderStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.lg),
+            monthHeaderStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.lg),
+            monthHeaderStack.heightAnchor.constraint(equalToConstant: 36),
+        ])
+
+        updateMonthLabel()
+    }
+
+    private func updateMonthLabel() {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMMM yyyy"
+        monthLabel.text = fmt.string(from: displayedMonth)
+    }
+
+    @objc private func prevMonthTapped() {
+        guard let prev = Calendar.current.date(byAdding: .month, value: -1, to: displayedMonth) else { return }
+        displayedMonth = prev
+        updateMonthLabel()
+        rebuildCalendar(entries: cachedEntries)
+    }
+
+    @objc private func nextMonthTapped() {
+        guard let next = Calendar.current.date(byAdding: .month, value: 1, to: displayedMonth) else { return }
+        displayedMonth = next
+        updateMonthLabel()
+        rebuildCalendar(entries: cachedEntries)
     }
 
     // MARK: - Day Headers
@@ -102,7 +165,7 @@ class CalendarViewController: BaseViewController {
 
         view.addSubview(dayHeaderStack)
         NSLayoutConstraint.activate([
-            dayHeaderStack.topAnchor.constraint(equalTo: calendarContentTop, constant: DesignTokens.Spacing.sm),
+            dayHeaderStack.topAnchor.constraint(equalTo: monthHeaderStack.bottomAnchor, constant: DesignTokens.Spacing.sm),
             dayHeaderStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.lg),
             dayHeaderStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.lg),
             dayHeaderStack.heightAnchor.constraint(equalToConstant: 24),
@@ -194,7 +257,9 @@ class CalendarViewController: BaseViewController {
         // Edit button
         var editConfig = UIButton.Configuration.filled()
         editConfig.title = "Edit Entry"
-        editConfig.image = UIImage(systemName: "pencil")
+        editConfig.image = UIImage(named: "edit")?
+            .withRenderingMode(.alwaysTemplate)
+            .resized(to: CGSize(width: 18, height: 18))
         editConfig.imagePadding = DesignTokens.Spacing.xs
         editConfig.cornerStyle = .large
         editConfig.baseBackgroundColor = DesignTokens.Colors.accent
@@ -209,7 +274,7 @@ class CalendarViewController: BaseViewController {
         createConfig.image = UIImage(systemName: "plus.circle.fill")
         createConfig.imagePadding = DesignTokens.Spacing.xs
         createConfig.cornerStyle = .large
-        createConfig.baseBackgroundColor = DesignTokens.Colors.accent
+        createConfig.baseBackgroundColor = DesignTokens.Colors.success
         createConfig.baseForegroundColor = DesignTokens.Colors.textPrimary
         createButton.configuration = createConfig
         createButton.addTarget(self, action: #selector(createTapped), for: .touchUpInside)
@@ -323,9 +388,9 @@ class CalendarViewController: BaseViewController {
     }
 
     private func rebuildCalendar(entries: [DayEntry]) {
+        cachedEntries = entries
         let cal = Calendar.current
-        let today = Date.now
-        guard let monthStart = cal.date(from: cal.dateComponents([.year, .month], from: today)) else { return }
+        guard let monthStart = cal.date(from: cal.dateComponents([.year, .month], from: displayedMonth)) else { return }
 
         let weekday = cal.component(.weekday, from: monthStart)
         let mondayOffset = (weekday + 5) % 7
@@ -386,7 +451,12 @@ class CalendarViewController: BaseViewController {
         let displayFmt = DateFormatter()
         displayFmt.dateFormat = "EEEE, MMMM d"
         if let d = fmt.date(from: date) {
-            selectedDateLabel.text = displayFmt.string(from: d)
+            let dateText = displayFmt.string(from: d)
+            if Calendar.current.isDateInToday(d) {
+                selectedDateLabel.text = "\(dateText) — Today"
+            } else {
+                selectedDateLabel.text = dateText
+            }
         } else {
             selectedDateLabel.text = date
         }

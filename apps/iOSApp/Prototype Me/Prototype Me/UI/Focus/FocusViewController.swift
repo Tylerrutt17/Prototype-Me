@@ -2,19 +2,24 @@ import UIKit
 import GRDB
 
 nonisolated private enum FocusSection: Int, Hashable, Sendable {
-    case modes
     case directives
     case balloons
     case schedule
 }
 
 nonisolated private enum FocusItem: Hashable, Sendable {
-    case noMode                       // "No Mode" placeholder card
-    case mode(NotePage)
     case directive(DirectiveRowData)  // Linked directives for active mode
+    case emptyDirectives              // "No directives — tap to add"
     case balloon(DirectiveRowData)
     case viewAllBalloons(Int)         // Condensed row with count when > 4
     case scheduleRow(ScheduleInstanceRow)
+}
+
+// Separate section/item enums for the mode carousel
+nonisolated private enum CarouselSection: Sendable { case main }
+nonisolated private enum CarouselItem: Hashable, Sendable {
+    case noMode
+    case mode(NotePage)
 }
 
 class FocusViewController: BaseViewController {
@@ -26,6 +31,7 @@ class FocusViewController: BaseViewController {
     var balloonNotificationService: BalloonNotificationService?
     var modeService: ModeService?
     var onPickModesTapped: (() -> Void)?
+    var onAskAIForDirective: ((UUID) -> Void)?
     var noteService: NoteService?
 
     private static let maxInlineBalloons = 4
@@ -34,18 +40,24 @@ class FocusViewController: BaseViewController {
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<FocusSection, FocusItem>!
 
+    // Mode carousel (separate from main collection view)
+    private var modeCarousel: UICollectionView!
+    private var modeDataSource: UICollectionViewDiffableDataSource<CarouselSection, CarouselItem>!
+    private let modesHeaderView = SectionHeaderWithActionView(frame: .zero)
+    private let carouselContainer = UIView()
+    private let carouselFullHeight: CGFloat = 138
+    private var collectionTopConstraint: NSLayoutConstraint!
+
     /// All mode notes (for the carousel)
     private var allModes: [NotePage] = []
     /// Currently active mode ID (nil = "No Mode")
     private var activeModeId: UUID?
-    /// Prevents re-entrant scrolls during programmatic updates
-    private var suppressModeScroll = false
-    /// Debounce timer for mode changes during scroll
-    private var modeDebounceTimer: Timer?
     /// Whether initial scroll to active mode has happened
     private var didInitialScroll = false
-    /// Temporarily ignore observation-driven mode updates after user swipe
-    private var userDrivenModeChange = false
+    /// Suppress mode-switch during programmatic scrolls or snapshot applies
+    private var suppressCarouselModeSwitch = false
+    /// Debounce timer for carousel swipe mode changes
+    private var carouselDebounceTimer: Timer?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -55,6 +67,9 @@ class FocusViewController: BaseViewController {
         ])
 
         configureCollectionView()
+        configureModeCarousel()
+        view.bringSubviewToFront(carouselContainer)
+        configureCarouselDataSource()
         configureDataSource()
         loadData()
 
@@ -76,14 +91,84 @@ class FocusViewController: BaseViewController {
     }
 
     private func restartVisibleModeAnimations() {
-        for cell in collectionView.visibleCells {
+        for cell in modeCarousel.visibleCells {
             if let modeCard = cell as? ModeCard {
                 modeCard.restartAnimationsIfNeeded()
             }
         }
     }
 
-    // MARK: - Collection View
+    // MARK: - Mode Carousel (separate from main list)
+
+    private func configureModeCarousel() {
+        carouselContainer.backgroundColor = DesignTokens.Colors.background
+        carouselContainer.clipsToBounds = false
+        carouselContainer.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(carouselContainer)
+
+        // "Modes · See All" header
+        modesHeaderView.configure(title: "Modes", actionTitle: "See All") { [weak self] in
+            self?.onPickModesTapped?()
+        }
+        modesHeaderView.translatesAutoresizingMaskIntoConstraints = false
+        carouselContainer.addSubview(modesHeaderView)
+
+        // Horizontal paging layout — card width matches screen minus insets
+        let screenWidth = UIScreen.main.bounds.width
+        let inset: CGFloat = DesignTokens.Spacing.lg
+        let cardWidth = screenWidth - inset * 2
+        let itemSize = NSCollectionLayoutSize(
+            widthDimension: .absolute(cardWidth),
+            heightDimension: .estimated(80)
+        )
+        let item = NSCollectionLayoutItem(layoutSize: itemSize)
+        let groupSize = NSCollectionLayoutSize(
+            widthDimension: .absolute(cardWidth),
+            heightDimension: .estimated(80)
+        )
+        let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
+        let section = NSCollectionLayoutSection(group: group)
+        section.orthogonalScrollingBehavior = .groupPagingCentered
+        section.interGroupSpacing = DesignTokens.Spacing.md
+        section.contentInsets = NSDirectionalEdgeInsets(
+            top: DesignTokens.Spacing.xs,
+            leading: 0,
+            bottom: DesignTokens.Spacing.xs,
+            trailing: 0
+        )
+        section.visibleItemsInvalidationHandler = { [weak self] visibleItems, offset, env in
+            self?.handleCarouselScroll(visibleItems: visibleItems, offset: offset, containerWidth: env.container.contentSize.width)
+        }
+
+        let layout = UICollectionViewCompositionalLayout { _, _ in section }
+
+        modeCarousel = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        modeCarousel.backgroundColor = .clear
+        modeCarousel.delegate = self
+        modeCarousel.showsHorizontalScrollIndicator = false
+        modeCarousel.isScrollEnabled = false // vertical scroll disabled; orthogonal handles horizontal
+        modeCarousel.translatesAutoresizingMaskIntoConstraints = false
+        carouselContainer.addSubview(modeCarousel)
+
+        NSLayoutConstraint.activate([
+            carouselContainer.topAnchor.constraint(equalTo: contentTopAnchor),
+            carouselContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            carouselContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            carouselContainer.heightAnchor.constraint(equalToConstant: carouselFullHeight),
+
+            modesHeaderView.topAnchor.constraint(equalTo: carouselContainer.topAnchor, constant: DesignTokens.Spacing.sm),
+            modesHeaderView.leadingAnchor.constraint(equalTo: carouselContainer.leadingAnchor),
+            modesHeaderView.trailingAnchor.constraint(equalTo: carouselContainer.trailingAnchor),
+            modesHeaderView.heightAnchor.constraint(equalToConstant: 28),
+
+            modeCarousel.topAnchor.constraint(equalTo: modesHeaderView.bottomAnchor),
+            modeCarousel.leadingAnchor.constraint(equalTo: carouselContainer.leadingAnchor),
+            modeCarousel.trailingAnchor.constraint(equalTo: carouselContainer.trailingAnchor),
+            modeCarousel.heightAnchor.constraint(equalToConstant: 110),
+        ])
+    }
+
+    // MARK: - Main Collection View
 
     private func configureCollectionView() {
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: createLayout())
@@ -92,10 +177,12 @@ class FocusViewController: BaseViewController {
         collectionView.dragDelegate = self
         collectionView.dropDelegate = self
         collectionView.dragInteractionEnabled = true
-        collectionView.contentInset.top = DesignTokens.Spacing.md
+        collectionView.contentInset.top = carouselFullHeight
+        collectionView.scrollIndicatorInsets.top = carouselFullHeight
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(collectionView)
 
+        // Collection view sits behind the carousel, full height from contentTop
         NSLayoutConstraint.activate([
             collectionView.topAnchor.constraint(equalTo: contentTopAnchor),
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -106,49 +193,41 @@ class FocusViewController: BaseViewController {
 
     private func createLayout() -> UICollectionViewCompositionalLayout {
         UICollectionViewCompositionalLayout { [weak self] sectionIndex, environment in
-            // Look up the actual section identifier from the snapshot, not the raw index
             let section = self?.dataSource.snapshot().sectionIdentifiers[sectionIndex]
 
             switch section {
-            case .modes:
-                // Full-width paging carousel — swipe to change mode
-                let inset: CGFloat = DesignTokens.Spacing.lg
-                let cardWidth = environment.container.contentSize.width - inset * 2
-                let itemSize = NSCollectionLayoutSize(
-                    widthDimension: .absolute(cardWidth),
-                    heightDimension: .estimated(80)
-                )
-                let item = NSCollectionLayoutItem(layoutSize: itemSize)
-                let groupSize = NSCollectionLayoutSize(
-                    widthDimension: .absolute(cardWidth),
-                    heightDimension: .estimated(80)
-                )
-                let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
-                let layoutSection = NSCollectionLayoutSection(group: group)
-                layoutSection.orthogonalScrollingBehavior = .groupPagingCentered
-                layoutSection.interGroupSpacing = DesignTokens.Spacing.md
-                layoutSection.contentInsets = NSDirectionalEdgeInsets(
-                    top: DesignTokens.Spacing.sm,
-                    leading: 0,
-                    bottom: DesignTokens.Spacing.sm,
-                    trailing: 0
-                )
-                let header = Self.sectionHeader()
-                header.contentInsets = NSDirectionalEdgeInsets(
-                    top: 0, leading: DesignTokens.Spacing.lg, bottom: 0, trailing: DesignTokens.Spacing.lg
-                )
-                layoutSection.boundarySupplementaryItems = [header]
-                layoutSection.visibleItemsInvalidationHandler = { [weak self] visibleItems, offset, environment in
-                    self?.handleModeScroll(visibleItems: visibleItems, offset: offset, containerWidth: environment.container.contentSize.width)
-                }
-                return layoutSection
-
             case .directives:
-                // Vertical list of linked directives for the active mode
-                let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .estimated(56))
-                let item = NSCollectionLayoutItem(layoutSize: itemSize)
-                let group = NSCollectionLayoutGroup.vertical(layoutSize: itemSize, subitems: [item])
-                let layoutSection = NSCollectionLayoutSection(group: group)
+                var config = UICollectionLayoutListConfiguration(appearance: .plain)
+                config.backgroundColor = .clear
+                config.showsSeparators = false
+                config.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
+                    guard let self,
+                          let item = self.dataSource.itemIdentifier(for: indexPath),
+                          case .directive(let data) = item else { return nil }
+
+                    let unlink = UIContextualAction(style: .normal, title: "Unlink") { [weak self] _, _, completion in
+                        guard let self, let activeModeId = self.activeModeId else { completion(false); return }
+                        Task {
+                            try? await self.noteService?.unlinkDirective(noteId: activeModeId, directiveId: data.directive.id)
+                            Haptics.success()
+                        }
+                        completion(true)
+                    }
+                    unlink.backgroundColor = DesignTokens.Colors.destructive
+                    unlink.image = UIImage(systemName: "link.badge.minus")
+
+                    let askAI = UIContextualAction(style: .normal, title: "Not Working?") { [weak self] _, _, completion in
+                        self?.onAskAIForDirective?(data.directive.id)
+                        completion(true)
+                    }
+                    askAI.backgroundColor = DesignTokens.Colors.warning
+                    askAI.image = UIImage(systemName: "lightbulb.slash")
+
+                    let swipeConfig = UISwipeActionsConfiguration(actions: [unlink, askAI])
+                    swipeConfig.performsFirstActionWithFullSwipe = false
+                    return swipeConfig
+                }
+                let layoutSection = NSCollectionLayoutSection.list(using: config, layoutEnvironment: environment)
                 layoutSection.interGroupSpacing = DesignTokens.Spacing.xs
                 layoutSection.contentInsets = NSDirectionalEdgeInsets(
                     top: DesignTokens.Spacing.sm,
@@ -233,9 +312,9 @@ class FocusViewController: BaseViewController {
         )
     }
 
-    // MARK: - Data Source
+    // MARK: - Carousel Data Source
 
-    private func configureDataSource() {
+    private func configureCarouselDataSource() {
         let noModeReg = UICollectionView.CellRegistration<NoModeCard, Bool> { cell, _, isSelected in
             cell.configure(isSelected: isSelected)
         }
@@ -244,6 +323,21 @@ class FocusViewController: BaseViewController {
             cell.configure(with: pair.0, isSelected: pair.1)
         }
 
+        modeDataSource = UICollectionViewDiffableDataSource(collectionView: modeCarousel) { [weak self] cv, indexPath, item in
+            switch item {
+            case .noMode:
+                let isSelected = self?.activeModeId == nil
+                return cv.dequeueConfiguredReusableCell(using: noModeReg, for: indexPath, item: isSelected)
+            case .mode(let note):
+                let isSelected = self?.activeModeId == note.id
+                return cv.dequeueConfiguredReusableCell(using: modeReg, for: indexPath, item: (note, isSelected))
+            }
+        }
+    }
+
+    // MARK: - Main Data Source
+
+    private func configureDataSource() {
         let directiveReg = UICollectionView.CellRegistration<DirectiveCell, DirectiveRowData> { cell, _, data in
             cell.configure(with: data)
         }
@@ -266,17 +360,16 @@ class FocusViewController: BaseViewController {
             }
         }
 
+        let emptyDirectivesReg = UICollectionView.CellRegistration<EmptyDirectivesCell, Bool> { cell, _, _ in
+            cell.configure()
+        }
 
-        dataSource = UICollectionViewDiffableDataSource<FocusSection, FocusItem>(collectionView: collectionView) { [weak self] collectionView, indexPath, item in
+        dataSource = UICollectionViewDiffableDataSource<FocusSection, FocusItem>(collectionView: collectionView) { collectionView, indexPath, item in
             switch item {
-            case .noMode:
-                let isSelected = self?.activeModeId == nil
-                return collectionView.dequeueConfiguredReusableCell(using: noModeReg, for: indexPath, item: isSelected)
-            case .mode(let note):
-                let isSelected = self?.activeModeId == note.id
-                return collectionView.dequeueConfiguredReusableCell(using: modeReg, for: indexPath, item: (note, isSelected))
             case .directive(let data):
                 return collectionView.dequeueConfiguredReusableCell(using: directiveReg, for: indexPath, item: data)
+            case .emptyDirectives:
+                return collectionView.dequeueConfiguredReusableCell(using: emptyDirectivesReg, for: indexPath, item: true)
             case .balloon(let data):
                 return collectionView.dequeueConfiguredReusableCell(using: balloonReg, for: indexPath, item: data)
             case .viewAllBalloons(let count):
@@ -289,7 +382,6 @@ class FocusViewController: BaseViewController {
         let sectionHeaderReg = UICollectionView.SupplementaryRegistration<SectionHeaderView>(elementKind: UICollectionView.elementKindSectionHeader) { [weak self] supplementaryView, _, indexPath in
             let section = self?.dataSource.snapshot().sectionIdentifiers[indexPath.section]
             let title: String = switch section {
-            case .modes:      "Modes"
             case .directives: "Directives"
             case .balloons:   "Urgent Balloons"
             case .schedule:   "Today's Schedule"
@@ -298,18 +390,8 @@ class FocusViewController: BaseViewController {
             supplementaryView.configure(title: title)
         }
 
-        let modesHeaderReg = UICollectionView.SupplementaryRegistration<SectionHeaderWithActionView>(elementKind: UICollectionView.elementKindSectionHeader) { [weak self] supplementaryView, _, _ in
-            supplementaryView.configure(title: "Modes", actionTitle: "See All") {
-                self?.onPickModesTapped?()
-            }
-        }
-
-        dataSource.supplementaryViewProvider = { [weak self] collectionView, kind, indexPath in
-            let section = self?.dataSource.snapshot().sectionIdentifiers[indexPath.section]
-            if section == .modes {
-                return collectionView.dequeueConfiguredReusableSupplementary(using: modesHeaderReg, for: indexPath)
-            }
-            return collectionView.dequeueConfiguredReusableSupplementary(using: sectionHeaderReg, for: indexPath)
+        dataSource.supplementaryViewProvider = { collectionView, kind, indexPath in
+            collectionView.dequeueConfiguredReusableSupplementary(using: sectionHeaderReg, for: indexPath)
         }
     }
 
@@ -375,29 +457,47 @@ class FocusViewController: BaseViewController {
         observationCancellable = observation.start(in: dbQueue, onError: { _ in }, onChange: { [weak self] snapshot in
             guard let self else { return }
             let previousModeId = self.activeModeId
+            let previousModes = self.allModes
             self.allModes = snapshot.allModes
+            self.activeModeId = snapshot.activeModeId
+            let modeChangedExternally = previousModeId != snapshot.activeModeId
+            let modeOrderChanged = previousModes.map(\.id) != snapshot.allModes.map(\.id)
+            let modeListChanged = Set(previousModes.map(\.id)) != Set(snapshot.allModes.map(\.id)) || modeOrderChanged
 
-            // Only update activeModeId from observation if not user-driven
-            let modeChangedExternally: Bool
-            if !self.userDrivenModeChange {
-                self.activeModeId = snapshot.activeModeId
-                modeChangedExternally = previousModeId != snapshot.activeModeId
-            } else {
-                modeChangedExternally = false
+            // Only update carousel when modes list or selection actually changed
+            if modeListChanged || modeChangedExternally {
+                print("[Focus] observation updating carousel — modeChanged: \(modeChangedExternally), listChanged: \(modeListChanged)")
+                self.suppressCarouselModeSwitch = true
+                var carouselSnap = NSDiffableDataSourceSnapshot<CarouselSection, CarouselItem>()
+                carouselSnap.appendSections([.main])
+                var carouselItems: [CarouselItem] = [.noMode]
+                carouselItems.append(contentsOf: snapshot.allModes.map { .mode($0) })
+                carouselSnap.appendItems(carouselItems, toSection: .main)
+                self.modeDataSource.apply(carouselSnap, animatingDifferences: false)
+
+                var carouselReconfig = self.modeDataSource.snapshot()
+                carouselReconfig.reconfigureItems(carouselReconfig.itemIdentifiers)
+                self.modeDataSource.apply(carouselReconfig, animatingDifferences: false)
+
+                // Re-scroll to active mode if order changed or mode changed externally
+                if modeOrderChanged || modeChangedExternally {
+                    // scrollCarouselToActiveMode manages its own suppress/unsuppress
+                    self.scrollCarouselToActiveMode(animated: modeChangedExternally && !modeOrderChanged)
+                } else {
+                    self.suppressCarouselModeSwitch = false
+                }
             }
 
+            // Main list snapshot (no modes)
             var ds = NSDiffableDataSourceSnapshot<FocusSection, FocusItem>()
 
-            // Always show modes section with "No Mode" + all mode notes
-            ds.appendSections([.modes])
-            var modeItems: [FocusItem] = [.noMode]
-            modeItems.append(contentsOf: snapshot.allModes.map { .mode($0) })
-            ds.appendItems(modeItems, toSection: .modes)
-
-            // Show linked directives when a mode is active
-            if !snapshot.modeDirectives.isEmpty {
+            if snapshot.activeModeId != nil {
                 ds.appendSections([.directives])
-                ds.appendItems(snapshot.modeDirectives.map { .directive($0) }, toSection: .directives)
+                if snapshot.modeDirectives.isEmpty {
+                    ds.appendItems([.emptyDirectives], toSection: .directives)
+                } else {
+                    ds.appendItems(snapshot.modeDirectives.map { .directive($0) }, toSection: .directives)
+                }
             }
 
             // Show balloons that need attention on Focus
@@ -417,15 +517,9 @@ class FocusViewController: BaseViewController {
 
             if !focusBalloons.isEmpty {
                 ds.appendSections([.balloons])
-                if focusBalloons.count > Self.maxInlineBalloons {
-                    // Show condensed "View All" row with critical count
-                    let badgeCount = criticalCount > 0 ? criticalCount : focusBalloons.count
-                    ds.appendItems([.viewAllBalloons(badgeCount)], toSection: .balloons)
-                } else {
-                    ds.appendItems(focusBalloons.map { .balloon($0) }, toSection: .balloons)
-                }
+                let badgeCount = criticalCount > 0 ? criticalCount : focusBalloons.count
+                ds.appendItems([.viewAllBalloons(badgeCount)], toSection: .balloons)
             } else if criticalCount > 0 {
-                // Edge case: all critical balloons expired (0 sec left) but still exist
                 ds.appendSections([.balloons])
                 ds.appendItems([.viewAllBalloons(criticalCount)], toSection: .balloons)
             }
@@ -435,58 +529,55 @@ class FocusViewController: BaseViewController {
                 ds.appendItems(snapshot.todaySchedule.map { .scheduleRow($0) }, toSection: .schedule)
             }
 
-            self.suppressModeScroll = true
             let isFirstLoad = !self.didInitialScroll
 
             if isFirstLoad {
-                // First load: apply without animation, reconfigure + scroll synchronously
                 self.dataSource.apply(ds, animatingDifferences: false)
 
-                // Reconfigure all items so status/selection changes are reflected
                 var reconfigSnap = self.dataSource.snapshot()
                 reconfigSnap.reconfigureItems(reconfigSnap.itemIdentifiers)
                 self.dataSource.apply(reconfigSnap, animatingDifferences: false)
 
                 self.didInitialScroll = true
-                self.scrollToActiveMode(animated: false)
-                self.suppressModeScroll = false
+                self.scrollCarouselToActiveMode(animated: false)
             } else {
                 self.dataSource.apply(ds, animatingDifferences: true) {
-                    // Reconfigure all items so status/selection changes are reflected
                     var reconfigSnap = self.dataSource.snapshot()
                     reconfigSnap.reconfigureItems(reconfigSnap.itemIdentifiers)
                     self.dataSource.apply(reconfigSnap, animatingDifferences: false)
 
                     if modeChangedExternally {
-                        self.scrollToActiveMode(animated: true)
+                        self.scrollCarouselToActiveMode(animated: true)
                     }
-                    self.suppressModeScroll = false
                 }
             }
         })
     }
 
-    // MARK: - Mode Carousel Logic
+    // MARK: - Mode Switching
 
-    private func scrollToActiveMode(animated: Bool) {
+    private func scrollCarouselToActiveMode(animated: Bool) {
         let targetIndex: Int
         if let activeId = activeModeId, let modeIdx = allModes.firstIndex(where: { $0.id == activeId }) {
-            targetIndex = modeIdx + 1 // +1 for "No Mode" at index 0
+            targetIndex = modeIdx + 1
         } else {
-            targetIndex = 0 // "No Mode"
-        }
+            targetIndex = 0
+        } 
         let indexPath = IndexPath(item: targetIndex, section: 0)
-        collectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: animated)
+        suppressCarouselModeSwitch = true
+        modeCarousel.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: animated)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (animated ? 0.4 : 0.1)) { [weak self] in
+            self?.suppressCarouselModeSwitch = false
+        }
     }
 
-    private func handleModeScroll(visibleItems: [NSCollectionLayoutVisibleItem], offset: CGPoint, containerWidth: CGFloat) {
-        guard !suppressModeScroll else { return }
+    private func handleCarouselScroll(visibleItems: [NSCollectionLayoutVisibleItem], offset: CGPoint, containerWidth: CGFloat) {
+        guard !suppressCarouselModeSwitch else { return }
 
-        // Find the item closest to center
         let centerX = offset.x + containerWidth / 2
         var closest: NSCollectionLayoutVisibleItem?
         var closestDist: CGFloat = .greatestFiniteMagnitude
-        for item in visibleItems where item.indexPath.section == 0 {
+        for item in visibleItems {
             let dist = abs(item.frame.midX - centerX)
             if dist < closestDist {
                 closestDist = dist
@@ -497,50 +588,53 @@ class FocusViewController: BaseViewController {
         guard let snapped = closest else { return }
         let snappedIndex = snapped.indexPath.item
 
-        // Determine which mode this corresponds to
         let newActiveModeId: UUID?
         if snappedIndex == 0 {
-            newActiveModeId = nil // "No Mode"
+            newActiveModeId = nil
         } else {
             let modeIndex = snappedIndex - 1
             guard modeIndex < allModes.count else { return }
             newActiveModeId = allModes[modeIndex].id
         }
 
-        // Only update if changed — debounce so we don't interrupt scroll animation
         guard newActiveModeId != activeModeId else { return }
-
-        modeDebounceTimer?.invalidate()
-        userDrivenModeChange = true
-        modeDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: false) { [weak self] _ in
-            self?.activeModeId = newActiveModeId
+        print("[Focus] handleCarouselScroll wants mode \(String(describing: newActiveModeId)), current: \(String(describing: activeModeId))")
+        carouselDebounceTimer?.invalidate()
+        carouselDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
+            print("[Focus] debounce timer fired for \(String(describing: newActiveModeId))")
             self?.applyModeChange(newActiveModeId)
-            // Allow observation to update mode again after a settle period
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                self?.userDrivenModeChange = false
-            }
         }
     }
 
     private func applyModeChange(_ newModeId: UUID?) {
-        // Write to DB via service (enqueues sync ops)
+        guard newModeId != activeModeId else {
+            print("[Focus] applyModeChange SKIPPED — already \(String(describing: newModeId))")
+            return
+        }
+        print("[Focus] applyModeChange \(String(describing: activeModeId)) → \(String(describing: newModeId))")
+        activeModeId = newModeId
+
         Task {
             do {
-                try await modeService?.deactivateAll()
-                if let modeId = newModeId {
-                    try await modeService?.activate(noteId: modeId)
-                }
+                try await modeService?.switchTo(noteId: newModeId)
                 Haptics.selection()
             } catch {
-                // Silently fail — observation will correct
+                Haptics.error()
             }
         }
 
-        // Reconfigure mode cells to update selected state
-        var snapshot = dataSource.snapshot()
-        let modeItems = snapshot.itemIdentifiers(inSection: .modes)
-        snapshot.reconfigureItems(modeItems)
-        dataSource.apply(snapshot, animatingDifferences: false)
+        // Update visible cells directly to avoid double-animation from reconfigure
+        for cell in modeCarousel.visibleCells {
+            if let indexPath = modeCarousel.indexPath(for: cell),
+               let item = modeDataSource.itemIdentifier(for: indexPath) {
+                switch item {
+                case .noMode:
+                    (cell as? NoModeCard)?.configure(isSelected: newModeId == nil)
+                case .mode(let note):
+                    (cell as? ModeCard)?.configure(with: note, isSelected: note.id == newModeId)
+                }
+            }
+        }
     }
 
     // MARK: - Floating AI Button (placeholder)
@@ -584,17 +678,48 @@ class FocusViewController: BaseViewController {
 
 // MARK: - UICollectionViewDelegate
 
-extension FocusViewController: UICollectionViewDelegate {
+extension FocusViewController: UICollectionViewDelegate, UIScrollViewDelegate {
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === collectionView else { return }
+
+        // contentOffset.y is negative when above rest position (due to contentInset)
+        // At rest: contentOffset.y == -carouselFullHeight
+        // Scrolled down past carousel: contentOffset.y >= 0
+        let scrolledPast = scrollView.contentOffset.y + carouselFullHeight
+        let collapseAmount = max(0, min(carouselFullHeight, scrolledPast))
+
+        // Slide the carousel up and fade it out
+        carouselContainer.transform = CGAffineTransform(translationX: 0, y: -collapseAmount)
+        carouselContainer.alpha = 1 - (collapseAmount / carouselFullHeight)
+    }
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         collectionView.deselectItem(at: indexPath, animated: true)
+
+        // Carousel taps
+        if collectionView === modeCarousel {
+            guard let item = modeDataSource.itemIdentifier(for: indexPath) else { return }
+            switch item {
+            case .noMode:
+                guard activeModeId != nil else { break }
+                applyModeChange(nil)
+            case .mode(let note):
+                if activeModeId == note.id {
+                    onModeSelected?(note.id)
+                } else {
+                    applyModeChange(note.id)
+                }
+            }
+            return
+        }
+
+        // Main list taps
         guard let item = dataSource.itemIdentifier(for: indexPath) else { return }
         switch item {
-        case .noMode:
-            break
-        case .mode(let note):
-            onModeSelected?(note.id)
         case .directive(let data):
             onDirectiveSelected?(data.directive.id)
+        case .emptyDirectives:
+            if let activeModeId { onModeSelected?(activeModeId) }
         case .balloon(let data):
             onBalloonSelected?(data.directive.id)
         case .viewAllBalloons:
@@ -605,7 +730,8 @@ extension FocusViewController: UICollectionViewDelegate {
     }
 
     func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
-        guard let item = dataSource.itemIdentifier(for: indexPath) else { return nil }
+        guard collectionView === self.collectionView,
+              let item = dataSource.itemIdentifier(for: indexPath) else { return nil }
 
         switch item {
         case .scheduleRow(let row):
@@ -874,8 +1000,19 @@ private final class ModeCard: UICollectionViewCell {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        glowLayer.frame = bounds.insetBy(dx: -12, dy: -12)
+        let newGlowFrame = bounds.insetBy(dx: -12, dy: -12)
+        let glowChanged = glowLayer.frame != newGlowFrame
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        glowLayer.frame = newGlowFrame
         shimmerLayer.frame = contentView.bounds
+        CATransaction.commit()
+
+        // Restart animations if the frame changed so they render at the correct position
+        if glowChanged && isCurrentlySelected {
+            stopActiveAnimations()
+            startActiveAnimations()
+        }
     }
 
     func configure(with note: NotePage, isSelected: Bool) {
@@ -884,6 +1021,7 @@ private final class ModeCard: UICollectionViewCell {
         bodyLabel.text = String(note.body.prefix(80))
 
         let shouldAnimate = wasSelected != isSelected
+        print("[ModeCard] configure \(note.title) selected=\(isSelected) wasSelected=\(String(describing: wasSelected)) shouldAnimate=\(shouldAnimate)")
         wasSelected = isSelected
         isCurrentlySelected = isSelected
 
@@ -935,12 +1073,6 @@ private final class ModeCard: UICollectionViewCell {
         contentView.layer.add(borderAnim, forKey: "borderColor")
 
         if isSelected {
-            // Spring scale pop
-            transform = CGAffineTransform(scaleX: 0.93, y: 0.93)
-            UIView.animate(withDuration: duration, delay: 0, usingSpringWithDamping: 0.5, initialSpringVelocity: 10) {
-                self.transform = .identity
-            }
-
             UIView.transition(with: contentView, duration: duration, options: .transitionCrossDissolve) {
                 applyColors()
             }
@@ -1091,9 +1223,65 @@ private final class ViewAllBalloonsCell: UICollectionViewCell {
     }
 }
 
+// MARK: - EmptyDirectivesCell
+
+private final class EmptyDirectivesCell: UICollectionViewCell {
+
+    private let iconView = UIImageView()
+    private let label = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupCell()
+    }
+
+    required init?(coder: NSCoder) { super.init(coder: coder); setupCell() }
+
+    private let chevron = UIImageView()
+
+    private func setupCell() {
+        contentView.backgroundColor = DesignTokens.Colors.surfaceSecondary.withAlphaComponent(0.5)
+        contentView.layer.cornerRadius = DesignTokens.Radii.md
+        contentView.clipsToBounds = true
+
+        let config = UIImage.SymbolConfiguration(pointSize: 16, weight: .medium)
+        iconView.image = UIImage(systemName: "plus.circle", withConfiguration: config)
+        iconView.tintColor = DesignTokens.Colors.textTertiary
+        iconView.contentMode = .scaleAspectFit
+        iconView.setContentHuggingPriority(.required, for: .horizontal)
+
+        label.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium)
+        label.textColor = DesignTokens.Colors.textTertiary
+
+        let chevronConfig = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+        chevron.image = UIImage(systemName: "chevron.right", withConfiguration: chevronConfig)
+        chevron.tintColor = DesignTokens.Colors.textTertiary
+        chevron.contentMode = .scaleAspectFit
+        chevron.setContentHuggingPriority(.required, for: .horizontal)
+
+        let stack = UIStackView(arrangedSubviews: [iconView, label, UIView(), chevron])
+        stack.axis = .horizontal
+        stack.spacing = DesignTokens.Spacing.sm
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: DesignTokens.Spacing.lg),
+            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -DesignTokens.Spacing.lg),
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: DesignTokens.Spacing.lg),
+            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -DesignTokens.Spacing.lg),
+        ])
+    }
+
+    func configure() {
+        label.text = "No directives yet — tap to add"
+    }
+}
+
 // MARK: - SectionHeaderWithActionView
 
-private final class SectionHeaderWithActionView: UICollectionReusableView {
+final class SectionHeaderWithActionView: UICollectionReusableView {
 
     private let titleLabel = UILabel()
     private let actionButton = UIButton(type: .system)

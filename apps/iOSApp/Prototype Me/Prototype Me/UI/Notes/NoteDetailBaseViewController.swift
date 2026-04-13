@@ -6,26 +6,33 @@ import GRDB
 nonisolated enum NoteDetailSection: Int, Sendable {
     case header
     case directives
+    case archivedDirectives
 }
 
 nonisolated enum NoteDetailItem: Hashable, Sendable {
     case header
     case directive(DirectiveRowData)
+    case archivedDirective(DirectiveRowData)
+    case archivedToggle(Int)   // count of archived directives
     case linkButton
 
     func hash(into hasher: inout Hasher) {
         switch self {
-        case .header:              hasher.combine("header")
-        case .directive(let data): hasher.combine("dir"); hasher.combine(data.directive.id)
-        case .linkButton:          hasher.combine("linkBtn")
+        case .header:                       hasher.combine("header")
+        case .directive(let data):          hasher.combine("dir"); hasher.combine(data.directive.id)
+        case .archivedDirective(let data):  hasher.combine("arch"); hasher.combine(data.directive.id)
+        case .archivedToggle:               hasher.combine("archToggle")
+        case .linkButton:                   hasher.combine("linkBtn")
         }
     }
     static func == (lhs: NoteDetailItem, rhs: NoteDetailItem) -> Bool {
         switch (lhs, rhs) {
-        case (.header, .header):                              return true
-        case (.directive(let a), .directive(let b)):          return a.directive.id == b.directive.id
-        case (.linkButton, .linkButton):                      return true
-        default:                                              return false
+        case (.header, .header):                                          return true
+        case (.directive(let a), .directive(let b)):                      return a.directive.id == b.directive.id
+        case (.archivedDirective(let a), .archivedDirective(let b)):      return a.directive.id == b.directive.id
+        case (.archivedToggle, .archivedToggle):                          return true
+        case (.linkButton, .linkButton):                                  return true
+        default:                                                          return false
         }
     }
 }
@@ -46,6 +53,8 @@ class NoteDetailBaseViewController: BaseViewController {
 
     private(set) var collectionView: UICollectionView!
     private(set) var dataSource: UICollectionViewDiffableDataSource<NoteDetailSection, NoteDetailItem>!
+    private var isArchivedExpanded = false
+    private var lastDirectives: [DirectiveRowData] = []
 
     // MARK: - Subclass Hooks
 
@@ -123,7 +132,11 @@ class NoteDetailBaseViewController: BaseViewController {
 
     private func createLayout() -> UICollectionViewCompositionalLayout {
         UICollectionViewCompositionalLayout { [weak self] sectionIndex, layoutEnv in
-            let section = NoteDetailSection(rawValue: sectionIndex)
+            let section: NoteDetailSection? = {
+                guard let ds = self?.dataSource else { return NoteDetailSection(rawValue: sectionIndex) }
+                let sections = ds.snapshot().sectionIdentifiers
+                return sectionIndex < sections.count ? sections[sectionIndex] : nil
+            }()
             switch section {
             case .header:
                 let height = self?.headerEstimatedHeight ?? 200
@@ -145,17 +158,36 @@ class NoteDetailBaseViewController: BaseViewController {
                 config.showsSeparators = false
                 config.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
                     guard let self,
-                          let item = self.dataSource.itemIdentifier(for: indexPath),
-                          case .directive(let data) = item else { return nil }
+                          let item = self.dataSource.itemIdentifier(for: indexPath) else { return nil }
+
+                    let directiveId: UUID
+                    let isArchived: Bool
+                    switch item {
+                    case .directive(let data):
+                        directiveId = data.directive.id
+                        isArchived = false
+                    case .archivedDirective(let data):
+                        directiveId = data.directive.id
+                        isArchived = true
+                    default:
+                        return nil
+                    }
+
                     let unlink = UIContextualAction(style: .normal, title: "Unlink") { [weak self] _, _, completion in
-                        self?.confirmUnlink(directiveId: data.directive.id)
+                        self?.confirmUnlink(directiveId: directiveId)
                         completion(true)
                     }
                     unlink.backgroundColor = DesignTokens.Colors.destructive
                     unlink.image = UIImage(systemName: "link.badge.minus")
 
+                    if isArchived {
+                        let swipeConfig = UISwipeActionsConfiguration(actions: [unlink])
+                        swipeConfig.performsFirstActionWithFullSwipe = false
+                        return swipeConfig
+                    }
+
                     let askAI = UIContextualAction(style: .normal, title: "Not Working?") { [weak self] _, _, completion in
-                        self?.confirmAskAI(directiveId: data.directive.id)
+                        self?.confirmAskAI(directiveId: directiveId)
                         completion(true)
                     }
                     askAI.backgroundColor = DesignTokens.Colors.warning
@@ -174,13 +206,16 @@ class NoteDetailBaseViewController: BaseViewController {
                     trailing: DesignTokens.Spacing.lg
                 )
 
-                let headerSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .estimated(32))
-                let sectionHeader = NSCollectionLayoutBoundarySupplementaryItem(
-                    layoutSize: headerSize,
-                    elementKind: UICollectionView.elementKindSectionHeader,
-                    alignment: .top
-                )
-                layoutSection.boundarySupplementaryItems = [sectionHeader]
+                // Only show "Linked Directives" header on the directives section
+                if section == .directives {
+                    let headerSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .estimated(32))
+                    let sectionHeader = NSCollectionLayoutBoundarySupplementaryItem(
+                        layoutSize: headerSize,
+                        elementKind: UICollectionView.elementKindSectionHeader,
+                        alignment: .top
+                    )
+                    layoutSection.boundarySupplementaryItems = [sectionHeader]
+                }
                 return layoutSection
             }
         }
@@ -231,10 +266,21 @@ class NoteDetailBaseViewController: BaseViewController {
     private func configureDataSource() {
         let directiveReg = UICollectionView.CellRegistration<DirectiveCell, DirectiveRowData> { cell, _, data in
             cell.configure(with: data)
+            cell.contentView.alpha = 1
+        }
+
+        let archivedDirectiveReg = UICollectionView.CellRegistration<DirectiveCell, DirectiveRowData> { cell, _, data in
+            cell.configure(with: data)
+            cell.contentView.alpha = 0.45
         }
 
         let linkBtnReg = UICollectionView.CellRegistration<LinkButtonCell, String> { cell, _, title in
             cell.configure(title: title, systemImage: "plus.circle.fill")
+        }
+
+        let archivedToggleReg = UICollectionView.CellRegistration<ArchivedToggleCell, Int> { [weak self] cell, _, count in
+            let expanded = self?.isArchivedExpanded ?? false
+            cell.configure(count: count, isExpanded: expanded)
         }
 
         dataSource = UICollectionViewDiffableDataSource(collectionView: collectionView) { [weak self] cv, indexPath, item in
@@ -244,13 +290,17 @@ class NoteDetailBaseViewController: BaseViewController {
                 return self.dequeueHeaderCell(for: cv, at: indexPath)
             case .directive(let data):
                 return cv.dequeueConfiguredReusableCell(using: directiveReg, for: indexPath, item: data)
+            case .archivedDirective(let data):
+                return cv.dequeueConfiguredReusableCell(using: archivedDirectiveReg, for: indexPath, item: data)
+            case .archivedToggle(let count):
+                return cv.dequeueConfiguredReusableCell(using: archivedToggleReg, for: indexPath, item: count)
             case .linkButton:
                 return cv.dequeueConfiguredReusableCell(using: linkBtnReg, for: indexPath, item: "Add Directive")
             }
         }
 
-        let sectionHeaderReg = UICollectionView.SupplementaryRegistration<SectionHeaderView>(elementKind: UICollectionView.elementKindSectionHeader) { supplementaryView, _, indexPath in
-            let section = NoteDetailSection(rawValue: indexPath.section)
+        let sectionHeaderReg = UICollectionView.SupplementaryRegistration<SectionHeaderView>(elementKind: UICollectionView.elementKindSectionHeader) { [weak self] supplementaryView, _, indexPath in
+            let section = self?.dataSource.snapshot().sectionIdentifiers[indexPath.section]
             let title: String = switch section {
             case .directives: "Linked Directives"
             default:          ""
@@ -266,18 +316,31 @@ class NoteDetailBaseViewController: BaseViewController {
     // MARK: - Snapshot (called by subclasses)
 
     /// Subclasses call this from their `loadData` observation to apply the shared snapshot.
-    func applySnapshot(directives: [DirectiveRowData]) {
+    func applySnapshot(directives: [DirectiveRowData], animated: Bool = false) {
+        lastDirectives = directives
+        let active = directives.filter { $0.directive.status != .archived }
+        let archived = directives.filter { $0.directive.status == .archived }
+
         var snapshot = NSDiffableDataSourceSnapshot<NoteDetailSection, NoteDetailItem>()
 
         snapshot.appendSections([.header])
         snapshot.appendItems([.header], toSection: .header)
 
         snapshot.appendSections([.directives])
-        var dirItems: [NoteDetailItem] = directives.map { .directive($0) }
+        var dirItems: [NoteDetailItem] = active.map { .directive($0) }
         dirItems.append(.linkButton)
         snapshot.appendItems(dirItems, toSection: .directives)
 
-        dataSource.apply(snapshot, animatingDifferences: false)
+        if !archived.isEmpty {
+            snapshot.appendSections([.archivedDirectives])
+            var archItems: [NoteDetailItem] = [.archivedToggle(archived.count)]
+            if isArchivedExpanded {
+                archItems.append(contentsOf: archived.map { .archivedDirective($0) })
+            }
+            snapshot.appendItems(archItems, toSection: .archivedDirectives)
+        }
+
+        dataSource.apply(snapshot, animatingDifferences: animated)
 
         var reconfigSnap = dataSource.snapshot()
         reconfigSnap.reconfigureItems(reconfigSnap.itemIdentifiers)
@@ -297,6 +360,11 @@ extension NoteDetailBaseViewController: UICollectionViewDelegate {
             break
         case .directive(let data):
             onDirectiveSelected?(data.directive.id)
+        case .archivedDirective(let data):
+            onDirectiveSelected?(data.directive.id)
+        case .archivedToggle:
+            isArchivedExpanded.toggle()
+            applySnapshot(directives: lastDirectives, animated: true)
         case .linkButton:
             guard let noteId else { return }
             onLinkDirectiveTapped?(noteId)
@@ -304,21 +372,39 @@ extension NoteDetailBaseViewController: UICollectionViewDelegate {
     }
 
     func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
-        guard let item = dataSource.itemIdentifier(for: indexPath),
-              case .directive(let data) = item else { return nil }
+        guard let item = dataSource.itemIdentifier(for: indexPath) else { return nil }
+
+        let directiveId: UUID
+        let isArchived: Bool
+        switch item {
+        case .directive(let data):
+            directiveId = data.directive.id
+            isArchived = false
+        case .archivedDirective(let data):
+            directiveId = data.directive.id
+            isArchived = true
+        default:
+            return nil
+        }
+
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
-            let askAI = UIAction(
-                title: "Not Working?",
-                image: UIImage(systemName: "lightbulb.slash")
-            ) { _ in
-                self?.confirmAskAI(directiveId: data.directive.id)
-            }
             let unlink = UIAction(
                 title: "Unlink from \(self?.entityLabel.capitalized ?? "Note")",
                 image: UIImage(systemName: "link.badge.minus"),
                 attributes: .destructive
             ) { _ in
-                self?.confirmUnlink(directiveId: data.directive.id)
+                self?.confirmUnlink(directiveId: directiveId)
+            }
+
+            if isArchived {
+                return UIMenu(children: [unlink])
+            }
+
+            let askAI = UIAction(
+                title: "Not Working?",
+                image: UIImage(systemName: "lightbulb.slash")
+            ) { _ in
+                self?.confirmAskAI(directiveId: directiveId)
             }
             return UIMenu(children: [askAI, unlink])
         }
@@ -345,7 +431,9 @@ extension NoteDetailBaseViewController: UICollectionViewDropDelegate {
         guard session.localDragSession != nil else {
             return UICollectionViewDropProposal(operation: .cancel)
         }
-        if let dest = destinationIndexPath, dest.section == NoteDetailSection.directives.rawValue {
+        if let dest = destinationIndexPath,
+           let directivesIdx = dataSource.snapshot().sectionIdentifiers.firstIndex(of: .directives),
+           dest.section == directivesIdx {
             return UICollectionViewDropProposal(operation: .move, intent: .insertAtDestinationIndexPath)
         }
         return UICollectionViewDropProposal(operation: .cancel)
@@ -357,8 +445,8 @@ extension NoteDetailBaseViewController: UICollectionViewDropDelegate {
               let sourceRow = dragItem.dragItem.localObject as? NoteDetailItem,
               let sourceIndexPath = dragItem.sourceIndexPath else { return }
 
-        let directivesSection = NoteDetailSection.directives.rawValue
-        guard sourceIndexPath.section == directivesSection,
+        guard let directivesSection = dataSource.snapshot().sectionIdentifiers.firstIndex(of: .directives),
+              sourceIndexPath.section == directivesSection,
               destinationIndexPath.section == directivesSection else { return }
 
         var snapshot = dataSource.snapshot()
@@ -388,5 +476,60 @@ extension NoteDetailBaseViewController: UICollectionViewDropDelegate {
             return nil
         }
         Task { try? await noteService.reorderDirectives(noteId: noteId, directiveIds: directiveIds) }
+    }
+}
+
+// MARK: - ArchivedToggleCell
+
+final class ArchivedToggleCell: UICollectionViewCell {
+
+    private let iconView = UIImageView()
+    private let label = UILabel()
+    private let chevron = UIImageView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupCell()
+    }
+
+    required init?(coder: NSCoder) { super.init(coder: coder); setupCell() }
+
+    private func setupCell() {
+        contentView.backgroundColor = DesignTokens.Colors.surfaceSecondary.withAlphaComponent(0.5)
+        contentView.layer.cornerRadius = DesignTokens.Radii.md
+        contentView.clipsToBounds = true
+
+        let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        iconView.image = UIImage(systemName: "archivebox", withConfiguration: config)
+        iconView.tintColor = DesignTokens.Colors.textTertiary
+        iconView.contentMode = .scaleAspectFit
+        iconView.setContentHuggingPriority(.required, for: .horizontal)
+
+        label.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .medium)
+        label.textColor = DesignTokens.Colors.textTertiary
+
+        chevron.contentMode = .scaleAspectFit
+        chevron.tintColor = DesignTokens.Colors.textTertiary
+        chevron.setContentHuggingPriority(.required, for: .horizontal)
+
+        let row = UIStackView(arrangedSubviews: [iconView, label, UIView(), chevron])
+        row.axis = .horizontal
+        row.spacing = DesignTokens.Spacing.sm
+        row.alignment = .center
+        row.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(row)
+
+        NSLayoutConstraint.activate([
+            row.topAnchor.constraint(equalTo: contentView.topAnchor, constant: DesignTokens.Spacing.md),
+            row.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -DesignTokens.Spacing.md),
+            row.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: DesignTokens.Spacing.lg),
+            row.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -DesignTokens.Spacing.lg),
+        ])
+    }
+
+    func configure(count: Int, isExpanded: Bool) {
+        label.text = count == 1 ? "1 Archived Directive" : "\(count) Archived Directives"
+        let chevronConfig = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+        chevron.image = UIImage(systemName: isExpanded ? "chevron.up" : "chevron.down", withConfiguration: chevronConfig)
     }
 }

@@ -12,6 +12,12 @@ final class DirectiveEditorViewController: BaseViewController {
     var onAskAISuggestion: ((String) -> Void)?  // problem text → route to Speak tab
     var prefillTitle: String?                    // pre-fill from AI suggestion
     var prefillBody: String?
+    var shimmerSave = false
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if shimmerSave { navBar.shimmerRightButton() }
+    }
 
     // MARK: - Mode Toggle
 
@@ -66,7 +72,7 @@ final class DirectiveEditorViewController: BaseViewController {
         let isCreate = directiveId == nil
         navBar.setTitle(isCreate ? "New Directive" : "Edit Directive", animated: false)
         navBar.setLeftButton(title: "Cancel", systemImage: nil, action: { [weak self] in self?.cancelTapped() })
-        navBar.setRightButtons([NavBarButton(title: "Save", action: { [weak self] in self?.saveTapped() })])
+        navBar.setRightButtons([NavBarButton(title: "Save", prominent: true, action: { [weak self] in self?.saveTapped() })])
 
         if isCreate {
             buildModeToggle()
@@ -137,7 +143,7 @@ final class DirectiveEditorViewController: BaseViewController {
 
         // Hide save button in wizard mode (suggestions auto-create)
         if directiveId == nil {
-            navBar.setRightButtons(isWizard ? [] : [NavBarButton(title: "Save", action: { [weak self] in self?.saveTapped() })])
+            navBar.setRightButtons(isWizard ? [] : [NavBarButton(title: "Save", prominent: true, action: { [weak self] in self?.saveTapped() })])
         }
     }
 

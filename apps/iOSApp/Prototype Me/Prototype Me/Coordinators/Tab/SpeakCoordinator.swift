@@ -26,6 +26,7 @@ class SpeakCoordinator: Coordinator {
         vc.modeService = environment.modeService
         vc.folderService = environment.folderService
         vc.speakHistoryService = environment.speakHistoryService
+        vc.scheduleService = environment.scheduleService
         vc.dbQueue = environment.db.dbQueue
         vc.onUpgradeTapped = { [weak self] in
             self?.presentPaywall()
@@ -141,6 +142,7 @@ class SpeakCoordinator: Coordinator {
         editor.apiClient = environment.apiClient
         editor.prefillTitle = title
         editor.prefillBody = body
+        editor.shimmerSave = true
         editor.onSave = { [weak self] in self?.dismissAndMarkApplied() }
         let nav = UINavigationController(rootViewController: editor)
         navigationController.present(nav, animated: true)
@@ -177,6 +179,7 @@ class SpeakCoordinator: Coordinator {
         editor.prefillRating = rating
         editor.prefillDiary = diary
         editor.prefillTags = tags
+        editor.shimmerSave = true
         Task {
             if let existing = try? await environment.dayEntryService.fetch(date: date) {
                 await MainActor.run { editor.entryId = existing.id }
@@ -198,6 +201,7 @@ class SpeakCoordinator: Coordinator {
         editor.directiveId = id
         editor.prefillTitle = title
         editor.prefillBody = body
+        editor.shimmerSave = true
         editor.onSave = { [weak self] in self?.dismissAndMarkApplied() }
         let nav = UINavigationController(rootViewController: editor)
         navigationController.present(nav, animated: true)

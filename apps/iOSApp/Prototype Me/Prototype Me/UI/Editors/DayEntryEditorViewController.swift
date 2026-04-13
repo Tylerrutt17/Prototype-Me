@@ -13,6 +13,12 @@ final class DayEntryEditorViewController: BaseViewController {
     var prefillRating: Int?
     var prefillDiary: String?
     var prefillTags: [String]?
+    var shimmerSave = false
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if shimmerSave { navBar.shimmerRightButton() }
+    }
 
     // MARK: - Form Controls
 
@@ -123,7 +129,7 @@ final class DayEntryEditorViewController: BaseViewController {
         super.viewDidLoad()
         navBar.setTitle(entryId == nil ? "New Entry" : "Edit Entry", animated: false)
         navBar.setLeftButton(title: "Cancel", systemImage: nil, action: { [weak self] in self?.cancelTapped() })
-        navBar.setRightButtons([NavBarButton(title: "Save", action: { [weak self] in self?.saveTapped() })])
+        navBar.setRightButtons([NavBarButton(title: "Save", prominent: true, action: { [weak self] in self?.saveTapped() })])
 
         buildForm()
         updateRatingButtons(animated: false)

@@ -50,6 +50,23 @@ final class ModeService: Sendable {
         }
     }
 
+    /// Deactivate all modes and optionally activate a new one, in a single transaction.
+    /// Passing nil deactivates all modes (equivalent to "No Mode").
+    func switchTo(noteId: UUID?) async throws {
+        try await db.safeWrite { db in
+            let all = try ActiveMode.fetchAll(db)
+            for mode in all {
+                try mode.delete(db)
+                try OutboxOp.enqueueDelete(entityType: "activeMode", entityId: mode.noteId.uuidString, in: db)
+            }
+            if let noteId {
+                let mode = ActiveMode(noteId: noteId, activatedAt: Date())
+                try mode.insert(db)
+                try OutboxOp.enqueue(entityType: "activeMode", entityId: noteId.uuidString, op: "create", patch: mode.syncPatch(), in: db)
+            }
+        }
+    }
+
     func isActive(noteId: UUID) async throws -> Bool {
         try await db.dbQueue.read { db in
             try ActiveMode.fetchOne(db, key: noteId) != nil

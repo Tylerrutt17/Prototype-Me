@@ -7,8 +7,10 @@ final class NoteEditorViewController: BaseViewController {
 
     var noteId: UUID?                        // nil = create, non-nil = edit
     var preselectedFolderId: UUID?           // when creating inside a folder
+    var preselectedKind: NoteKind?           // when creating from a specific context (e.g. mode picker)
     var noteService: NoteService?
     var onSave: (() -> Void)?
+    var onCreated: ((UUID, NoteKind) -> Void)?
     // Pre-fill from AI suggestion
     var prefillTitle: String?
     var prefillBody: String?
@@ -40,6 +42,7 @@ final class NoteEditorViewController: BaseViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         selectedFolderId = preselectedFolderId
+        if let preselectedKind { selectedKind = preselectedKind }
 
         navBar.setTitle(isCreateMode ? "New Note or Mode" : "Edit Note", animated: false)
         navBar.setLeftButton(title: "Cancel", systemImage: nil, action: { [weak self] in self?.dismiss(animated: true) })
@@ -108,7 +111,7 @@ final class NoteEditorViewController: BaseViewController {
         // Framework edit is single-step: Save directly from step 0.
         if step == 0 {
             let title = isFrameworkEdit ? "Save" : "Next"
-            navBar.setRightButtons([NavBarButton(title: title, action: { [weak self] in self?.step1Next() })])
+            navBar.setRightButtons([NavBarButton(title: title, prominent: true, action: { [weak self] in self?.step1Next() })])
         } else {
             navBar.setRightButtons([])
         }
@@ -193,11 +196,14 @@ final class NoteEditorViewController: BaseViewController {
                     existing.folderId = selectedFolderId
                     try await noteService?.update(existing)
                 } else {
-                    _ = try await noteService?.create(
+                    let newNote = try await noteService?.create(
                         title: title, body: enteredBody,
                         kind: selectedKind,
                         folderId: selectedFolderId
                     )
+                    if let newNote {
+                        onCreated?(newNote.id, newNote.kind)
+                    }
                 }
                 Haptics.success()
                 onSave?()

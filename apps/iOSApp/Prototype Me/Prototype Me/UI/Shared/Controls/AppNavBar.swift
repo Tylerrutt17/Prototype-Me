@@ -1,6 +1,6 @@
 import UIKit
 
-private extension UIImage {
+extension UIImage {
     func resized(to size: CGSize) -> UIImage {
         UIGraphicsImageRenderer(size: size).image { _ in
             draw(in: CGRect(origin: .zero, size: size))
@@ -13,12 +13,14 @@ struct NavBarButton {
     let systemImage: String?
     let assetImage: String?
     let title: String?
+    let prominent: Bool
     let action: () -> Void
 
     init(systemImage: String, action: @escaping () -> Void) {
         self.systemImage = systemImage
         self.assetImage = nil
         self.title = nil
+        self.prominent = false
         self.action = action
     }
 
@@ -26,13 +28,15 @@ struct NavBarButton {
         self.systemImage = nil
         self.assetImage = assetImage
         self.title = nil
+        self.prominent = false
         self.action = action
     }
 
-    init(title: String, action: @escaping () -> Void) {
+    init(title: String, prominent: Bool = false, action: @escaping () -> Void) {
         self.systemImage = nil
         self.assetImage = nil
         self.title = title
+        self.prominent = prominent
         self.action = action
     }
 }
@@ -261,13 +265,45 @@ final class AppNavBar: UIView {
                     .resized(to: CGSize(width: size, height: size))
                 button.setImage(img, for: .normal)
             } else if let title = btn.title {
-                button.setTitle(title, for: .normal)
-                button.titleLabel?.font = DesignTokens.Typography.rounded(style: .body, weight: .semibold)
+                if btn.prominent {
+                    var config = UIButton.Configuration.filled()
+                    config.title = title
+                    config.cornerStyle = .capsule
+                    config.baseBackgroundColor = DesignTokens.Colors.accent
+                    config.baseForegroundColor = .white
+                    config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16)
+                    config.titleTextAttributesTransformer = .init { container in
+                        var c = container
+                        c.font = DesignTokens.Typography.rounded(style: .subheadline, weight: .bold)
+                        return c
+                    }
+                    button.configuration = config
+                } else {
+                    button.setTitle(title, for: .normal)
+                    button.titleLabel?.font = DesignTokens.Typography.rounded(style: .body, weight: .semibold)
+                }
             }
 
             button.addTarget(self, action: #selector(rightButtonTapped(_:)), for: .touchUpInside)
             rightStack.addArrangedSubview(button)
         }
+    }
+
+    func shimmerRightButton() {
+        guard let button = rightStack.arrangedSubviews.first else { return }
+        button.layoutIfNeeded()
+        ShimmerBorder.add(
+            to: button,
+            color: DesignTokens.Colors.accent,
+            cornerRadius: button.bounds.height / 2,
+            borderWidth: 2,
+            duration: 2.0
+        )
+    }
+
+    func removeRightButtonShimmer() {
+        guard let button = rightStack.arrangedSubviews.first else { return }
+        ShimmerBorder.remove(from: button)
     }
 
     /// Shows or hides the back chevron.

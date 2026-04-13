@@ -26,7 +26,7 @@ final class SyncEngine: @unchecked Sendable {
     private var lastError: Error?
 
     private static let pullPageSize = 200
-    private static let pushDebounceInterval: TimeInterval = 2.0
+    private static let pushDebounceInterval: TimeInterval = 7.0
 
     /// Exponential backoff (seconds) for retrying a failed outbox op, keyed by attemptCount.
     /// 1 → 30s, 2 → 2m, 3 → 10m, 4 → 30m, 5 → 2h, 6+ → 6h (capped).

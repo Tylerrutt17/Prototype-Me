@@ -131,6 +131,11 @@ extension SpeakViewController {
               let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval else { return }
         isKeyboardVisible = true
         inputBarBottom.constant = -frame.height
+        if isPro {
+            responseBottomConstraint.isActive = false
+            responseBottomConstraint = responseScrollView.bottomAnchor.constraint(equalTo: inputBar.topAnchor)
+            responseBottomConstraint.isActive = true
+        }
         UIView.animate(withDuration: duration) {
             self.view.layoutIfNeeded()
             if self.isPro {
@@ -146,6 +151,11 @@ extension SpeakViewController {
         guard let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval else { return }
         isKeyboardVisible = false
         inputBarBottom.constant = 0
+        if isPro {
+            responseBottomConstraint.isActive = false
+            responseBottomConstraint = responseScrollView.bottomAnchor.constraint(equalTo: proMicButton.topAnchor, constant: -DesignTokens.Spacing.md)
+            responseBottomConstraint.isActive = true
+        }
         UIView.animate(withDuration: duration) {
             self.view.layoutIfNeeded()
             if self.isPro && !self.isProcessing && !self.isRecording {
@@ -178,7 +188,12 @@ extension SpeakViewController {
         placeholderLabel.isHidden = false
         updateTextViewHeight()
         clearButton.isHidden = true
+        textViewLeadingWithClear.isActive = false
+        textViewLeadingDefault.isActive = true
         sendButton.alpha = 0.3
+        UIView.animate(withDuration: 0.15) {
+            self.view.layoutIfNeeded()
+        }
     }
 
     func updateClearButton() {

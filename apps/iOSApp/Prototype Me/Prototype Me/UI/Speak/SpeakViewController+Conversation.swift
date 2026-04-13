@@ -35,6 +35,7 @@ extension SpeakViewController {
         messages.append(SpeakChatMessage(role: .user, text: text))
         hideActions(animated: false)
         showThinking()
+        gridView?.triggerWave()
 
         let localDateFormatter = DateFormatter()
         localDateFormatter.dateFormat = "yyyy-MM-dd"
@@ -94,6 +95,14 @@ extension SpeakViewController {
                 let elapsed = Date().timeIntervalSince(postedAt)
                 print("[Speak] Response in \(String(format: "%.2f", elapsed))s (\(readRounds) read round(s)) — message: \(response.message.count) chars, tools: \(response.toolCalls.count), quota: \(response.remainingQuota)")
 
+                // Hold the response until the grid pulse + bar splash completes.
+                // Bar fires at 1.0s, splash + settle ≈ 1.1s → minimum 2.1s.
+                let minimumAnimationTime: TimeInterval = 2.1
+                let remaining = minimumAnimationTime - elapsed
+                if remaining > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                }
+
                 await MainActor.run {
                     self.handleResponse(response)
                 }
@@ -138,6 +147,7 @@ extension SpeakViewController {
     // MARK: - Response Handling (shared between flow and converse)
 
     private func handleResponse(_ response: SpeakConverseResponse) {
+        thinkingBar.stopAnimating()
         hideSuggestions()
         hideActions()
 

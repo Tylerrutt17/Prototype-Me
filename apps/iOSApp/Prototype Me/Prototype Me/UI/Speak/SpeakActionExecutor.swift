@@ -14,19 +14,22 @@ final class SpeakActionExecutor {
     let dayEntryService: DayEntryService?
     let modeService: ModeService?
     let folderService: FolderService?
+    let scheduleService: ScheduleService?
 
     init(
         directiveService: DirectiveService?,
         noteService: NoteService?,
         dayEntryService: DayEntryService?,
         modeService: ModeService?,
-        folderService: FolderService?
+        folderService: FolderService?,
+        scheduleService: ScheduleService? = nil
     ) {
         self.directiveService = directiveService
         self.noteService = noteService
         self.dayEntryService = dayEntryService
         self.modeService = modeService
         self.folderService = folderService
+        self.scheduleService = scheduleService
     }
 
     // MARK: - Describe
@@ -238,7 +241,32 @@ final class SpeakActionExecutor {
             case "create_directive":
                 let title = (toolCall.arguments["title"] as? String ?? "Untitled").capped(to: FieldLimits.Directive.title)
                 let body = (toolCall.arguments["body"] as? String)?.capped(to: FieldLimits.Directive.body)
-                let directive = try await directiveService?.create(title: title, body: body)
+                let color = toolCall.arguments["color"] as? String
+                let balloonEnabled = toolCall.arguments["balloonEnabled"] as? Bool ?? false
+                let balloonDuration = toolCall.arguments["balloonDurationSec"] as? TimeInterval ?? 0
+                let directive = try await directiveService?.create(
+                    title: title, body: body, color: color,
+                    balloonEnabled: balloonEnabled, balloonDurationSec: balloonDuration
+                )
+
+                // Create schedule rule if provided
+                if let directive, let schedule = toolCall.arguments["schedule"] as? [String: Any],
+                   let typeStr = schedule["type"] as? String,
+                   let scheduleType = ScheduleType(rawValue: typeStr) {
+                    var params: [String: [Int]] = [:]
+                    if let weekdays = schedule["weekdays"] as? [Int] {
+                        params["weekdays"] = weekdays
+                    }
+                    if let dates = schedule["dates"] as? [Int] {
+                        params["dates"] = dates
+                    }
+                    _ = try? await scheduleService?.createRule(
+                        directiveId: directive.id,
+                        ruleType: scheduleType,
+                        params: params
+                    )
+                }
+
                 let history = directive.map {
                     SpeakHistoryEntry(
                         actionType: .create,

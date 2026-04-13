@@ -69,12 +69,7 @@ class ModeDetailViewController: NoteDetailBaseViewController {
     private func toggleActiveMode(noteId: UUID, isCurrentlyActive: Bool) {
         Task {
             do {
-                if isCurrentlyActive {
-                    try await modeService?.deactivate(noteId: noteId)
-                } else {
-                    try await modeService?.deactivateAll()
-                    try await modeService?.activate(noteId: noteId)
-                }
+                try await modeService?.switchTo(noteId: isCurrentlyActive ? nil : noteId)
                 Haptics.success()
             } catch {
                 Haptics.error()
