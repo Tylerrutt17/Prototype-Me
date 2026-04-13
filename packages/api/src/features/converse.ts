@@ -282,7 +282,7 @@ Examples:
     type: "function",
     strict: false,
     name: "ask_confirmation",
-    description: "Call this when you need a simple YES/NO answer from the user. The client shows Yes/No buttons. ONLY for strictly binary questions. Do NOT combine with write tools.",
+    description: "REQUIRED for yes/no questions. You MUST call this tool — never ask yes/no in plain text. The client renders Yes/No buttons. Do NOT combine with write tools.",
     parameters: {
       type: "object",
       properties: {
@@ -295,7 +295,7 @@ Examples:
     type: "function",
     strict: false,
     name: "present_options",
-    description: "Show the user a set of tappable option buttons when you need them to pick from specific choices. Use this instead of listing options in text. Max 5 options. The client renders each as a tappable button with an SF Symbol icon. The user's tap sends their choice back as a message.",
+    description: "REQUIRED: You MUST call this tool whenever you want the user to choose between options. NEVER list options in your text message — the client CANNOT render them. Only this tool creates tappable buttons. If you write options in text, the user has no way to select them.",
     parameters: {
       type: "object",
       properties: {
@@ -310,7 +310,7 @@ Examples:
     type: "function",
     strict: false,
     name: "present_rating_picker",
-    description: "Show a 1-10 rating picker when you need the user to rate something (journal entry, day rating, etc.). The client renders a compact row of numbered buttons. Use this instead of asking the user to type a number. Also optionally show a text input for journal text.",
+    description: "REQUIRED when you need a 1-10 rating. You MUST call this tool — never ask for a number in plain text. The client renders a row of tappable number buttons. Optionally shows a text input for journal text.",
     parameters: {
       type: "object",
       properties: {
@@ -453,16 +453,22 @@ If unclear → present options:
 
 ---
 
-### **Confirmation & Options (strict)**
+### **UI Tools (strict — violations break the app)**
 
-**ALWAYS use tool-based UI for choices. NEVER list options in plain text.**
+The client app CANNOT render choices from your text. It can ONLY show interactive UI when you call these tools. If you write "1. Option A 2. Option B" in your message, the user sees plain text with NO way to tap or select. You MUST call the tool instead.
 
-* Yes/no → **ask_confirmation**
-* 2–5 choices → **present_options** (with icons)
-* Rating 1-10 → **present_rating_picker**
-* Only use plain text questions for truly freeform answers (descriptions, journal content, etc.)
+**present_options** — call this EVERY time you want the user to pick from 2-5 choices. Pass short labels + SF Symbol icon names. Examples of when to use:
+* "Do you want to update this or create a new one?" → call present_options with ["Update this one", "Create new", "Never mind"]
+* "Which directive?" → call present_options with the directive names
+* "Title or description?" → call present_options with ["Change the title", "Change the description", "Both"]
 
-**When the user's message starts with [Selected: ...]** — this is a button tap, not a new request. Act directly on their selection. Do NOT re-check, re-search, or re-present options. Just do the next step for that choice immediately.
+**ask_confirmation** — call this for any yes/no question. Never write "yes or no?" in text.
+
+**present_rating_picker** — call this when you need a 1-10 rating. Never ask "rate it 1-10" in text.
+
+**The ONLY time you should ask something in plain text** is when the answer is truly freeform — like "What do you want the description to say?" or "Tell me about your day."
+
+**When the user's message starts with [Selected: ...]** — this is a button tap from one of these tools. Act on their choice immediately. Do NOT re-check, re-search, or present the same options again.
 
 ---
 
