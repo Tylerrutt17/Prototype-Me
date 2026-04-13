@@ -91,16 +91,26 @@ class CalendarViewController: BaseViewController {
     // MARK: - Month Header
 
     private func setupMonthHeader() {
-        let chevronConfig = UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+        let chevronConfig = UIImage.SymbolConfiguration(pointSize: 16, weight: .bold)
 
         let prevButton = UIButton(type: .system)
-        prevButton.setImage(UIImage(systemName: "chevron.left", withConfiguration: chevronConfig), for: .normal)
-        prevButton.tintColor = DesignTokens.Colors.accent
+        var prevConfig = UIButton.Configuration.filled()
+        prevConfig.image = UIImage(systemName: "chevron.left", withConfiguration: chevronConfig)
+        prevConfig.baseBackgroundColor = DesignTokens.Colors.surfacePrimary
+        prevConfig.baseForegroundColor = DesignTokens.Colors.accent
+        prevConfig.cornerStyle = .capsule
+        prevConfig.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12)
+        prevButton.configuration = prevConfig
         prevButton.addTarget(self, action: #selector(prevMonthTapped), for: .touchUpInside)
 
         let nextButton = UIButton(type: .system)
-        nextButton.setImage(UIImage(systemName: "chevron.right", withConfiguration: chevronConfig), for: .normal)
-        nextButton.tintColor = DesignTokens.Colors.accent
+        var nextConfig = UIButton.Configuration.filled()
+        nextConfig.image = UIImage(systemName: "chevron.right", withConfiguration: chevronConfig)
+        nextConfig.baseBackgroundColor = DesignTokens.Colors.surfacePrimary
+        nextConfig.baseForegroundColor = DesignTokens.Colors.accent
+        nextConfig.cornerStyle = .capsule
+        nextConfig.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12)
+        nextButton.configuration = nextConfig
         nextButton.addTarget(self, action: #selector(nextMonthTapped), for: .touchUpInside)
 
         monthLabel.font = DesignTokens.Typography.rounded(style: .headline, weight: .semibold)
@@ -120,7 +130,7 @@ class CalendarViewController: BaseViewController {
             monthHeaderStack.topAnchor.constraint(equalTo: calendarContentTop, constant: DesignTokens.Spacing.sm),
             monthHeaderStack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: DesignTokens.Spacing.lg),
             monthHeaderStack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -DesignTokens.Spacing.lg),
-            monthHeaderStack.heightAnchor.constraint(equalToConstant: 36),
+            monthHeaderStack.heightAnchor.constraint(equalToConstant: 44),
         ])
 
         updateMonthLabel()

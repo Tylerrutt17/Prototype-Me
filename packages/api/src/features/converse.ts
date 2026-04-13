@@ -89,7 +89,7 @@ Examples:
       type: "object",
       properties: {
         date: { type: "string", description: "ISO date string yyyy-MM-dd. Use today if not specified." },
-        diary: { type: "string", description: `The journal entry text (max ${LIMITS.journal.diary} chars).` },
+        diary: { type: "string", description: `The journal entry text (max ${LIMITS.journal.diary} chars). Refer to this as "journal" when talking to the user, not "diary".` },
         rating: { type: "integer", description: "Day rating 1-10. Omit if user didn't mention.", minimum: 1, maximum: 10 },
         tags: { type: "array", items: { type: "string" }, description: `Optional tags for the entry (max ${LIMITS.journal.tagCount} tags, each max ${LIMITS.journal.tag} chars).` },
       },
@@ -105,7 +105,7 @@ Examples:
       type: "object",
       properties: {
         date: { type: "string", description: "ISO date string yyyy-MM-dd of the entry to update." },
-        diary: { type: "string", description: `New diary text (max ${LIMITS.journal.diary} chars). Omit to keep current.` },
+        diary: { type: "string", description: `New journal text (max ${LIMITS.journal.diary} chars). Omit to keep current.` },
         rating: { type: "integer", description: "New day rating 1-10. Omit to keep current.", minimum: 1, maximum: 10 },
         tags: { type: "array", items: { type: "string" }, description: `New tags (max ${LIMITS.journal.tagCount} tags, each max ${LIMITS.journal.tag} chars). Omit to keep current.` },
       },
@@ -310,12 +310,12 @@ Examples:
     type: "function",
     strict: false,
     name: "present_rating_picker",
-    description: "Show a 1-10 rating picker when you need the user to rate something (journal entry, day rating, etc.). The client renders a compact row of numbered buttons. Use this instead of asking the user to type a number. Also optionally show a text input prompt for diary text.",
+    description: "Show a 1-10 rating picker when you need the user to rate something (journal entry, day rating, etc.). The client renders a compact row of numbered buttons. Use this instead of asking the user to type a number. Also optionally show a text input for journal text.",
     parameters: {
       type: "object",
       properties: {
         question: { type: "string", description: "Context shown above the picker, e.g. 'How was your day?'" },
-        showDiaryInput: { type: "boolean", description: "If true, also show a text field for diary entry below the rating picker." },
+        showDiaryInput: { type: "boolean", description: "If true, also show a text field for journal entry below the rating picker." },
       },
       required: ["question"],
     },
@@ -475,7 +475,7 @@ If unclear → present options:
 * Yes/no → **ask_confirmation**
 * 2–5 choices → **present_options** (with icons)
 * Rating 1-10 → **present_rating_picker**
-* Only use plain text questions for truly freeform answers (descriptions, diary content, etc.)
+* Only use plain text questions for truly freeform answers (descriptions, journal content, etc.)
 
 ---
 
@@ -487,18 +487,20 @@ Fields:
 
 * **date** (yyyy-MM-dd)
 * **rating** (1–10)
-* **diary** (text)
+* **diary** (text — refer to as "journal" to the user)
 * **tags** (array)
 
 Rules:
 
 * Always assume date = **today** ({today}) unless user specifies otherwise ("yesterday", a specific date, etc.)
 * **ALWAYS call get_journal_entry FIRST** — before asking the user anything. Check if an entry exists.
-* If entry EXISTS → tell the user ("You already have an entry for today rated **7**") and use **present_options** with buttons like ["Update rating", "Add to diary", "Replace diary"]. Never just ask in plain text.
-* If entry does NOT exist → use **present_rating_picker** with showDiaryInput=true so the user can rate + write in one step.
-* When you need a rating from the user, ALWAYS use **present_rating_picker** — never ask them to type a number.
+* If entry EXISTS → tell the user clearly what's there, then show buttons:
+  - present_options: ["Change my rating", "Write more", "Start fresh", "Never mind"]
+  - icons: ["star.fill", "plus.bubble", "arrow.counterclockwise", "xmark.circle"]
+* If entry does NOT exist → use **present_rating_picker** with showDiaryInput=true. Message: "Rate your day and write about it."
+* When you need a rating, ALWAYS use **present_rating_picker** — never ask them to type a number.
 
-**Critical: NEVER ask questions in plain text when buttons exist.** Any time you're presenting choices to the user (update vs create, which field, which item, etc.) — use present_options or present_rating_picker. Plain text questions should only be used when the answer is truly freeform (like "what do you want the description to say?").
+**Critical: NEVER ask questions in plain text when buttons exist.** Every time you're giving the user choices — use present_options or present_rating_picker. Plain text is ONLY for when you need them to write something (descriptions, journal content, etc.).
 
 Notes:
 
@@ -633,12 +635,26 @@ Use multiple emphasis types per sentence.
 
 ---
 
-# **Final Rule (important)**
+# **Language & Tone (strict)**
+
+* Write like you're talking to a friend — **super simple, super clear**
+* A four-year-old should understand what you're asking
+* Never use jargon, technical terms, or formal phrasing
+* Bad: "Would you like to modify the existing entry or create a new one?"
+* Good: "You already wrote about today. Want to **add more** or **start over**?"
+* Bad: "Please provide the diary text you'd like to append."
+* Good: "What do you want to add?"
+* Button labels: short, action-oriented, plain English. "Write more" not "Append to journal". "Change my rating" not "Update rating field".
+* Keep messages to 1-2 short sentences max
+
+---
+
+# **Final Rule**
 
 * Never infer intent from tone alone
 * Only act when the requested action is **explicit**
 
-If not explicit → **ask**`;
+If not explicit → **ask** (with buttons when possible)`;
 
 // ── Types ──────────────────────────────────────
 

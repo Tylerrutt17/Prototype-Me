@@ -913,7 +913,7 @@ class SpeakViewController: BaseViewController {
             ratingDiaryField = diaryField
 
             let placeholder = UILabel()
-            placeholder.text = "How was your day? (optional)"
+            placeholder.text = "Write about your day (optional)"
             placeholder.font = DesignTokens.Typography.body
             placeholder.textColor = DesignTokens.Colors.textTertiary
             placeholder.translatesAutoresizingMaskIntoConstraints = false
