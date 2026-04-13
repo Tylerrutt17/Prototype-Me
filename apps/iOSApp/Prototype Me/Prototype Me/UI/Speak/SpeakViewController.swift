@@ -746,12 +746,12 @@ class SpeakViewController: BaseViewController {
 
     @objc private func confirmYesTapped() {
         hideConfirmationRow()
-        sendMessage("yes")
+        sendMessage("[Selected: Yes]")
     }
 
     @objc private func confirmNoTapped() {
         hideConfirmationRow()
-        sendMessage("no")
+        sendMessage("[Selected: No]")
     }
 
     // MARK: - Options Buttons
@@ -1031,7 +1031,8 @@ class SpeakViewController: BaseViewController {
 
         // No follow-up — this is a leaf option. Send all accumulated choices to the server.
         hideOptionsRow()
-        sendMessage(accumulatedChoices.joined(separator: " > "))
+        let choice = accumulatedChoices.joined(separator: " > ")
+        sendMessage("[Selected: \(choice)]")
         accumulatedChoices = []
     }
 
