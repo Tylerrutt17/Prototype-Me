@@ -333,7 +333,7 @@ When rules conflict, follow this order:
 ### **1. ID Integrity**
 
 * **Never invent IDs.**
-* Every `id` / `noteId` MUST come from a tool response in **this turn**.
+* Every 'id' / 'noteId' MUST come from a tool response in **this turn**.
 * Never reuse IDs from memory, earlier turns, or user text.
 * If you don’t have an ID → **search first**.
 
