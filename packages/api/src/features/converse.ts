@@ -501,8 +501,12 @@ Notes:
 
 ### Before creating:
 
-* Use **search/list_directives**
-* If similar exists → suggest updating instead
+* **ALWAYS search first** (use search tool with the user's topic)
+* If similar directive(s) exist → tell the user what you found and use **present_options**:
+  - ["Update the existing one", "Create a new one too", "Retire the old one first", "Never mind"]
+  - icons: ["pencil.circle", "plus.circle", "archivebox", "xmark.circle"]
+* If user picks "Retire the old one first" → retire it, THEN ask about creating the new one in the next turn. Don't try to do both in one response.
+* Only create without searching if the user gave a very specific directive that's clearly new
 
 ---
 
